@@ -242,7 +242,12 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func applyMode(_ newMode: CaptureSessionMode, on environment: AppEnvironment) {
-        mode = newMode
+        // **不在这里乐观地改 mode。**
+        // switchMode 有可能被拒绝（例如当前采集格式不支持 Live Photo），
+        // 拒绝后 session 的 mode 不变，也就不会发出 $mode ——
+        // 之前那版会让 UI 停在"看着像切了、实际没切"的状态：
+        // 模式条高亮 Live、顶栏亮起 LIVE 角标，拍出来却是普通静态照片，
+        // 且相册里没有 Live 角标。让 session 成为模式的唯一真源。
         environment.session.switchMode(to: newMode)
         Haptics.modeChanged()
     }

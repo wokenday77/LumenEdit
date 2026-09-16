@@ -38,7 +38,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: LumenEdit
-        PRODUCT_BUNDLE_IDENTIFIER: com.lumenedit.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.wokenday77.lumenedit
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: LumenEdit/Resources/Info.plist
@@ -49,7 +49,8 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: YES
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
         # 免费 Apple ID 签名时由 Xcode 自动选择证书；在 Xcode 里填一次 Team 即可
-        DEVELOPMENT_TEAM: ""
+        # 本机已登录 Personal Team「椒泡」，ID 如下（写在 project.yml 才是持久化的）
+        DEVELOPMENT_TEAM: H7XJ2PBZJG
         # 本工程不需要任何 entitlement：相机与相册权限只依赖 Info.plist 里的用途说明
 
 schemes:

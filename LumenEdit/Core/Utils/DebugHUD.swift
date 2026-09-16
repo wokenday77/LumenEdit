@@ -67,15 +67,69 @@ struct DebugHUDView: View {
     @Binding var isExpanded: Bool
 
     var body: some View {
+        // 收起态只占一个小图标，把取景面积让出来；点一下展开成完整面板。
+        // 浮层是"只遮挡不挤压"的，所以收起/展开都不会改变取景器布局。
+        if isExpanded {
+            expandedPanel
+        } else {
+            collapsedIcon
+        }
+    }
+
+    // MARK: - 收起态
+
+    /// 收起态：一个 34×34 的小圆标。有错误时右上角挂红点，
+    /// 保证收起状态下也不会漏掉问题。
+    private var collapsedIcon: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isExpanded = true
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Text("DBG")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.yellow)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(Color.black.opacity(0.55)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 0.5))
+
+                if hasError {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 3, y: -1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(hasError ? "调试信息（有错误）" : "调试信息")
+        .accessibilityHint("点按展开调试浮层")
+    }
+
+    // MARK: - 展开态
+
+    /// 展开态：完整状态行 + 最近 8 条日志 + 导出入口
+    private var expandedPanel: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text("DEBUG")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(.yellow)
                 Spacer(minLength: 12)
-                Text(isExpanded ? "收起" : "展开")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isExpanded = false
+                    }
+                } label: {
+                    Text("收起")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.leading, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("收起调试浮层")
             }
 
             ForEach(snapshot.lines) { line in
@@ -97,29 +151,27 @@ struct DebugHUDView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if isExpanded {
-                Divider().overlay(Color.white.opacity(0.25))
+            Divider().overlay(Color.white.opacity(0.25))
 
-                if log.recent.isEmpty {
-                    Text("（暂无日志）")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
-                } else {
-                    ForEach(log.recent.suffix(8)) { entry in
-                        Text(entry.line)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(color(for: entry.level))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            if log.recent.isEmpty {
+                Text("（暂无日志）")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+            } else {
+                ForEach(log.recent.suffix(8)) { entry in
+                    Text(entry.line)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(color(for: entry.level))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                ShareLink(item: log.fileURL) {
-                    Text("导出完整日志")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.cyan)
-                }
-                .padding(.top, 2)
             }
+
+            ShareLink(item: log.fileURL) {
+                Text("导出完整日志")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.cyan)
+            }
+            .padding(.top, 2)
         }
         .padding(8)
         .frame(maxWidth: 340, alignment: .leading)
@@ -131,12 +183,11 @@ struct DebugHUDView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isExpanded.toggle()
-            }
-        }
+    }
+
+    private var hasError: Bool {
+        guard let error = snapshot.lastErrorText else { return false }
+        return !error.isEmpty
     }
 
     private func color(for level: LogLevel) -> Color {

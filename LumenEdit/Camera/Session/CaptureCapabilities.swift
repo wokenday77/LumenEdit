@@ -42,39 +42,58 @@ enum CaptureCapabilities {
 
     // MARK: - 格式
 
-    /// 挑选一个合适的采集格式。
+    /// 按偏好排序的采集格式候选列表。
     ///
-    /// 选择优先级（`min(by:)` 语义：返回 true 表示左边更优先）：
+    /// 排序规则（`sorted(by:)` 语义：返回 true 表示左边更优先）：
     ///   1. 4:3 —— 拍照满幅，不裁切。16:9 的格式会浪费传感器上下部分。
     ///   2. 像素质尽量小 —— 预览和实时处理的开销跟分辨率直接相关，够用就行。
-    ///   3. 宽度降序后取最小 —— 同上，反向收敛。
+    ///
+    /// **为什么返回整份列表而不是单个格式**：
+    /// `AVCaptureDeviceFormat` 不暴露任何"支不支持 Live Photo"的属性
+    /// （在 `AVCaptureDevice.h` 里 grep `LivePhoto` 零命中）。
+    /// 唯一可信的判据是把格式**应用到设备之后**再读
+    /// `AVCapturePhotoOutput.isLivePhotoCaptureSupported`。
+    /// 所以调用方需要一份有序候选，逐个应用、逐个探测。
     ///
     /// - Parameters:
     ///   - minimumWidth: 最低横向分辨率要求
     ///   - targetFrameRate: 必须支持到的帧率
+    static func formatCandidates(
+        for device: AVCaptureDevice,
+        minimumWidth: Int32 = 1920,
+        targetFrameRate: Double = 30
+    ) -> [AVCaptureDevice.Format] {
+        device.formats
+            .filter { format in
+                let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                guard dimensions.width >= minimumWidth else { return false }
+                return format.videoSupportedFrameRateRanges.contains { range in
+                    range.maxFrameRate + 0.001 >= targetFrameRate
+                }
+            }
+            .sorted { lhs, rhs in
+                let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+                let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+                let leftIsFourThree = left.width * 3 == left.height * 4
+                let rightIsFourThree = right.width * 3 == right.height * 4
+                if leftIsFourThree != rightIsFourThree {
+                    return leftIsFourThree
+                }
+                return left.width * left.height < right.width * right.height
+            }
+    }
+
+    /// 候选中的首选格式（不探测 Live Photo 能力时使用）
     static func preferredFormat(
         for device: AVCaptureDevice,
         minimumWidth: Int32 = 1920,
         targetFrameRate: Double = 30
     ) -> AVCaptureDevice.Format? {
-        let candidates = device.formats.filter { format in
-            let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            guard dimensions.width >= minimumWidth else { return false }
-            return format.videoSupportedFrameRateRanges.contains { range in
-                range.maxFrameRate + 0.001 >= targetFrameRate
-            }
-        }
-
-        return candidates.min { lhs, rhs in
-            let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
-            let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
-            let leftIsFourThree = left.width * 3 == left.height * 4
-            let rightIsFourThree = right.width * 3 == right.height * 4
-            if leftIsFourThree != rightIsFourThree {
-                return leftIsFourThree
-            }
-            return left.width * left.height < right.width * right.height
-        }
+        formatCandidates(
+            for: device,
+            minimumWidth: minimumWidth,
+            targetFrameRate: targetFrameRate
+        ).first
     }
 
     /// 某个格式支持的帧率范围（取各 range 的并集边界）
