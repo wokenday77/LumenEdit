@@ -366,6 +366,30 @@ final class CaptureSessionController: ObservableObject {
 
         guard configurationSucceeded else { return }
 
+        // ⚠️ 回到相机页时，如果当前模式需要麦克风，必须把音频会话重新激活。
+        //
+        // 为什么这里会漏：`stopInternal()`（离开相机页 / 切后台）会
+        // `audioSession.deactivate()` 释放音频；但再回来时 `configurationSucceeded`
+        // 已经是 true，`buildSession()` 被整个跳过，而 `configureAudioInputLocked`
+        // 又因为 `audioInput` 已存在直接 return —— 结果就是**麦克风输入还挂在会话上、
+        // 音频会话却是未激活状态**，录出来的 Live Photo 动图没有声音。
+        //
+        // 真机日志实证（2026-09-16）：14:12–14:17 的 8 张 Live Photo 全部是在
+        // 「音频未激活」状态下拍摄的，而 14:22 那批（未离开过页面）音频正常。
+        //
+        // `mode` 需要麦克风 ⟹ `audioInput != nil`：进入这类模式必经 `switchMode`
+        // → `configureAudioInputLocked` 添加输入；而移除输入时模式也必然已经切走。
+        if mode.requiresMicrophone, audioInput != nil, !audioSession.isActive {
+            do {
+                try audioSession.activateForRecording()
+            } catch {
+                DebugLog.shared.error(
+                    "session",
+                    "回到相机页时重新激活音频会话失败（Live Photo 可能无声）：\(error.localizedDescription)"
+                )
+            }
+        }
+
         if !session.isRunning {
             DebugLog.shared.info("session", "startRunning()")
             session.startRunning()
