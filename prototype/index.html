@@ -487,8 +487,13 @@
   .screen.simple .row-focal{height:0px;opacity:0;pointer-events:none;}
   .screen.simple .row-scenestyle{height:36px;}
   .screen.simple .ss-arrow{display:none;}
-  .screen.simple .more-menu{display:none;}
   .screen.simple .grid{opacity:0;}
+  /* ⚠️ 简易模式下**必须**还能打开「更多」菜单 —— 那是退出简易模式的唯一出口。
+     原先这里写的是 `.screen.simple .more-menu{display:none}`，它与
+     `.screen.more-on .more-menu{display:flex}` 优先级相同（都是两个类），
+     而这条写在文件更靠后 → 后者被覆盖 → 进了简易模式就再也点不出菜单。
+     改用三重选择器，保证显示优先级更高。 */
+  .screen.simple.more-on .more-menu{display:flex;}
 
   /* ---------- 页脚说明（手机外面） ---------- */
   .caption{
