@@ -67,15 +67,77 @@ struct DebugHUDView: View {
     @Binding var isExpanded: Bool
 
     var body: some View {
+        // 收起态只占一个小图标，把取景面积让出来；点一下展开成完整面板。
+        // 浮层是"只遮挡不挤压"的，所以收起/展开都不会改变取景器布局。
+        if isExpanded {
+            expandedPanel
+        } else {
+            collapsedIcon
+        }
+    }
+
+    // MARK: - 收起态
+
+    /// 收起态：一个 32×32 的小圆标，点一下才展开成完整面板。
+    ///
+    /// 视觉取舍：**只有圆底是半透明的（12% 白），文字用 95% 白保持醒目**。
+    /// 早先把整块一起压到 55% 不透明度，实测反馈字母太暗、看不清；
+    /// 改成"底板淡、字母亮"，既有融入取景画面的通透感，又保证一眼能读到。
+    /// 另补一层淡黑影，避免纯白字落在明亮场景（天空、白墙）上糊成一片。
+    ///
+    /// 刻意**不用 `.ultraThinMaterial`**：毛玻璃要对每秒 30–60 帧的取景画面
+    /// 做实时模糊，有掉帧发热风险（见交接单风险 #7），先做静态半透明。
+    private var collapsedIcon: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isExpanded = true
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Text("DBG")
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.white.opacity(0.12)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.55), radius: 1.5, y: 0.5)
+
+                if hasError {
+                    Circle()
+                        .fill(Color.red.opacity(0.92))
+                        .frame(width: 7, height: 7)
+                        .offset(x: 2, y: -1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(hasError ? "调试信息（有错误）" : "调试信息")
+        .accessibilityHint("点按展开调试浮层")
+    }
+
+    // MARK: - 展开态
+
+    /// 展开态：完整状态行 + 最近 8 条日志 + 导出入口
+    private var expandedPanel: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text("DEBUG")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(.yellow)
                 Spacer(minLength: 12)
-                Text(isExpanded ? "收起" : "展开")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isExpanded = false
+                    }
+                } label: {
+                    Text("收起")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.leading, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("收起调试浮层")
             }
 
             ForEach(snapshot.lines) { line in
@@ -97,29 +159,27 @@ struct DebugHUDView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if isExpanded {
-                Divider().overlay(Color.white.opacity(0.25))
+            Divider().overlay(Color.white.opacity(0.25))
 
-                if log.recent.isEmpty {
-                    Text("（暂无日志）")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
-                } else {
-                    ForEach(log.recent.suffix(8)) { entry in
-                        Text(entry.line)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(color(for: entry.level))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            if log.recent.isEmpty {
+                Text("（暂无日志）")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+            } else {
+                ForEach(log.recent.suffix(8)) { entry in
+                    Text(entry.line)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(color(for: entry.level))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                ShareLink(item: log.fileURL) {
-                    Text("导出完整日志")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.cyan)
-                }
-                .padding(.top, 2)
             }
+
+            ShareLink(item: log.fileURL) {
+                Text("导出完整日志")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.cyan)
+            }
+            .padding(.top, 2)
         }
         .padding(8)
         .frame(maxWidth: 340, alignment: .leading)
@@ -131,12 +191,11 @@ struct DebugHUDView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isExpanded.toggle()
-            }
-        }
+    }
+
+    private var hasError: Bool {
+        guard let error = snapshot.lastErrorText else { return false }
+        return !error.isEmpty
     }
 
     private func color(for level: LogLevel) -> Color {

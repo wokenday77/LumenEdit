@@ -330,15 +330,19 @@ final class CaptureSessionController: ObservableObject {
                 return
             case .success(let device):
                 // 提交之后再应用格式与帧率（见类注释的顺序说明）
-                if let format = CaptureCapabilities.preferredFormat(for: device, minimumWidth: 1920, targetFrameRate: 30) {
-                    do {
-                        try configurator.applyFormat(format, frameRate: 30, to: device)
-                    } catch {
-                        DebugLog.shared.error("session", "应用采集格式失败：\(error.localizedDescription)")
-                    }
-                } else {
-                    DebugLog.shared.warn("session", "没有找到满足条件的采集格式，沿用设备默认格式")
-                }
+                applyPreferredFormatLocked(to: device)
+
+                // ⚠️ 必须在格式定下来之后**重新刷新一次 Live Photo 开关**。
+                // SDK 头文件 `AVCapturePhotoOutput.h` 写得很明确：
+                //   "When this property changes from YES to NO, livePhotoCaptureEnabled
+                //    also reverts to NO. If you've previously opted in for Live Photo
+                //    capture and then change configurations, you may need to set
+                //    livePhotoCaptureEnabled = YES again."
+                // 原先只在 beginConfiguration 区间内读过一次能力值，那时设备还是默认格式，
+                // 读到的 false 被一路带到了运行期。
+                session.beginConfiguration()
+                photoService.configure(for: mode)
+                session.commitConfiguration()
 
                 photoService.prepareTemplate()
 
@@ -361,6 +365,30 @@ final class CaptureSessionController: ObservableObject {
         }
 
         guard configurationSucceeded else { return }
+
+        // ⚠️ 回到相机页时，如果当前模式需要麦克风，必须把音频会话重新激活。
+        //
+        // 为什么这里会漏：`stopInternal()`（离开相机页 / 切后台）会
+        // `audioSession.deactivate()` 释放音频；但再回来时 `configurationSucceeded`
+        // 已经是 true，`buildSession()` 被整个跳过，而 `configureAudioInputLocked`
+        // 又因为 `audioInput` 已存在直接 return —— 结果就是**麦克风输入还挂在会话上、
+        // 音频会话却是未激活状态**，录出来的 Live Photo 动图没有声音。
+        //
+        // 真机日志实证（2026-09-16）：14:12–14:17 的 8 张 Live Photo 全部是在
+        // 「音频未激活」状态下拍摄的，而 14:22 那批（未离开过页面）音频正常。
+        //
+        // `mode` 需要麦克风 ⟹ `audioInput != nil`：进入这类模式必经 `switchMode`
+        // → `configureAudioInputLocked` 添加输入；而移除输入时模式也必然已经切走。
+        if mode.requiresMicrophone, audioInput != nil, !audioSession.isActive {
+            do {
+                try audioSession.activateForRecording()
+            } catch {
+                DebugLog.shared.error(
+                    "session",
+                    "回到相机页时重新激活音频会话失败（Live Photo 可能无声）：\(error.localizedDescription)"
+                )
+            }
+        }
 
         if !session.isRunning {
             DebugLog.shared.info("session", "startRunning()")
@@ -438,6 +466,70 @@ final class CaptureSessionController: ObservableObject {
 
         session.commitConfiguration()
         return outcome
+    }
+
+    /// 挑选并应用采集格式（必须在 commitConfiguration 之后调用）。
+    ///
+    /// **为什么不能直接拿候选里的第一个**：
+    /// `AVCaptureDeviceFormat` 不暴露任何"支不支持 Live Photo"的属性，
+    /// 唯一可信的判据是格式应用到设备之后读
+    /// `AVCapturePhotoOutput.isLivePhotoCaptureSupported`。
+    ///
+    /// 真机实测（iPhone 16 Pro / iOS 26.6）：原先按"4:3 → 面积最小"选中的
+    /// `1920x1440` 是视频向格式，它的 Live Photo 能力为 `false`，
+    /// 于是切「Live」被 `switchMode` 拦下、拍出来的只有静态照片，
+    /// 相册里自然没有 Live 角标、也放不出动图。
+    ///
+    /// 所以这里按候选顺序逐个应用，**取第一个 Live Photo 能力为 true 的**；
+    /// 若全都不支持（或探测本身不可靠），退回第一个候选，
+    /// 行为与改动前一致，不影响普通拍照。
+    private func applyPreferredFormatLocked(to device: AVCaptureDevice) {
+        let candidates = CaptureCapabilities.formatCandidates(
+            for: device,
+            minimumWidth: 1920,
+            targetFrameRate: 30
+        )
+
+        guard !candidates.isEmpty else {
+            DebugLog.shared.warn("session", "没有找到满足条件的采集格式，沿用设备默认格式")
+            return
+        }
+
+        var fallback: AVCaptureDevice.Format?
+        var chosen: AVCaptureDevice.Format?
+
+        for candidate in candidates {
+            do {
+                try configurator.applyFormat(candidate, frameRate: 30, to: device)
+            } catch {
+                DebugLog.shared.error("session", "应用采集格式失败：\(error.localizedDescription)")
+                continue
+            }
+            if fallback == nil { fallback = candidate }
+            if photoService.output.isLivePhotoCaptureSupported {
+                chosen = candidate
+                break
+            }
+        }
+
+        // 兜底路径下循环可能停在"最后一个试过且不支持 Live Photo"的格式上，
+        // 这里把设备还原到第一个候选，保证普通拍照用的是最小的那一档。
+        let final = chosen ?? fallback
+        if let final, final !== device.activeFormat {
+            do {
+                try configurator.applyFormat(final, frameRate: 30, to: device)
+            } catch {
+                DebugLog.shared.error("session", "回退采集格式失败：\(error.localizedDescription)")
+            }
+        }
+
+        guard let final else { return }
+        DebugLog.shared.info(
+            "session",
+            "选用采集格式 \(CaptureCapabilities.formatSummary(final))"
+            + "，Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
+            + "（候选共 \(candidates.count) 个）"
+        )
     }
 
     /// 音频输入按需增删：只有需要麦克风的模式（Live Photo / 视频）才挂。
