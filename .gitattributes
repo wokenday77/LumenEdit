@@ -1,0 +1,14 @@
+# 换行符统一策略
+#
+# 本项目的编写机是 Windows、编译机是 macOS。
+# 统一在仓库内使用 LF，避免每次跨机器 diff 出一堆"M 文件全部行都变了"的噪音。
+# Swift / JS / Markdown / plist / yml 全部用 LF，Xcode 与 Node 都能正常读取。
+* text=auto eol=lf
+
+# 二进制文件不做任何换行符转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.heic binary
+*.mov binary
+*.zip binary

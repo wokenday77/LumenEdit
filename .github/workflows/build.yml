@@ -1,0 +1,78 @@
+name: Build
+
+# 公开仓库，Actions 分钟数无限。任何 push / PR 都会跑一次编译校验。
+# 我在 Windows 上写的代码无法本地编译，这个工作流是唯一的编译反馈回路。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build iOS (no signing)
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select newest Xcode 16
+        run: |
+          XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XC" ]; then
+            echo "Selecting $XC"
+            sudo xcode-select -s "$XC"
+          fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Show scheme list
+        run: xcodebuild -list -project LumenEdit.xcodeproj
+
+      - name: Build for device (signing disabled)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project LumenEdit.xcodeproj \
+            -scheme LumenEdit \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build 2>&1 | tee build.log
+
+      - name: Show compile errors
+        if: failure()
+        run: |
+          echo "========== error / warning 摘要 =========="
+          grep -n -E "error:|warning:" build.log | head -200 || true
+          echo "========== 日志末尾 =========="
+          tail -100 build.log || true
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7

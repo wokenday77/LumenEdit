@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LumenEdit · 相机界面原型（全屏取景 + 浮层式）</title>
+<style>
+  /* ============================================================
+     LumenEdit 网页版界面原型 · 单文件 / 无外部依赖 / 双击即开
+
+     布局骨架参考飓风相机（取景器为主体、参数滑块排在底部、隐藏模块上划呼出、
+     设置里有简易模式），产品逻辑与视觉权重按 LumenEdit 自己的走：
+       · 场景 / 风格 的视觉权重高于参数条（我们的核心是"选场景直接拍"）
+       · 所有参数滑块只用一种形态（竖向），不重复飓风相机圆环+横条混排的问题
+
+     取景器铺满全屏，所有控件都是叠在它上面的浮层 —— 只遮挡，不挤压。
+     预设数据（STYLES / FILTERS / SCENES）与 docs/02-风格与滤镜清单.md 同源。
+     ============================================================ */
+
+  :root{
+    --bg:#0a0c0f;
+    --panel:rgba(16,19,23,.82);
+    --panel-solid:rgba(16,19,23,.92);
+    --stroke:rgba(255,255,255,.14);
+    --stroke-2:rgba(255,255,255,.26);
+    --txt:#fff;
+    --txt-2:rgba(255,255,255,.64);
+    --txt-3:rgba(255,255,255,.38);
+    --accent:#f2af3c;
+    --accent-dim:rgba(242,175,60,.20);
+    --ok:#34d058;
+    --scene:none;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:radial-gradient(1100px 620px at 50% -12%, #1b2229 0%, transparent 62%), var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--txt);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
+  }
+
+  /* ---------- 手机外壳 ---------- */
+  .phone{
+    height:min(844px, calc(100vh - 24px));
+    aspect-ratio:390 / 844;
+    padding:9px;border-radius:52px;position:relative;flex:0 0 auto;
+    background:linear-gradient(160deg,#3a424c 0%, #191d22 22%, #0e1114 100%);
+    box-shadow:0 40px 90px rgba(0,0,0,.72), 0 0 0 1px rgba(255,255,255,.07) inset;
+  }
+  .phone::before{
+    content:"";position:absolute;left:-2px;top:19%;width:2px;height:5%;border-radius:2px;background:#4a5158;
+    box-shadow:0 42px 0 #4a5158, 0 84px 0 #4a5158;
+  }
+  .phone::after{content:"";position:absolute;right:-2px;top:26%;width:2px;height:9%;border-radius:2px;background:#4a5158;}
+
+  /* 屏幕：取景器的画布，所有浮层的定位基准 */
+  .screen{position:relative;height:100%;border-radius:44px;background:#000;overflow:hidden;}
+
+  /* ---------- 状态栏 + 灵动岛（系统层，最上） ---------- */
+  .statusbar{
+    position:absolute;top:0;left:0;right:0;height:30px;z-index:8;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 22px;font-size:12px;font-weight:600;
+  }
+  .island{
+    position:absolute;top:7px;left:50%;transform:translateX(-50%);
+    width:96px;height:23px;border-radius:14px;background:#000;z-index:9;
+    box-shadow:0 0 0 1px rgba(255,255,255,.05);
+  }
+  .sb-right{display:flex;align-items:center;gap:5px;}
+  .sb-right svg{display:block;}
+
+  /* ---------- 取景器：铺满全屏的底图（z-index 最低） ---------- */
+  .viewport{position:absolute;inset:0;z-index:1;isolation:isolate;cursor:crosshair;}
+  .stage{position:absolute;inset:0;}
+  .grade{position:absolute;inset:0;transform:translateZ(0);}
+  .exposure{position:absolute;inset:0;}
+  .scene{
+    position:absolute;inset:0;
+    background-image:var(--scene);background-size:cover;background-position:center;
+  }
+  .tint{position:absolute;inset:0;pointer-events:none;}
+
+  .grid{position:absolute;inset:0;pointer-events:none;opacity:.14;}
+  .screen.grid-off .grid{opacity:0;}
+  .grid i{position:absolute;background:#fff;}
+  .grid i.v{top:0;bottom:0;width:1px;}
+  .grid i.h{left:0;right:0;height:1px;}
+  .corners{position:absolute;inset:16px;pointer-events:none;}
+  .corners span{position:absolute;width:20px;height:20px;border:1.5px solid rgba(255,255,255,.42);}
+  .corners span:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;border-radius:4px 0 0 0;}
+  .corners span:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;border-radius:0 4px 0 0;}
+  .corners span:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;border-radius:0 0 0 4px;}
+  .corners span:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;border-radius:0 0 4px 0;}
+
+  .focus-square{
+    position:absolute;width:74px;height:74px;left:-999px;top:-999px;
+    border:1.6px solid #ffd23c;border-radius:6px;pointer-events:none;
+    box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 0 12px rgba(255,210,60,.35);
+    transform:translate(-50%,-50%) scale(1);
+  }
+  .af-chip{
+    position:absolute;left:50%;top:34%;transform:translateX(-50%);
+    font-size:11px;color:#ffd23c;background:rgba(0,0,0,.55);
+    padding:3px 10px;border-radius:10px;pointer-events:none;
+  }
+  .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;}
+
+  .vf-hint{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    font-size:11px;line-height:1.6;text-align:center;
+    color:rgba(255,255,255,.6);background:rgba(0,0,0,.4);
+    padding:5px 12px;border-radius:11px;pointer-events:none;
+    transition:opacity .55s;
+  }
+  .vf-hint.hide{opacity:0;}
+
+  /* ---------- 可读性渐隐（scrim）：不算遮挡，画面仍可见 ---------- */
+  .scrim-top{
+    position:absolute;top:0;left:0;right:0;height:198px;z-index:3;pointer-events:none;
+    background:linear-gradient(180deg, rgba(0,0,0,.58) 0%, rgba(0,0,0,.26) 52%, rgba(0,0,0,0) 100%);
+  }
+  .scrim-bottom{
+    position:absolute;left:0;right:0;bottom:0;height:410px;z-index:3;pointer-events:none;
+    background:linear-gradient(0deg, rgba(0,0,0,.70) 0%, rgba(0,0,0,.42) 42%, rgba(0,0,0,0) 100%);
+  }
+
+  /* ---------- 顶部控制行（浮层 · 常驻 56px = 主行 30 + 副行 26） ----------
+     严格对标飓风相机：
+       主行 = 左「L / R 音频电平表」 + 中「模式条」 + 右「闪光灯 / 网格 / 更多」
+       副行 = 左「影调预览」 + 右「剩余存储」
+     两行都是浮层，只遮挡不挤压取景器。 */
+  .topbar{
+    position:absolute;top:30px;left:0;right:0;height:56px;z-index:5;
+    display:flex;flex-direction:column;
+  }
+  .tb-row1{height:30px;display:flex;align-items:center;gap:8px;padding:0 14px;}
+  .tb-row2{height:26px;display:flex;align-items:center;gap:8px;padding:0 14px;}
+
+  /* L / R 音频电平表：静态示意，录音时由 AVAudioRecorder 驱动（P1b） */
+  .levels{display:flex;flex-direction:column;gap:2.5px;flex:0 0 auto;}
+  .levels .lv{display:flex;align-items:center;gap:3px;height:5px;}
+  .levels .ch{font-size:8px;font-weight:700;color:rgba(255,255,255,.55);width:5px;}
+  .levels .dots{display:flex;gap:2px;}
+  .levels .dots i{width:3.5px;height:3.5px;border-radius:50%;background:rgba(255,255,255,.20);}
+  .levels .dots i.on{background:var(--ok);box-shadow:0 0 4px rgba(52,208,88,.75);}
+  .levels .dots i.hot{background:var(--accent);box-shadow:0 0 4px rgba(242,175,60,.75);}
+
+  /* 主行右侧图标：闪光灯 / 网格 / 更多 */
+  .tb-icons{display:flex;align-items:center;gap:15px;flex:0 0 auto;}
+  .tb-icon{
+    width:20px;height:20px;padding:0;border:0;background:none;cursor:pointer;
+    color:rgba(255,255,255,.88);display:flex;align-items:center;justify-content:center;
+  }
+  .tb-icon.on{color:#fff;}
+  .tb-icon.accent{color:var(--accent);}
+
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;
+    background:rgba(16,19,23,.76);border:.5px solid var(--stroke);
+    font-size:11px;font-weight:600;color:var(--txt);white-space:nowrap;
+    font-family:inherit;cursor:pointer;
+  }
+  .chip svg{display:block;flex:0 0 auto;opacity:.85;}
+  .chip.accent{color:var(--accent);border-color:rgba(242,175,60,.45);background:var(--accent-dim);}
+  .spacer{flex:1 1 auto;}
+
+  /* 「更多」下拉菜单（简易模式 / HUD / 设置 收进来，避免顶栏堆胶囊） */
+  .more-menu{
+    position:absolute;right:14px;top:90px;z-index:12;width:168px;
+    background:var(--panel-solid);border:.5px solid var(--stroke-2);border-radius:12px;
+    padding:5px;display:none;flex-direction:column;gap:2px;
+    box-shadow:0 14px 34px rgba(0,0,0,.55);
+  }
+  .screen.more-on .more-menu{display:flex;}
+  .more-menu button{
+    height:30px;border:0;background:none;border-radius:8px;cursor:pointer;
+    display:flex;align-items:center;gap:8px;padding:0 10px;
+    font-family:inherit;font-size:12px;color:var(--txt);text-align:left;
+  }
+  .more-menu button:active{background:rgba(255,255,255,.10);}
+  .more-menu .st{margin-left:auto;font-size:10px;color:var(--txt-3);}
+  .more-menu .st.on{color:var(--accent);}
+
+  /* ---------- 模式条：纯文字标签（对标系统相机 / 飓风相机的顶部标签页） ----------
+     选中 = 白色加粗，未选中 = 半透明灰，置灰入口带挂锁。
+     刻意不用强调色 —— 参考图里模式条的选中态就是"变白变粗"。 */
+  .mode-tabs{display:flex;align-items:center;gap:16px;margin:0 auto;}
+  .mode-tab{
+    height:30px;padding:0;border:0;background:none;cursor:pointer;
+    display:inline-flex;align-items:center;gap:4px;
+    font-family:inherit;font-size:12.5px;font-weight:600;color:rgba(255,255,255,.5);
+    transition:.18s;white-space:nowrap;
+  }
+  .mode-tab svg{display:block;}
+  .mode-tab.on{color:#fff;font-weight:700;}
+  .mode-tab.locked{color:rgba(255,255,255,.3);font-weight:500;}
+  .mode-tab.locked .lk{margin-top:0;}
+
+  /* ---------- 实况角标：实况模式生效时的明确信号 ----------
+     已按拍板改为 Live Photo 同心圆图标（与模式条同一套图标语言，与系统相机一致），
+     不再用「实况」文字。保留黄底 + 黑色图标，保证在明亮取景画面上依然醒目。 */
+  .live-badge{
+    position:absolute;left:50%;top:90px;transform:translateX(-50%);
+    z-index:5;color:#111;background:var(--accent);
+    width:22px;height:22px;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;transition:opacity .25s;pointer-events:none;
+  }
+  .live-badge svg{display:block;width:14px;height:14px;}
+  .live-badge.show{opacity:1;}
+
+  /* ---------- 底部浮层栈（自下而上堆叠，只遮挡不挤压） ---------- */
+  .bottom-stack{
+    position:absolute;left:0;right:0;bottom:0;z-index:5;
+    display:flex;flex-direction:column;
+  }
+  .row{
+    overflow:hidden;flex:0 0 auto;
+    transition:height .3s cubic-bezier(.22,.9,.3,1), opacity .22s ease;
+  }
+
+  /* 滤镜条：默认隐藏 */
+  .row-filter{height:0;opacity:0;pointer-events:none;}
+  .screen.filter-on .row-filter{height:68px;opacity:1;pointer-events:auto;}
+
+  /* 场景 · 风格行：折叠 36 / 展开 144 */
+  .row-scenestyle{height:36px;}
+  .screen.ss-on .row-scenestyle{height:144px;}
+  .ss-inner{padding:0 0 0;}
+
+  /* 参数排：平铺 104 / 收起 44 */
+  .row-params{height:104px;}
+  .screen.params-closed .row-params{height:44px;}
+
+  /* 简易模式下的 EV 单条横滑：平时高度 0 */
+  .row-ev{height:0;opacity:0;pointer-events:none;}
+  .screen.simple .row-ev{height:52px;opacity:1;pointer-events:auto;}
+
+  /* 焦段条：常驻 44px；场景风格条 / 滤镜条展开时自动收起（浮层互斥，守住 50% 底线） */
+  .row-focal{height:44px;}
+  .screen.ss-on .row-focal{height:0px;opacity:0;pointer-events:none;}
+  .screen.filter-on .row-focal{height:0px;opacity:0;pointer-events:none;}
+  .focal-strip{height:44px;display:flex;align-items:center;justify-content:center;gap:9px;padding:0 14px;}
+
+  /* 焦段药丸（对标参考图）：深色圆角块 = 刻度标记 + 「13 mm」；选中转白底黑字 */
+  .focal-pill{
+    flex:0 0 auto;width:44px;height:30px;padding:0;border-radius:8px;cursor:pointer;
+    border:.5px solid rgba(255,255,255,.16);background:rgba(255,255,255,.11);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font-family:inherit;color:rgba(255,255,255,.88);transition:background .16s,color .16s;
+  }
+  .focal-pill .mark{display:flex;align-items:flex-end;gap:1.5px;height:7px;}
+  .focal-pill .mark i{width:1.5px;border-radius:1px;background:currentColor;opacity:.9;}
+  .focal-pill .mm{font-size:8.5px;font-weight:600;line-height:1;letter-spacing:.2px;}
+  .focal-pill.on{background:#fff;border-color:#fff;color:#15181c;box-shadow:0 2px 10px rgba(0,0,0,.45);}
+
+  /* 快门排与底部安全区。
+     安全区原为 34px（照搬真机 Home 指示条区域的高度），对标参考图后压缩：
+     控件整体更贴底，底部不再出现一大片空黑。 */
+  .row-shutter{height:80px;}
+  .row-safe{height:18px;}
+
+  /* ---------- 场景 · 风格 ---------- */
+  .ss-collapsed{
+    height:36px;display:flex;align-items:center;gap:8px;padding:0 14px;
+  }
+  .ss-capsule{
+    flex:1 1 auto;height:28px;border-radius:14px;border:.5px solid var(--stroke);
+    background:var(--panel);display:flex;align-items:center;gap:7px;padding:0 11px;
+    font-family:inherit;color:var(--txt);font-size:11.5px;cursor:pointer;overflow:hidden;
+  }
+  .ss-capsule .tag{color:var(--txt-3);font-weight:500;flex:0 0 auto;}
+  .ss-capsule .val{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ss-capsule .val.strong{color:var(--accent);}
+  .ss-capsule .sep{color:var(--txt-3);flex:0 0 auto;}
+  .ss-arrow{
+    flex:0 0 28px;height:28px;border-radius:14px;border:.5px solid var(--stroke);
+    background:var(--panel);color:var(--txt-2);font-size:12px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:transform .3s;
+  }
+  .screen.ss-on .ss-arrow{transform:rotate(180deg);}
+  .ss-full{display:flex;flex-direction:column;}
+  .screen.simple .ss-full{display:none;}
+  .ss-block{border-top:.5px solid rgba(255,255,255,.07);padding-top:2px;}
+  .ss-block-title{
+    height:14px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 14px;font-size:9.5px;color:var(--txt-3);
+  }
+  .ss-block-title b{color:var(--txt-2);font-weight:600;}
+
+  /* ---------- 横滑条 ---------- */
+  .strip{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:0 14px;}
+  .strip::-webkit-scrollbar{display:none;}
+
+  /* 场景胶囊 */
+  .scene-chip{
+    flex:0 0 auto;height:28px;padding:0 14px;border-radius:14px;white-space:nowrap;
+    border:.5px solid var(--stroke);background:var(--panel);color:var(--txt-2);
+    font-size:12px;font-family:inherit;cursor:pointer;transition:.18s;
+  }
+  .scene-chip.on{background:var(--accent);border-color:var(--accent);color:#111;font-weight:600;}
+
+  /* 风格卡：缩略图 + 名称 + 参数徽标（一级视觉权重） */
+  .style-card{
+    flex:0 0 auto;width:74px;padding:0;border:0;background:none;cursor:pointer;
+    display:flex;flex-direction:column;gap:3px;font-family:inherit;
+  }
+  .style-thumb{
+    position:relative;width:74px;height:50px;border-radius:10px;overflow:hidden;
+    isolation:isolate;box-shadow:0 0 0 1px rgba(255,255,255,.12);
+  }
+  .thumb-img{
+    position:absolute;inset:0;
+    background-image:var(--scene);background-size:cover;background-position:center;
+  }
+  .style-card.on .style-thumb{box-shadow:0 0 0 2px var(--accent), 0 0 14px rgba(242,175,60,.4);}
+  .style-name{font-size:10.5px;font-weight:600;color:var(--txt-2);text-align:center;line-height:1.1;}
+  .style-card.on .style-name{color:var(--accent);}
+  .style-badge{font-size:8.5px;line-height:1.1;color:var(--txt-3);text-align:center;height:17px;overflow:hidden;}
+  .style-card.on .style-badge{color:rgba(242,175,60,.85);}
+
+  /* 滤镜卡：纯色块 + 名称，无徽标 —— 与风格卡强制区分 */
+  .filter-card{
+    flex:0 0 auto;width:60px;padding:0;border:0;background:none;cursor:pointer;
+    display:flex;flex-direction:column;gap:3px;font-family:inherit;
+  }
+  .filter-swatch{width:60px;height:24px;border-radius:8px;box-shadow:0 0 0 1px rgba(255,255,255,.12);}
+  .filter-card.on .filter-swatch{box-shadow:0 0 0 2px var(--accent), 0 0 14px rgba(242,175,60,.35);}
+  .filter-name{font-size:10px;color:var(--txt-2);text-align:center;line-height:1.1;}
+  .filter-card.on .filter-name{color:var(--accent);font-weight:600;}
+
+  /* ---------- 参数排：四列竖向滑块（形态统一，不用圆环） ---------- */
+  .params-open{height:104px;display:flex;align-items:stretch;padding:6px 10px 4px;}
+  .pcol{
+    flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;
+    min-width:0;
+  }
+  .pcol-label{
+    height:13px;font-size:10.5px;color:var(--txt-3);display:flex;align-items:center;gap:3px;
+    white-space:nowrap;
+  }
+  .pcol.disabled .pcol-label{opacity:.62;}
+  .pcol-slider{
+    position:relative;flex:1 1 auto;width:40px;display:flex;align-items:center;justify-content:center;
+    cursor:grab;touch-action:none;
+  }
+  .pcol.disabled .pcol-slider{cursor:not-allowed;}
+  .pcol-track{
+    position:absolute;left:50%;margin-left:-1.5px;top:2px;bottom:2px;
+    width:3px;border-radius:2px;background:rgba(255,255,255,.16);
+  }
+  .pcol-fill{
+    position:absolute;left:50%;margin-left:-1.5px;width:3px;
+    border-radius:2px;background:var(--accent);
+  }
+  .pcol.disabled .pcol-fill{background:rgba(255,255,255,.3);}
+  .pcol-knob{
+    position:absolute;left:50%;margin-left:-7.5px;
+    width:15px;height:15px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;
+  }
+  .pcol.disabled .pcol-knob{background:rgba(255,255,255,.55);}
+  .pcol-value{
+    height:15px;font-size:11.5px;font-weight:700;color:var(--accent);
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+  }
+  .pcol.disabled .pcol-value{color:var(--txt-3);font-weight:500;}
+  .pcol-center-dot{
+    position:absolute;left:50%;transform:translateX(-50%);width:9px;height:1px;
+    background:var(--stroke-2);
+  }
+
+  /* ---------- 参数排收起态：底部图标行（严格对标参考图的底部图标排） ----------
+     七项：前置 / 对焦 / 白平衡 / 感光 / 快门速度 / 曝光补偿 / 设置
+     形态 = 图标 + 中文小字，均匀铺满；当前值不在这里重复显示（参数排平铺态与 HUD 里看） */
+  .params-closed-bar{
+    height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 6px;
+  }
+  .icon-item{
+    flex:1 1 0;min-width:0;height:42px;padding:0;border:0;background:none;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:rgba(255,255,255,.9);font-family:inherit;
+  }
+  .icon-item svg{display:block;flex:0 0 auto;}
+  .icon-item .glyph{font-size:11px;font-weight:700;letter-spacing:.4px;line-height:1;}
+  .icon-item .t{font-size:8.5px;line-height:1;color:rgba(255,255,255,.6);white-space:nowrap;}
+  .icon-item.accent{color:var(--accent);}
+  .icon-item.accent .t{color:rgba(242,175,60,.85);}
+
+  /* ---------- 简易模式的 EV 单条横滑 ---------- */
+  .ev-strip{height:52px;display:flex;align-items:center;gap:10px;padding:0 14px;}
+  .ev-strip .lab{font-size:10.5px;color:var(--txt-2);flex:0 0 auto;}
+  .ev-strip .track{
+    position:relative;flex:1 1 auto;height:26px;display:flex;align-items:center;cursor:pointer;
+    touch-action:none;
+  }
+  .ev-strip .bar{position:absolute;left:0;right:0;height:3px;border-radius:2px;background:rgba(255,255,255,.18);}
+  .ev-strip .mid{position:absolute;left:50%;width:1px;height:11px;background:var(--stroke-2);}
+  .ev-strip .fill{position:absolute;height:3px;border-radius:2px;background:var(--accent);}
+  .ev-strip .knob{
+    position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;
+  }
+  .ev-strip .num{
+    flex:0 0 52px;text-align:right;font-size:12.5px;font-weight:700;color:var(--accent);
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ---------- 快门排（浮层 · 常驻 80px） ---------- */
+  .shutter-row{height:80px;display:flex;align-items:center;gap:14px;padding:0 18px;}
+  .thumb{
+    width:50px;height:50px;border-radius:12px;overflow:hidden;position:relative;flex:0 0 auto;
+    box-shadow:0 0 0 1.5px rgba(255,255,255,.34);cursor:pointer;isolation:isolate;background:#1a1d21;
+  }
+  .shutter-center{flex:1 1 auto;display:flex;justify-content:center;}
+  .shutter{
+    width:66px;height:66px;border-radius:50%;background:none;border:0;padding:0;cursor:pointer;
+    position:relative;display:grid;place-items:center;
+  }
+  .shutter .ring{position:absolute;inset:0;border-radius:50%;border:4px solid #fff;}
+  .shutter .core{width:50px;height:50px;border-radius:50%;background:#fff;transition:transform .16s ease;}
+  .shutter.busy .core{transform:scale(.66);}
+  .shutter .spin{
+    position:absolute;width:22px;height:22px;border-radius:50%;
+    border:2px solid rgba(0,0,0,.25);border-top-color:#111;
+    animation:spin .7s linear infinite;opacity:0;transition:opacity .12s;
+  }
+  .shutter.busy .spin{opacity:1;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  /* 镜头切换：快门右侧的小圆按钮（对标参考图那颗圆形箭头键） */
+  .flip-btn{
+    flex:0 0 30px;width:30px;height:30px;padding:0;border:0;border-radius:50%;cursor:pointer;
+    background:rgba(255,255,255,.16);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+  }
+  /* 右下角：当前风格预览（彩色描边），点击展开场景与风格 */
+  .style-thumb{
+    flex:0 0 50px;width:50px;height:50px;padding:2px;border:0;border-radius:13px;cursor:pointer;
+    background:linear-gradient(135deg,#ffd23c,#ff7a59,#8b7bff,#34d058);
+    display:block;
+  }
+  .style-thumb .inner{
+    display:block;width:100%;height:100%;border-radius:11px;overflow:hidden;
+    position:relative;isolation:isolate;background:#1a1d21;
+  }
+
+  /* ---------- 调试浮层 ---------- */
+  .hud{
+    position:absolute;left:14px;top:80px;z-index:6;max-width:calc(100% - 28px);
+    background:rgba(0,0,0,.66);border:.5px solid var(--stroke);border-radius:10px;
+    padding:7px 9px;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:9.5px;line-height:1.65;color:rgba(255,255,255,.86);
+    display:none;pointer-events:none;
+  }
+  .screen.hud-on .hud{display:block;}
+  .hud .hl{color:var(--accent);}
+  .hud .dim{color:rgba(255,255,255,.45);}
+
+  /* ---------- 提示条 ---------- */
+  .toast{
+    position:absolute;left:50%;top:58%;transform:translate(-50%,8px);
+    background:rgba(0,0,0,.84);border:.5px solid var(--stroke);color:#fff;
+    font-size:11.5px;font-weight:500;padding:8px 14px;border-radius:16px;max-width:86%;
+    text-align:center;line-height:1.5;opacity:0;transition:.22s;pointer-events:none;z-index:20;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0);}
+
+  /* ---------- 简易模式：只保留取景器 / 快门 / 缩略图 / 场景 / EV ---------- */
+  .screen.simple .row-params{height:0;opacity:0;pointer-events:none;}
+  .screen.simple .row-filter{height:0;opacity:0;pointer-events:none;}
+  .screen.simple .row-focal{height:0px;opacity:0;pointer-events:none;}
+  .screen.simple .row-scenestyle{height:36px;}
+  .screen.simple .ss-arrow{display:none;}
+  .screen.simple .more-menu{display:none;}
+  .screen.simple .grid{opacity:0;}
+
+  /* ---------- 页脚说明（手机外面） ---------- */
+  .caption{
+    position:fixed;left:16px;bottom:12px;max-width:min(430px, 44vw);
+    font-size:11px;line-height:1.7;color:rgba(255,255,255,.34);
+  }
+  .caption b{color:rgba(255,255,255,.62);font-weight:600;}
+  @media (max-width:1180px){ .caption{display:none;} }
+
+  /* ---------- 参数排的两种状态互斥显示 ---------- */
+  .params-closed-bar{display:none;}
+  .screen.params-closed .params-open{display:none;}
+  .screen.params-closed .params-closed-bar{display:flex;}
+
+  /* ---------- 纯 CSS 画的挂锁（不依赖字体/emoji） ---------- */
+  .lk{width:7px;height:8px;flex:0 0 auto;background:currentColor;opacity:.55;border-radius:1.5px;position:relative;margin-top:2px;}
+  .lk::before{
+    content:"";position:absolute;left:1px;top:-3.5px;width:3px;height:4px;
+    border:1.3px solid currentColor;border-bottom:0;border-radius:3px 3px 0 0;
+  }
+
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="screen" id="screen">
+
+    <div class="island"></div>
+
+    <!-- ===== 取景器：铺满全屏的底图（z-index 最低，所有浮层叠在它上面） ===== -->
+    <div class="viewport" id="viewport">
+      <div class="stage">
+        <div class="grade" id="grade">
+          <div class="exposure" id="exposure">
+            <div class="scene"></div>
+          </div>
+        </div>
+        <div class="tints" id="tints"></div>
+      </div>
+
+      <div class="grid" id="grid">
+        <i class="v" style="left:33.33%"></i><i class="v" style="left:66.66%"></i>
+        <i class="h" style="top:33.33%"></i><i class="h" style="top:66.66%"></i>
+      </div>
+      <div class="corners"><span></span><span></span><span></span><span></span></div>
+
+      <div class="flash" id="flash"></div>
+    </div>
+
+    <div class="vf-hint" id="vfHint">点按画面任意位置对焦<br>上划呼出滤镜条 · 下划收起</div>
+    <!-- 实况角标：内容由 JS 注入同心圆图标（复用 ICON_LIVE），不在此重复维护一份 SVG -->
+    <div class="live-badge" id="liveBadge"></div>
+    <div class="scrim-top"></div>
+    <div class="scrim-bottom"></div>
+
+    <!-- ===== 系统状态栏 ===== -->
+    <div class="statusbar">
+      <span>9:41</span>
+      <span class="sb-right">
+        <svg width="17" height="11" viewBox="0 0 17 11" fill="#fff"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+        <svg width="16" height="11" viewBox="0 0 16 11" fill="#fff"><path d="M8 10.6 6.2 8.7a2.6 2.6 0 0 1 3.6 0L8 10.6Zm-3.1-3.3a6 6 0 0 1 6.2 0l1.2-1.3a7.8 7.8 0 0 0-8.6 0l1.2 1.3ZM1.3 3.9a10.7 10.7 0 0 1 13.4 0L16 2.6a12.5 12.5 0 0 0-16 0l1.3 1.3Z"/></svg>
+        <svg width="25" height="12" viewBox="0 0 25 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".45"/><rect x="2.5" y="2.5" width="15" height="7" rx="1.8" fill="#fff"/><path d="M23 4.2v3.6a2 2 0 0 0 0-3.6Z" fill="#fff" fill-opacity=".5"/></svg>
+      </span>
+    </div>
+
+    <!-- ===== 顶部控制行（浮层 · 常驻 56px，严格对标参考图）=====
+         主行 = L/R 音频电平表 + 模式条 + 闪光灯/网格/更多
+         副行 = 影调预览 + 剩余存储 -->
+    <div class="topbar">
+      <div class="tb-row1">
+        <div class="levels" id="levels" title="麦克风左右声道电平（录音时真正跳动）">
+          <div class="lv"><span class="ch">L</span><span class="dots" id="dotsL"></span></div>
+          <div class="lv"><span class="ch">R</span><span class="dots" id="dotsR"></span></div>
+        </div>
+        <div class="mode-tabs" id="modeTabs"></div>
+        <div class="tb-icons">
+          <button class="tb-icon" id="btnFlash" type="button" title="闪光灯">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2 4.6 13.4h6.1l-1.1 8.6 8.9-11.6h-6.2l1-8.4Z"/></svg>
+          </button>
+          <button class="tb-icon on" id="btnGrid" type="button" title="网格线">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="2.4"/><path d="M9.2 3.6v16.8M14.8 3.6v16.8M3.6 9.2h16.8M3.6 14.8h16.8"/></svg>
+          </button>
+          <button class="tb-icon" id="btnMore" type="button" title="更多">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="1.9"/><circle cx="12" cy="6" r="1.9"/><circle cx="18" cy="6" r="1.9"/><circle cx="6" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18" cy="12" r="1.9"/><circle cx="6" cy="18" r="1.9"/><circle cx="12" cy="18" r="1.9"/><circle cx="18" cy="18" r="1.9"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="tb-row2">
+        <button class="chip" id="btnTone" type="button" title="影调预览">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20V2Z"/></svg>影调预览
+        </button>
+        <div class="spacer"></div>
+        <button class="chip" id="chipStorage" type="button" title="剩余可用存储">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.6" y="7" width="16" height="10" rx="2.4"/><path d="M21 10.4v3.2"/><rect x="5" y="9.6" width="6.4" height="4.8" rx="1" fill="currentColor" stroke="none"/></svg>
+          <span id="storageText">31 GB</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 更多菜单：简易模式 / 调试浮层 / 设置 收在这里 -->
+    <div class="more-menu" id="moreMenu">
+      <button type="button" data-act="simple">简易模式<span class="st" id="stSimple">关</span></button>
+      <button type="button" data-act="hud">调试浮层 HUD<span class="st" id="stHud">关</span></button>
+      <button type="button" data-act="settings">设置<span class="st" id="stSettings">P2</span></button>
+    </div>
+
+    <!-- ===== 调试浮层（含实时净可见取景高度） ===== -->
+    <div class="hud" id="hud"></div>
+
+    <!-- ===== 底部浮层栈：自下而上堆叠，只遮挡不挤压取景器 ===== -->
+    <div class="bottom-stack" id="bottomStack">
+
+      <!-- 滤镜条：默认隐藏，上划呼出 -->
+      <div class="row row-filter">
+        <div class="ss-block-title">
+          <span><b>滤镜</b> · 只叠颜色层（再点一次取消）</span>
+          <span id="filterPicked">无</span>
+        </div>
+        <div class="strip" id="filterStrip"></div>
+      </div>
+
+      <!-- 场景 · 风格：折叠 36px / 展开 144px -->
+      <div class="row row-scenestyle">
+        <div class="ss-collapsed">
+          <button class="ss-capsule" id="ssCapsule" type="button">
+            <span class="tag">场景</span><span class="val strong" id="ssScene">人像</span>
+            <span class="sep ss-style">·</span>
+            <span class="tag ss-style">风格</span><span class="val ss-style" id="ssStyle">柔暖人像</span>
+          </button>
+          <button class="ss-arrow" id="ssArrow" type="button" title="展开场景与风格">⌃</button>
+        </div>
+        <div class="ss-full">
+          <div class="ss-block">
+            <div class="ss-block-title"><span><b>场景</b> · 决定推荐风格与曝光</span><span id="scenePicked"></span></div>
+            <div class="strip" id="sceneStrip"></div>
+          </div>
+          <div class="ss-block">
+            <div class="ss-block-title"><span><b>风格</b> · 一键成片，含参数配方</span><span id="stylePicked"></span></div>
+            <div class="strip" id="styleStrip"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 焦段条：13 / 24 / 48 / 120mm（对标系统相机与飓风相机的焦段切换） -->
+      <div class="row row-focal">
+        <div class="focal-strip" id="focalStrip"></div>
+      </div>
+
+      <!-- 参数排：四列竖向滑块（平铺 104 / 收起 44） -->
+      <div class="row row-params">
+        <div class="params-open" id="paramsOpen">
+          <div class="pcol" data-key="ev">
+            <div class="pcol-label">EV</div>
+            <div class="pcol-slider" id="sliderEV">
+              <div class="pcol-track"></div>
+              <div class="pcol-center-dot"></div>
+              <div class="pcol-fill" id="fillEV"></div>
+              <div class="pcol-knob" id="knobEV"></div>
+            </div>
+            <div class="pcol-value" id="valEV">+0.3</div>
+          </div>
+          <div class="pcol disabled" data-key="iso">
+            <div class="pcol-label"><span class="lk"></span>ISO</div>
+            <div class="pcol-slider">
+              <div class="pcol-track"></div>
+              <div class="pcol-fill" style="bottom:38%;height:62%"></div>
+              <div class="pcol-knob" style="top:34%"></div>
+            </div>
+            <div class="pcol-value" id="valISO">自动</div>
+          </div>
+          <div class="pcol disabled" data-key="shutter">
+            <div class="pcol-label"><span class="lk"></span>快门</div>
+            <div class="pcol-slider">
+              <div class="pcol-track"></div>
+              <div class="pcol-fill" style="bottom:44%;height:56%"></div>
+              <div class="pcol-knob" style="top:41%"></div>
+            </div>
+            <div class="pcol-value" id="valShutter">1/125s</div>
+          </div>
+          <div class="pcol disabled" data-key="wb">
+            <div class="pcol-label"><span class="lk"></span>白平衡</div>
+            <div class="pcol-slider">
+              <div class="pcol-track"></div>
+              <div class="pcol-fill" style="bottom:26%;height:50%"></div>
+              <div class="pcol-knob" style="top:24%"></div>
+            </div>
+            <div class="pcol-value" id="valWB">5600K</div>
+          </div>
+        </div>
+        <div class="params-closed-bar" id="paramsClosed">
+          <button class="icon-item" id="btnFrontCam" type="button" title="切换前置 / 后置镜头（P2）">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 0 1 15.5-3.5L21 7"/><path d="M21 3v4h-4"/><path d="M21 16a9 9 0 0 1-15.5 3.5L3 17"/><path d="M3 21v-4h4"/></svg>
+            <span class="t">前置</span>
+          </button>
+          <button class="icon-item" id="btnFocusHint" type="button" title="点按取景器任意位置对焦">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="12" r="7.4" stroke-dasharray="2 3"/><path d="M12 2.4v3M12 18.6v3M2.4 12h3M18.6 12h3"/></svg>
+            <span class="t">对焦</span>
+          </button>
+          <button class="icon-item" id="iconWB" type="button" title="白平衡（P2 接硬件）">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11.4" cy="12" r="4"/><path d="M11.4 2.6v2.8M11.4 18.6v2.8M2 12h2.8M18.2 12h2.8M4.6 5.2l2 2M16.2 16.8l2 2M18.2 5.2l-2 2M6.6 16.8l-2 2"/><path d="M19.6 15.4h1.8M18.6 17.6l1.3 1.3M20.5 17.6l-1.3 1.3" stroke-width="1.5"/></svg>
+            <span class="t">白平衡</span>
+          </button>
+          <button class="icon-item" id="iconISO" type="button" title="感光度 ISO（P2 接硬件）">
+            <span class="glyph">ISO</span>
+            <span class="t">感光</span>
+          </button>
+          <button class="icon-item" id="iconShutter" type="button" title="快门速度（P2 接硬件）">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 12V3.4M12 12 4.6 7.8M12 12l7.4-4.2M12 12v8.6M12 12l-7.4 4.2M12 12l7.4 4.2"/></svg>
+            <span class="t">快门速度</span>
+          </button>
+          <button class="icon-item accent" id="iconEV" type="button" title="曝光补偿（点开参数排）">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12h7.2M12 8.4v7.2"/></svg>
+            <span class="t">曝光补偿</span>
+          </button>
+          <button class="icon-item" id="iconSettings" type="button" title="设置">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm8.4-1.2c.1-.5.1-1.1 0-1.6l2-1.5-2-3.4-2.3 1a7.6 7.6 0 0 0-1.4-.8L16.3 4H11l-.4 2.5c-.5.2-1 .5-1.4.8l-2.3-1-2 3.4 2 1.5c-.1.5-.1 1.1 0 1.6l-2 1.5 2 3.4 2.3-1c.4.3.9.6 1.4.8l.4 2.5h5.3l.4-2.5c.5-.2 1-.5 1.4-.8l2.3 1 2-3.4-2-1.5Z"/></svg>
+            <span class="t">设置</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 简易模式的 EV 单条横滑（平时高度 0） -->
+      <div class="row row-ev">
+        <div class="ev-strip">
+          <span class="lab">曝光补偿</span>
+          <div class="track" id="evTrack">
+            <div class="bar"></div>
+            <div class="mid"></div>
+            <div class="fill" id="evFill"></div>
+            <div class="knob" id="evKnob"></div>
+          </div>
+          <span class="num" id="evNum">+0.3</span>
+        </div>
+      </div>
+
+      <!-- 快门排（对标参考图）：相册缩略图 / 快门 / 镜头切换 / 风格预览（彩色描边） -->
+      <div class="row row-shutter">
+        <div class="shutter-row">
+          <div class="thumb" id="thumb" title="打开相册（原型占位）"></div>
+          <div class="shutter-center">
+            <button class="shutter" id="shutter" type="button" aria-label="快门">
+              <span class="ring"></span><span class="core"></span><span class="spin"></span>
+            </button>
+          </div>
+          <button class="flip-btn" id="btnFlip" type="button" title="切换前置 / 后置镜头（P2 交付）">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 0 1 15.5-3.5L21 7"/><path d="M21 3v4h-4"/><path d="M21 16a9 9 0 0 1-15.5 3.5L3 17"/><path d="M3 21v-4h4"/></svg>
+          </button>
+          <button class="style-thumb" id="btnSceneStyle" type="button" title="场景与风格">
+            <span class="inner" id="styleThumbInner"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="row row-safe"></div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<div class="caption">
+  <b>LumenEdit 原型 · 全屏取景 + 浮层式（严格对标飓风相机参考图）</b><br>
+  顶栏两行：L/R 电平 + 模式条（照片 / 实况 / Log 实况 / 视频）+ 闪光灯·网格·更多 ｜ 影调预览 · 剩余存储<br>
+  底部：焦段药丸 13/24/48/120mm ｜ 图标行 7 项（前置 / 对焦 / 白平衡 / 感光 / 快门速度 / 曝光补偿 / 设置）｜ 缩略图 · 快门 · 镜头切换 · 风格预览<br>
+  点画面 = 对焦 + 收起浮层 ｜ <b>上划</b> 呼出滤镜条 / 场景风格条 ｜ <b>更多 → HUD</b> 看实时净可见取景高度
+</div>
+
+<script>
+(function(){
+  "use strict";
+  /* =========================================================
+     1. 占位"取景画面"（内联 SVG，无外部资源）
+        刻意包含：暖色天空 / 冷色远山 / 绿植 / 肤色 / 暖红衣料 /
+                 高光光斑 / 深阴影 —— 这样才能看出各风格的差异
+     ========================================================= */
+  var SCENE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" preserveAspectRatio="xMidYMid slice">'
+    + '<defs>'
+    + '<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0" stop-color="#E3A054"/><stop offset="0.42" stop-color="#F6D79C"/><stop offset="1" stop-color="#C6DBE4"/></linearGradient>'
+    + '<radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">'
+    + '<stop offset="0" stop-color="#FFF6D8" stop-opacity="1"/><stop offset="0.55" stop-color="#FFE3A8" stop-opacity="0.72"/><stop offset="1" stop-color="#FFD79A" stop-opacity="0"/></radialGradient>'
+    + '<linearGradient id="far" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#93ABB6"/><stop offset="1" stop-color="#6B8791"/></linearGradient>'
+    + '<linearGradient id="mid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5E7C56"/><stop offset="1" stop-color="#3C583A"/></linearGradient>'
+    + '<linearGradient id="gnd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C3A26"/><stop offset="1" stop-color="#151D13"/></linearGradient>'
+    + '<linearGradient id="skin" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F3CBA6"/><stop offset="1" stop-color="#D49A75"/></linearGradient>'
+    + '<linearGradient id="cloth" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D4633F"/><stop offset="1" stop-color="#8B3826"/></linearGradient>'
+    + '</defs>'
+    + '<rect width="600" height="800" fill="url(#sky)"/>'
+    + '<circle cx="424" cy="158" r="152" fill="url(#glow)"/>'
+    + '<circle cx="424" cy="158" r="56" fill="#FFF8E4"/>'
+    + '<path d="M0 374 L118 320 L210 362 L302 312 L402 358 L500 322 L600 366 L600 470 L0 470 Z" fill="url(#far)"/>'
+    + '<path d="M0 442 C58 402 112 432 160 406 C210 380 252 416 302 400 C352 384 402 420 452 404 C502 388 560 420 600 404 L600 524 L0 524 Z" fill="url(#mid)"/>'
+    + '<path d="M0 524 L600 524 L600 800 L0 800 Z" fill="url(#gnd)"/>'
+    + '<path d="M148 800 C148 660 198 604 250 604 C302 604 352 660 352 800 Z" fill="url(#cloth)"/>'
+    + '<path d="M214 610 C228 642 272 642 286 610 C270 599 230 599 214 610 Z" fill="#F1E4D4" fill-opacity="0.92"/>'
+    + '<path d="M228 556 L272 556 L272 616 C272 632 228 632 228 616 Z" fill="#D49A75"/>'
+    + '<ellipse cx="250" cy="498" rx="58" ry="70" fill="url(#skin)"/>'
+    + '<path d="M192 496 C192 430 210 416 250 416 C290 416 308 430 308 496 C308 470 292 450 250 450 C208 450 192 470 192 496 Z" fill="#3A2A22"/>'
+    + '<ellipse cx="280" cy="490" rx="19" ry="33" fill="#FFF0DC" fill-opacity="0.22"/>'
+    + '<ellipse cx="229" cy="497" rx="7" ry="5" fill="#2A1F1A"/>'
+    + '<ellipse cx="273" cy="497" rx="7" ry="5" fill="#2A1F1A"/>'
+    + '<path d="M236 537 C244 546 258 546 266 537 C258 533 244 533 236 537 Z" fill="#B5523F"/>'
+    + '<circle cx="76" cy="600" r="27" fill="#FFE9B8" fill-opacity="0.22"/>'
+    + '<circle cx="116" cy="670" r="16" fill="#FFE9B8" fill-opacity="0.15"/>'
+    + '<circle cx="522" cy="640" r="34" fill="#FFE9B8" fill-opacity="0.17"/>'
+    + '<circle cx="558" cy="716" r="20" fill="#FFE9B8" fill-opacity="0.12"/>'
+    + '<path d="M0 700 C120 660 180 722 300 700 C420 678 520 732 600 700 L600 800 L0 800 Z" fill="#0D130B" fill-opacity="0.55"/>'
+    + '</svg>';
+
+  var SCENE_URL = 'url("data:image/svg+xml;charset=utf-8,' + encodeURIComponent(SCENE_SVG) + '")';
+  document.documentElement.style.setProperty('--scene', SCENE_URL);
+
+  /* =========================================================
+     2. 预设数据 —— 与 docs/02-风格与滤镜清单.md 同一套字段
+        css   : previewCSS 的 filter 串（缩略图与预览共用，仅为近似）
+        tints : 叠加层 [{b: background, m: mix-blend-mode}]
+        sw    : 滤镜色块的三段渐变（阴影 / 中间 / 高光），取自各自 LUT 的分离色调
+        真机渲染走 CIColorCube(32³, sRGB) + 原生 CIFilter 链
+        名称已全部改为自创名，避免商标风险
+     ========================================================= */
+
+  var STYLES = [
+    { id:'portra160', name:'柔暖人像', ref:'对标 Kodak Portra 160',
+      badge:'高光 −20 · 阴影 +10 · 色温 +300K',
+      css:'contrast(.96) saturate(.88) sepia(.12) brightness(1.02)',
+      tints:[{b:'rgba(255,236,200,.10)', m:'soft-light'}], filter:'f_portra160', fi:'0.75' },
+
+    { id:'portra400', name:'浓暖人像', ref:'对标 Kodak Portra 400',
+      badge:'高光 −15 · 阴影 +14 · 色温 +450K · 颗粒 7',
+      css:'contrast(.97) saturate(.93) sepia(.16) brightness(1.02)',
+      tints:[{b:'rgba(255,225,180,.13)', m:'soft-light'}], filter:'f_portra400', fi:'0.75' },
+
+    { id:'classicchrome', name:'纪实冷调', ref:'对标 Fujifilm Classic Chrome',
+      badge:'对比 +12 · 饱和 −14 · 高光 −10 · 色温 −200K',
+      css:'contrast(1.10) saturate(.82) hue-rotate(-6deg) brightness(.99)',
+      tints:[{b:'rgba(60,90,120,.10)', m:'multiply'}], filter:'f_classicchrome', fi:'0.80' },
+
+    { id:'macaron', name:'糖果粉调', ref:'对标主流修图 App 马卡龙类',
+      badge:'对比 −20 · 饱和 −18 · 高光 −40 · 色调 +18',
+      css:'contrast(.88) saturate(.85) brightness(1.07) hue-rotate(8deg)',
+      tints:[{b:'linear-gradient(160deg, rgba(255,190,225,.24), rgba(200,205,255,.18))', m:'soft-light'}],
+      filter:null, fi:'0.80' },
+
+    { id:'creamskin', name:'暖白肤色', ref:'对标主流修图 App 奶油肌类',
+      badge:'高光 −50 · 阴影 +16 · 色温 +400K · 降噪 +10',
+      css:'contrast(.93) saturate(.92) brightness(1.06) sepia(.10)',
+      tints:[{b:'rgba(255,225,205,.16)', m:'soft-light'}], filter:'f_creamskin', fi:'0.70' },
+
+    { id:'tealorange', name:'冷青暖橙', ref:'对标 Lightroom Cinematic / Cinematic II',
+      badge:'对比 +12 · 高光 −10 · 阴影 +8 · 暗角 12',
+      css:'contrast(1.12) saturate(1.05)',
+      tints:[
+        {b:'linear-gradient(to top, rgba(0,80,110,.26), rgba(0,80,110,0) 55%)', m:'soft-light'},
+        {b:'linear-gradient(to bottom, rgba(255,170,80,.22), rgba(255,170,80,0) 55%)', m:'soft-light'}
+      ], filter:'f_tealorange', fi:'0.85' },
+
+    { id:'hongkong', name:'暖琥珀胶片', ref:'对标《花样年华》色调方向',
+      badge:'对比 +6 · 高光 −25 · 阴影 +10 · 色温 +600K · 颗粒 8',
+      css:'contrast(1.05) saturate(1.02) sepia(.14) brightness(.98) hue-rotate(-8deg)',
+      tints:[
+        {b:'rgba(180,140,60,.14)', m:'soft-light'},
+        {b:'rgba(40,80,45,.10)', m:'overlay'}
+      ], filter:'f_hongkong', fi:'0.80' },
+
+    { id:'japanese', name:'透亮淡青', ref:'对标 VSCO F2 褪色哑光方向',
+      badge:'对比 −10 · 亮度 +12 · 阴影 +20 · 色温 −150K',
+      css:'contrast(.90) saturate(.90) brightness(1.12)',
+      tints:[{b:'rgba(210,240,235,.16)', m:'screen'}], filter:null, fi:'0.75' },
+
+    { id:'mono', name:'中高对比黑白', ref:'对标 Ilford HP5 Plus',
+      badge:'对比 +15 · 阴影 −12 · 结构 +20 · 颗粒 12',
+      css:'grayscale(1) contrast(1.15) brightness(1.02)',
+      tints:[], filter:'f_mono', fi:'0.85' },
+
+    { id:'faded', name:'褪色胶片', ref:'对标 VSCO F2 / Lightroom Vintage',
+      badge:'对比 −18 · 阴影 +25 · 色温 +350K · 颗粒 8',
+      css:'contrast(.86) saturate(.78) sepia(.22) brightness(1.04)',
+      tints:[{b:'rgba(120,90,60,.12)', m:'overlay'}], filter:'f_faded', fi:'0.80' }
+  ];
+
+  var FILTERS = [
+    { id:'f_portra160', name:'柔暖胶片', ref:'对标 Kodak Portra 160', intensity:'0.75',
+      css:'contrast(.96) saturate(.88) sepia(.12) brightness(1.03)',
+      tints:[{b:'rgba(255,236,200,.10)', m:'soft-light'}], sw:['#8E8778','#C9A98C','#F2E2C8'] },
+
+    { id:'f_portra400', name:'浓暖胶片', ref:'对标 Kodak Portra 400', intensity:'0.75',
+      css:'contrast(.97) saturate(.93) sepia(.17) brightness(1.03)',
+      tints:[{b:'rgba(255,224,178,.13)', m:'soft-light'}], sw:['#8A7F6C','#CDA88A','#F5E0BE'] },
+
+    { id:'f_classicchrome', name:'纪实冷调', ref:'对标 Fujifilm Classic Chrome', intensity:'0.80',
+      css:'contrast(1.12) saturate(.82) hue-rotate(-6deg) brightness(.98)',
+      tints:[{b:'rgba(60,90,120,.10)', m:'multiply'}], sw:['#4E5A63','#8C8880','#E8E3D8'] },
+
+    { id:'f_mono', name:'中高对比黑白', ref:'对标 Ilford HP5 Plus', intensity:'0.85',
+      css:'grayscale(1) contrast(1.15) brightness(1.02)',
+      tints:[], sw:['#2E2E2E','#8A8A8A','#E6E6E6'] },
+
+    { id:'f_creamskin', name:'暖白柔肤', ref:'对标主流 App 奶油肌类', intensity:'0.70',
+      css:'contrast(.93) saturate(.92) brightness(1.07) sepia(.10)',
+      tints:[{b:'rgba(255,225,205,.16)', m:'soft-light'}], sw:['#A08B7E','#E0C4AE','#FBEEDF'] },
+
+    { id:'f_softglow', name:'柔光通透', ref:'对标 VSCO G3 方向', intensity:'0.65',
+      css:'contrast(.95) saturate(.98) brightness(1.07)',
+      tints:[{b:'rgba(255,255,255,.12)', m:'soft-light'}], sw:['#8E9AA6','#C6CDD2','#F7F9FA'] },
+
+    { id:'f_clearsmooth', name:'通透哑光', ref:'对标主流 App 透白 / 净透', intensity:'0.70',
+      css:'contrast(.88) saturate(.92) brightness(1.05)',
+      tints:[{b:'rgba(190,190,185,.16)', m:'screen'}], sw:['#9A968F','#CFC9BF','#F4F0E9'] },
+
+    { id:'f_vividskin', name:'质感红润', ref:'对标主流 App 甜橘 / 阳光肤', intensity:'0.70',
+      css:'contrast(1.03) saturate(1.12) hue-rotate(-4deg) brightness(1.02)',
+      tints:[{b:'rgba(255,170,140,.12)', m:'soft-light'}], sw:['#8C6A5A','#CC9779','#F6D9BF'] },
+
+    { id:'f_vivid', name:'高饱和风光', ref:'对标 VSCO C1', intensity:'0.80',
+      css:'contrast(1.06) saturate(1.35) brightness(1.02)',
+      tints:[], sw:['#3B5F4A','#7FA86B','#D8E8C0'] },
+
+    { id:'f_tealorange', name:'冷青暖橙', ref:'对标 Lightroom Cinematic', intensity:'0.85',
+      css:'contrast(1.12) saturate(1.05)',
+      tints:[
+        {b:'linear-gradient(to top, rgba(0,80,110,.28), rgba(0,80,110,0) 55%)', m:'soft-light'},
+        {b:'linear-gradient(to bottom, rgba(255,170,80,.24), rgba(255,170,80,0) 55%)', m:'soft-light'}
+      ], sw:['#2F4F5E','#8A8578','#E0A56A'] },
+
+    { id:'f_hdr', name:'HDR 质感', ref:'对标 Lightroom HDR / 主流 AI HDR', intensity:'0.70',
+      css:'contrast(1.08) saturate(1.18) brightness(1.03)',
+      tints:[{b:'rgba(200,200,195,.14)', m:'soft-light'}], sw:['#4A4A4A','#9E9A92','#EFEDE8'] },
+
+    { id:'f_faded', name:'电影褪色', ref:'对标 VSCO F2 / Film-Inspired Soft Ember', intensity:'0.80',
+      css:'contrast(.86) saturate(.78) sepia(.22) brightness(1.04)',
+      tints:[{b:'rgba(120,90,60,.12)', m:'overlay'}], sw:['#6E6355','#A89478','#E8DCC6'] },
+
+    { id:'f_moody', name:'低调暗影', ref:'对标 VSCO M5 复古低饱和', intensity:'0.80',
+      css:'contrast(1.05) saturate(.80) brightness(.90)',
+      tints:[{b:'rgba(30,25,20,.16)', m:'multiply'}], sw:['#2A2520','#6E6154','#C4B49A'] },
+
+    { id:'f_hongkong', name:'暖琥珀绿', ref:'对标《花样年华》色调方向', intensity:'0.80',
+      css:'contrast(1.06) saturate(1.02) sepia(.14) brightness(.97) hue-rotate(-8deg)',
+      tints:[
+        {b:'rgba(180,140,60,.14)', m:'soft-light'},
+        {b:'rgba(40,80,45,.10)', m:'overlay'}
+      ], sw:['#3E4A32','#9A8A5E','#E8C98A'] }
+  ];
+
+  /* 模式条四个入口。UI 文案用「实况」与系统叫法对齐；代码 id 保持 live 不动。
+     「实况」这一档按用户要求改用 Live Photo 同心圆图标（icon:'live'），其余仍是文字。
+     Log 实况 = 拍 Log 视频套 LUT 后导出为实况照片，后续阶段交付，先只留界面入口。
+     置灰的入口必须给出原因，绝不做"点了没反应"。 */
+  var MODES = [
+    { id:'photo', name:'照片',     enabled:true },
+    { id:'live',  name:'实况',     enabled:true, icon:'live' },
+    { id:'log',   name:'Log 实况', enabled:false,
+      reason:'Log 实况（Log 视频套 LUT 导出实况照片）将在后续阶段交付' },
+    { id:'video', name:'视频',     enabled:false,
+      reason:'视频录制将在 P1b 交付' }
+  ];
+
+  /* 焦段条档位（毫米）：对应超广角 / 主摄 / 长焦 / 5 倍长焦。
+     真机上这是镜头切换与变焦（P2 接硬件），原型只做选中态示意。 */
+  var FOCALS = [
+    { id:'13',  name:'13' },
+    { id:'24',  name:'24', on:true },
+    { id:'48',  name:'48' },
+    { id:'120', name:'120' }
+  ];
+
+  /* 场景 = 拍摄侧建议 + 修图侧推荐组合（数值取自清单第 4 节） */
+  var SCENES = [
+    { id:'portrait',  name:'人像', style:'portra160',     filter:null,      ev: 0.33, wb:'5600K' },
+    { id:'landscape', name:'风景', style:null,            filter:'f_vivid', ev:-0.33, wb:'5200K' },
+    { id:'food',      name:'美食', style:'creamskin',     filter:null,      ev: 0.33, wb:'5200K' },
+    { id:'night',     name:'夜景', style:'tealorange',    filter:null,      ev:-0.67, wb:'4000K' },
+    { id:'street',    name:'街拍', style:'classicchrome', filter:null,      ev: 0.00, wb:'5000K' }
+  ];
+
+  /* =========================================================
+     3. 状态
+     ========================================================= */
+  var state = {
+    mode:'photo',
+    scene:'portrait',
+    styleId:'portra160',
+    filterId:null,   // null = 原片
+    ev:0.33
+  };
+
+  /* 布局状态。规则：扩展浮层互斥 ——
+     场景风格条 / 滤镜条同一时刻只能展开一个，且任一展开时参数排自动收起，
+     这样取景器的净可见面积永远不低于 50%（详见 docs/03-布局调整方案.md） */
+  var layout = {
+    simple:false,
+    ssExpanded:false,
+    filterExpanded:false,
+    paramsOpen:true,
+    hud:false,
+    gridOn:true,
+    moreOpen:false,
+    hints:false
+  };
+
+  var isBusy = false;
+  var hintHidden = false;
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  function byId(list, id){
+    for (var i=0;i<list.length;i++){ if (list[i].id === id) return list[i]; }
+    return null;
+  }
+
+  /** 把 [{b,m}] 渲染成一叠 mix-blend-mode 图层 */
+  function fillTints(container, tints){
+    container.innerHTML = '';
+    if (!tints) return;
+    for (var i=0;i<tints.length;i++){
+      var d = document.createElement('div');
+      d.className = 'tint';
+      d.style.background = tints[i].b;
+      d.style.mixBlendMode = tints[i].m;
+      container.appendChild(d);
+    }
+  }
+
+  /* =========================================================
+     4. 渲染
+        预览的图层顺序（与 iOS 端一致）：
+          曝光(EV) → 风格色彩 → 风格叠加层 → 滤镜色彩 → 滤镜叠加层
+        EV 作用在最底层，因为它是"拍摄曝光"，而风格/滤镜是后期调色
+     ========================================================= */
+  function currentChain(){
+    var style  = byId(STYLES, state.styleId);
+    var filter = byId(FILTERS, state.filterId);
+    var chain = [];
+    if (style)  chain.push(style.css);
+    if (filter) chain.push(filter.css);
+    return chain.join(' ');
+  }
+
+  function currentTints(){
+    var style  = byId(STYLES, state.styleId);
+    var filter = byId(FILTERS, state.filterId);
+    var tints = [];
+    if (style)  tints = tints.concat(style.tints || []);
+    if (filter) tints = tints.concat(filter.tints || []);
+    return tints;
+  }
+
+  function renderPreview(){
+    // EV 在原型里用温和映射（真机是真实的 2^EV 曝光），避免 ±2 档过曝到没法看
+    var evFactor = 1 + state.ev * 0.11;
+    $('exposure').style.filter = 'brightness(' + evFactor.toFixed(3) + ')';
+    $('grade').style.filter = currentChain();
+    fillTints($('tints'), currentTints());
+    renderThumb();
+    renderStatus();
+  }
+
+  /** 把"当前成片效果"画进任意容器（缩略图与风格预览方块共用一套渲染） */
+  function paintPreviewInto(box){
+    if (!box) return;
+    box.innerHTML = '';
+    var img = document.createElement('div');
+    img.className = 'thumb-img';
+    img.style.filter = currentChain();
+    box.appendChild(img);
+
+    var tints = currentTints();
+    for (var i=0;i<tints.length;i++){
+      var t = document.createElement('div');
+      t.className = 'tint';
+      t.style.background = tints[i].b;
+      t.style.mixBlendMode = tints[i].m;
+      box.appendChild(t);
+    }
+  }
+
+  /** 左下角相册缩略图 + 右下角风格预览方块 = 当前成片效果（"拍到的就是看到的"） */
+  function renderThumb(){
+    paintPreviewInto($('thumb'));
+    paintPreviewInto($('styleThumbInner'));
+  }
+
+  var SHUTTER_VAL   = [1/2000,1/1000,1/500,1/250,1/125,1/60,1/30,1/15,1/8,1/4,1/2,1];
+  var SHUTTER_LABEL = ['1/2000','1/1000','1/500','1/250','1/125','1/60','1/30','1/15','1/8','1/4','1/2','1'];
+
+  function simulatedShutter(ev){
+    var target = (1/125) * Math.pow(2, -ev);   // 基准 1/125，每 +1 EV 快门快一倍
+    var best = 0, bestD = Infinity;
+    for (var i=0;i<SHUTTER_VAL.length;i++){
+      var d = Math.abs(Math.log(SHUTTER_VAL[i] / target));
+      if (d < bestD){ bestD = d; best = i; }
+    }
+    return SHUTTER_LABEL[best] + 's';
+  }
+
+  /** 顶栏 EV、参数排四列、收起仪表条、简易模式 EV 条，全部在这里统一刷新 */
+  function renderStatus(){
+    var evText = (state.ev >= 0 ? '+' : '') + state.ev.toFixed(1);
+    $('valEV').textContent = evText;
+    $('evNum').textContent = evText + ' EV';
+
+    var sh = simulatedShutter(state.ev);
+    $('valShutter').textContent = sh;
+
+    // 白平衡显示当前场景的建议色温（P2 才能手动调，现在是占位）
+    var sc = byId(SCENES, state.scene);
+    if (sc) $('valWB').textContent = sc.wb;
+
+    var t = (state.ev + 2) / 4;          // 0 = 底部，1 = 顶部
+    var topPct = (1 - t) * 100;
+
+    // 参数排的竖向 EV 滑块：从中心向两边填充（双极参数该这样）
+    var knob = $('knobEV');
+    if (knob) knob.style.top = 'calc(' + topPct + '% - 7.5px)';
+    var fill = $('fillEV');
+    if (fill){
+      var a = Math.min(topPct, 50), b = Math.max(topPct, 50);
+      fill.style.top = a + '%';
+      fill.style.height = (b - a) + '%';
+    }
+
+    // 简易模式的横向 EV 条
+    var ef = $('evFill');
+    if (ef){
+      ef.style.left = Math.min(t * 100, 50) + '%';
+      ef.style.width = Math.abs(t * 100 - 50) + '%';
+    }
+    var ek = $('evKnob');
+    if (ek) ek.style.left = (t * 100) + '%';
+  }
+
+  function refreshPicked(){
+    var s = byId(STYLES, state.styleId);
+    var f = byId(FILTERS, state.filterId);
+    $('stylePicked').textContent  = s ? s.name : '—';
+    $('filterPicked').textContent = f ? f.name : '无';
+    $('ssStyle').textContent = s ? s.name : '—';
+    var sc = byId(SCENES, state.scene);
+    $('ssScene').textContent = sc ? sc.name : '—';
+    $('scenePicked').textContent = sc ? sc.name : '';
+  }
+
+  /* =========================================================
+     5. 布局引擎
+        同一时刻只允许一个扩展浮层展开（场景风格条 / 滤镜条），
+        且任一展开时参数排自动收起 —— 保证净可见取景面积不低于 50%
+     ========================================================= */
+  function applyLayout(){
+    var s = $('screen');
+    s.classList.toggle('simple', layout.simple);
+    s.classList.toggle('ss-on', !layout.simple && layout.ssExpanded);
+    s.classList.toggle('filter-on', !layout.simple && layout.filterExpanded);
+    s.classList.toggle('params-closed', !layout.simple && !layout.paramsOpen);
+    s.classList.toggle('hud-on', layout.hud);
+    s.classList.toggle('more-on', layout.moreOpen);
+    s.classList.toggle('grid-off', !layout.gridOn);
+
+    var stS = $('stSimple');
+    if (stS){ stS.textContent = layout.simple ? '开' : '关'; stS.classList.toggle('on', layout.simple); }
+    var stH = $('stHud');
+    if (stH){ stH.textContent = layout.hud ? '开' : '关'; stH.classList.toggle('on', layout.hud); }
+    var bg = $('btnGrid');
+    if (bg) bg.classList.toggle('on', layout.gridOn);
+
+    renderHUD();
+    // 高度有 300ms 过渡，等动画停下来再量一次才准
+    setTimeout(renderHUD, 340);
+  }
+
+  function setSS(on){
+    layout.ssExpanded = on;
+    if (on){ layout.filterExpanded = false; layout.paramsOpen = false; }
+    applyLayout();
+  }
+  function setFilter(on){
+    layout.filterExpanded = on;
+    if (on){ layout.ssExpanded = false; layout.paramsOpen = false; }
+    applyLayout();
+  }
+  function setParams(on){
+    layout.paramsOpen = on;
+    if (on){ layout.ssExpanded = false; layout.filterExpanded = false; }
+    applyLayout();
+  }
+  function collapseAll(){
+    layout.ssExpanded = false;
+    layout.filterExpanded = false;
+    layout.paramsOpen = true;
+    applyLayout();
+  }
+
+  /* =========================================================
+     6. 调试浮层：实时量出"净可见取景区"到底有多少
+     ========================================================= */
+  function measure(){
+    var screen = $('screen');
+    var H = screen.clientHeight;
+    var stack = $('bottomStack').offsetHeight;
+    var top = 30 + 56;                                  // 状态栏 30 + 顶部控制行 56（主行 30 + 副行 26）
+    var net = H - top - stack;
+    return { H:H, top:top, stack:stack, net:net, pct: Math.round(net / H * 1000) / 10 };
+  }
+
+  function renderHUD(){
+    if (!layout.hud) return;
+    var m = measure();
+    var st = byId(STYLES, state.styleId);
+    var f  = byId(FILTERS, state.filterId);
+    var overlay = '';
+    if (layout.ssExpanded) overlay += '场景风格条展开 ';
+    if (layout.filterExpanded) overlay += '滤镜条展开 ';
+    if (!overlay) overlay = '仅常驻浮层';
+
+    var rows = [
+      ['屏高', m.H + 'px'],
+      ['顶部浮层', m.top + 'px'],
+      ['底部浮层', m.stack + 'px'],
+      ['净可见', '<span class="hl">' + m.net + 'px · ' + m.pct + '%</span>'],
+      ['模式', byId(MODES, state.mode).name + (layout.simple ? ' · 简易模式' : '')],
+      ['风格', st ? st.name : '—'],
+      ['滤镜', f ? f.name : '无'],
+      ['参数排', layout.simple ? '隐藏' : (layout.paramsOpen ? '平铺 104px' : '收起 44px')],
+      ['浮层', overlay]
+    ];
+    var html = '';
+    for (var i=0;i<rows.length;i++){
+      html += '<div><span class="dim">' + rows[i][0] + '</span> ' + rows[i][1] + '</div>';
+    }
+    $('hud').innerHTML = html;
+  }
+
+  /* =========================================================
+     7. 构建各条
+     ========================================================= */
+
+  /* 实况 = Live Photo 同心圆图标：外圈点阵 + 中环 + 实心内点。
+     用 currentColor，所以选中态跟着 .mode-tab.on 一起转白加粗。 */
+  var ICON_LIVE = (function(){
+    var dots = '';
+    for (var i=0;i<12;i++){
+      var a = (Math.PI * 2 / 12) * i - Math.PI / 2;
+      var x = (12 + 10.5 * Math.cos(a)).toFixed(2);
+      var y = (12 + 10.5 * Math.sin(a)).toFixed(2);
+      dots += '<circle cx="' + x + '" cy="' + y + '" r="1.15"/>';
+    }
+    return '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">'
+      + '<g fill="currentColor">' + dots + '</g>'
+      + '<circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+      + '<circle cx="12" cy="12" r="2.4" fill="currentColor"/>'
+      + '</svg>';
+  })();
+
+  // 模式条：文字标签 + 「实况」用 Live Photo 图标。
+  // 置灰的入口带挂锁并给出原因，绝不做"点了没反应"。
+  function buildModeTabs(){
+    var box = $('modeTabs');
+    box.innerHTML = '';
+    MODES.forEach(function(m){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mode-tab' + (state.mode === m.id ? ' on' : '') + (m.enabled ? '' : ' locked');
+      if (m.icon === 'live'){
+        b.innerHTML = ICON_LIVE;
+      } else {
+        b.textContent = m.name;
+      }
+      b.title = m.name;
+      b.setAttribute('aria-label', m.name);
+      if (!m.enabled){
+        var lk = document.createElement('span');
+        lk.className = 'lk';
+        b.insertBefore(lk, b.firstChild);
+        b.title = m.reason;
+        b.setAttribute('aria-label', m.name + '（未交付）');
+      }
+      b.addEventListener('click', function(){ setMode(m); });
+      box.appendChild(b);
+    });
+    // 角标内容 = 同心圆图标。只注入一次；ICON_LIVE 用 currentColor，
+    // 在黄底（color:#111）上自动渲染成黑色，无需另写一套颜色。
+    var lb = $('liveBadge');
+    if (lb && !lb.firstChild){ lb.innerHTML = ICON_LIVE; }
+    if (lb){ lb.classList.toggle('show', state.mode === 'live'); }
+  }
+
+  function setMode(m){
+    if (!m.enabled){
+      toast(m.reason + '（与真机置灰状态一致）');
+      return;
+    }
+    if (state.mode === m.id) return;
+    state.mode = m.id;
+    buildModeTabs();
+    if (m.id === 'live'){
+      toast('实况：原型仅示意，成对落盘（HEIC + MOV）在 P1b');
+    } else {
+      toast('已切换到' + m.name + '模式');
+    }
+  }
+
+  // L / R 音频电平表：8 格点阵。原型是静态示意，录音时由 AVAudioRecorder 驱动（P1b）。
+  var LEVEL_LIT = { L:5, R:4 };
+  function buildLevels(){
+    ['L','R'].forEach(function(ch){
+      var box = $('dots' + ch);
+      if (!box) return;
+      box.innerHTML = '';
+      var lit = LEVEL_LIT[ch];
+      for (var i=0;i<8;i++){
+        var d = document.createElement('i');
+        if (i < lit) d.className = 'on';
+        else if (i === lit) d.className = 'hot';
+        box.appendChild(d);
+      }
+    });
+  }
+
+  // 焦段条：13 / 24 / 48 / 120mm。深色药丸（刻度标记 + 「13 mm」），选中转白底；
+  // 真机上对应镜头切换与变焦（P2 接硬件），原型先让交互成立。
+  var FOCAL_MARK = [4,6,5,7,4,6,5];
+  function buildFocal(){
+    var box = $('focalStrip');
+    box.innerHTML = '';
+    FOCALS.forEach(function(f){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'focal-pill' + (f.on ? ' on' : '');
+      b.title = f.name + 'mm 镜头';
+
+      var mk = document.createElement('span');
+      mk.className = 'mark';
+      for (var i=0;i<FOCAL_MARK.length;i++){
+        var bar = document.createElement('i');
+        bar.style.height = FOCAL_MARK[i] + 'px';
+        mk.appendChild(bar);
+      }
+
+      var mm = document.createElement('span');
+      mm.className = 'mm';
+      mm.textContent = f.name + ' mm';
+
+      b.appendChild(mk);
+      b.appendChild(mm);
+      b.addEventListener('click', function(){
+        if (f.on) return;
+        FOCALS.forEach(function(x){ x.on = (x === f); });
+        buildFocal();
+        toast('焦段 ' + f.name + 'mm · 镜头切换与变焦将在 P2 接硬件');
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function buildScenes(){
+    var box = $('sceneStrip');
+    box.innerHTML = '';
+    SCENES.forEach(function(s){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'scene-chip' + (state.scene === s.id ? ' on' : '');
+      b.textContent = s.name;
+      b.addEventListener('click', function(){
+        state.scene  = s.id;
+        state.styleId  = s.style || null;
+        state.filterId = s.filter || null;
+        state.ev = Math.round(s.ev * 3) / 3;      // 滑块步进 1/3，避免存成 0.3333
+        buildScenes(); buildStyles(); buildFilters(); refreshPicked();
+        renderPreview();
+        toast('场景 ' + s.name + '：白平衡建议 ' + s.wb + ' · EV ' + (s.ev >= 0 ? '+' : '') + s.ev.toFixed(2));
+      });
+      box.appendChild(b);
+    });
+  }
+
+  // 风格卡：缩略图 + 名称 + 参数徽标（一级视觉权重）
+  function buildStyles(){
+    var box = $('styleStrip');
+    box.innerHTML = '';
+    STYLES.forEach(function(s){
+      var card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'style-card' + (state.styleId === s.id ? ' on' : '');
+
+      var thumb = document.createElement('div');
+      thumb.className = 'style-thumb';
+      var img = document.createElement('div');
+      img.className = 'thumb-img';
+      img.style.filter = s.css;
+      thumb.appendChild(img);
+      fillTints(thumb, s.tints);
+
+      var name = document.createElement('div');
+      name.className = 'style-name';
+      name.textContent = s.name;
+
+      var badge = document.createElement('div');
+      badge.className = 'style-badge';
+      badge.textContent = s.badge;
+
+      card.appendChild(thumb); card.appendChild(name); card.appendChild(badge);
+      card.title = s.name + '（' + s.ref + ' · 滤镜强度 ' + s.fi + '）';
+      card.addEventListener('click', function(){
+        state.styleId = s.id;
+        // 选风格 = 一键成片：自动把滤镜重置为「无」，避免两层胶片叠加出脏色
+        state.filterId = null;
+        buildStyles(); buildFilters(); refreshPicked();
+        renderPreview();
+        toast('风格：' + s.name + '（滤镜已重置为「无」，可再单独选滤镜叠加）');
+      });
+      box.appendChild(card);
+    });
+  }
+
+  // 滤镜卡：纯色块（阴影→中间→高光三段）+ 名称，无徽标
+  function buildFilters(){
+    var box = $('filterStrip');
+    box.innerHTML = '';
+    FILTERS.forEach(function(f){
+      var card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'filter-card' + (state.filterId === f.id ? ' on' : '');
+
+      var sw = document.createElement('div');
+      sw.className = 'filter-swatch';
+      sw.style.background = 'linear-gradient(100deg,' + f.sw[0] + ' 0%,' + f.sw[1] + ' 50%,' + f.sw[2] + ' 100%)';
+
+      var nm = document.createElement('div');
+      nm.className = 'filter-name';
+      nm.textContent = f.name;
+
+      card.appendChild(sw); card.appendChild(nm);
+      card.title = f.name + '（' + f.ref + ' · 默认强度 ' + f.intensity + '）';
+      card.addEventListener('click', function(){
+        // 再点已选中的滤镜 = 取消，回到原片
+        state.filterId = (state.filterId === f.id) ? null : f.id;
+        buildFilters(); refreshPicked(); renderPreview();
+        toast(state.filterId
+          ? '滤镜：' + f.name + ' · 默认强度 ' + f.intensity
+          : '已取消滤镜，回到原片');
+      });
+      box.appendChild(card);
+    });
+  }
+
+  /* =========================================================
+     8. 滑块与手势
+     ========================================================= */
+
+  /** 竖向滑块（参数排的 EV 列）。形态与其它三列完全一致，不搞第二种样子。 */
+  function bindVerticalSlider(el, opts){
+    if (!el) return;
+    var dragging = false;
+    function apply(clientY){
+      var r = el.getBoundingClientRect();
+      var t = 1 - (clientY - r.top) / r.height;        // 顶部 = 最大值
+      t = Math.max(0, Math.min(1, t));
+      var v = opts.min + t * (opts.max - opts.min);
+      var snapped = Math.round(v / opts.step) * opts.step;
+      snapped = Math.max(opts.min, Math.min(opts.max, snapped));
+      opts.onChange(snapped);
+    }
+    el.addEventListener('pointerdown', function(e){
+      if (opts.disabled){ toast(opts.disabledMsg); return; }
+      dragging = true;
+      try { el.setPointerCapture(e.pointerId); } catch(err){}
+      apply(e.clientY);
+    });
+    el.addEventListener('pointermove', function(e){ if (dragging) apply(e.clientY); });
+    el.addEventListener('pointerup', function(){ dragging = false; });
+    el.addEventListener('pointercancel', function(){ dragging = false; });
+  }
+
+  /** 简易模式的横向 EV 条 */
+  function bindHorizontalEV(el){
+    if (!el) return;
+    var dragging = false;
+    function apply(clientX){
+      var r = el.getBoundingClientRect();
+      var t = (clientX - r.left) / r.width;
+      t = Math.max(0, Math.min(1, t));
+      var v = -2 + t * 4;
+      state.ev = Math.max(-2, Math.min(2, Math.round(v * 3) / 3));
+      renderPreview();
+    }
+    el.addEventListener('pointerdown', function(e){
+      dragging = true;
+      try { el.setPointerCapture(e.pointerId); } catch(err){}
+      apply(e.clientX);
+    });
+    el.addEventListener('pointermove', function(e){ if (dragging) apply(e.clientX); });
+    el.addEventListener('pointerup', function(){ dragging = false; });
+    el.addEventListener('pointercancel', function(){ dragging = false; });
+  }
+
+  /**
+   * 上划 / 下划呼出与收起。
+   *
+   * 只在**屏幕下半部分**起手才算手势，并且排除参数滑块与横滑条 ——
+   * 竖向拖 EV 滑块时也会冒泡到 screen，不排除的话松手就会被误判成上划。
+   */
+  function bindSwipe(){
+    var screenEl = $('screen');
+    var startY = null, startX = 0, startT = 0;
+
+    screenEl.addEventListener('pointerdown', function(e){
+      var r = screenEl.getBoundingClientRect();
+      if (e.clientY - r.top < r.height * 0.55) { startY = null; return; }
+      var t = e.target;
+      if (t && t.closest && (t.closest('.pcol-slider') || t.closest('.ev-strip') || t.closest('.strip') || t.closest('.focal-strip') || t.closest('.params-closed-bar'))){
+        startY = null; return;
+      }
+      startY = e.clientY; startX = e.clientX; startT = Date.now();
+    });
+
+    screenEl.addEventListener('pointerup', function(e){
+      if (startY === null) return;
+      var dy = e.clientY - startY;
+      var dx = Math.abs(e.clientX - startX);
+      var dt = Date.now() - startT;
+      startY = null;
+      if (dt > 800) return;
+      if (Math.abs(dy) < 34) return;
+      if (dx > Math.abs(dy)) return;            // 横向为主 → 是在横滑条上滑动
+      if (dy < 0) swipeUp(); else swipeDown();
+    });
+  }
+
+  function swipeUp(){
+    if (layout.simple){ toast('简易模式下浮层保持隐藏，关闭简易模式即可展开'); return; }
+    if (!layout.filterExpanded && !layout.ssExpanded){
+      setFilter(true);
+      toast('已呼出滤镜条 · 再上划一次呼出场景与风格');
+    } else if (layout.filterExpanded && !layout.ssExpanded){
+      setSS(true);
+      toast('已呼出场景与风格 · 下划收起');
+    } else {
+      toast('浮层已全部展开 · 下划收起');
+    }
+  }
+
+  function swipeDown(){
+    if (layout.simple) return;
+    if (layout.ssExpanded){
+      collapseAll();
+      toast('已收起场景与风格，参数排回到平铺');
+    } else if (layout.filterExpanded){
+      collapseAll();
+      toast('已收起滤镜条，参数排回到平铺');
+    } else {
+      toast('没有更多可收起的浮层');
+    }
+  }
+
+  function toggleSimple(){
+    layout.simple = !layout.simple;
+    if (layout.simple){ layout.ssExpanded = false; layout.filterExpanded = false; }
+    applyLayout();
+    toast(layout.simple
+      ? '简易模式：只留取景器 / 快门 / 缩略图 / 场景条 / 一条 EV 横滑'
+      : '已回到完整界面');
+  }
+
+  /* =========================================================
+     9. 提示条
+     ========================================================= */
+  var toastTimer = null;
+  function toast(msg){
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2400);
+  }
+
+  /* =========================================================
+     10. 交互绑定
+     ========================================================= */
+
+  // EV 归零：原顶栏 EV 胶囊的位置由参数排的数值承担（点数值归零）
+  $('valEV').addEventListener('click', function(){
+    state.ev = 0;
+    renderPreview();
+    toast('曝光补偿已归零');
+  });
+  // 顶栏主行右侧：闪光灯 / 网格 / 更多
+  $('btnFlash').addEventListener('click', function(){
+    toast('闪光灯：真机走 AVCaptureDevice.torchMode（P2 交付）');
+  });
+  $('btnGrid').addEventListener('click', function(){
+    layout.gridOn = !layout.gridOn;
+    applyLayout();
+    toast(layout.gridOn ? '网格线已开' : '网格线已关');
+  });
+  $('btnMore').addEventListener('click', function(){
+    layout.moreOpen = !layout.moreOpen;
+    applyLayout();
+  });
+
+  // 「更多」菜单：简易模式 / 调试浮层 / 设置
+  $('moreMenu').addEventListener('click', function(e){
+    var btn = (e.target && e.target.closest) ? e.target.closest('button[data-act]') : null;
+    if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    layout.moreOpen = false;
+    if (act === 'simple'){ toggleSimple(); return; }
+    if (act === 'hud'){
+      layout.hud = !layout.hud;
+      applyLayout();
+      toast(layout.hud ? '调试浮层已开：实时显示净可见取景高度' : '调试浮层已关');
+      return;
+    }
+    if (act === 'settings'){
+      applyLayout();
+      toast('设置页（简易模式持久化 / 毛玻璃开关 / 网格开关）将在 P2 补齐');
+    }
+  });
+
+  // 点别处自动收起「更多」菜单
+  document.addEventListener('pointerdown', function(e){
+    if (!layout.moreOpen) return;
+    var t = e.target;
+    if (t && t.closest && (t.closest('#moreMenu') || t.closest('#btnMore'))) return;
+    layout.moreOpen = false;
+    applyLayout();
+  });
+
+  // 顶栏副行：影调预览 / 剩余存储
+  $('btnTone').addEventListener('click', function(){
+    toast('影调预览：把风格 / 滤镜实时叠到取景画面上（就是当前这套渲染链）');
+  });
+  $('chipStorage').addEventListener('click', function(){
+    toast('剩余可用存储 31 GB（原型占位，真机读 DeviceStorage）');
+  });
+
+  // 场景 · 风格：胶囊与箭头都用来展开/收起；底部右侧入口同样
+  function toggleSS(){ setSS(!layout.ssExpanded); }
+  $('ssCapsule').addEventListener('click', toggleSS);
+  $('ssArrow').addEventListener('click', toggleSS);
+  $('btnSceneStyle').addEventListener('click', function(){
+    if (layout.simple){ toast('简易模式下只保留场景条；关闭简易模式可展开完整风格'); return; }
+    toggleSS();
+  });
+
+  // 底部图标行（对标参考图的底部图标排）：七项各自反馈；只有「曝光补偿」会展开参数滑块
+  $('btnFrontCam').addEventListener('click', function(){
+    toast('原型占位：前后镜头切换在真机上重建会话输入（P2 交付）');
+  });
+  $('btnFocusHint').addEventListener('click', function(){
+    toast('点按取景器任意位置即可对焦');
+  });
+  $('iconWB').addEventListener('click', function(){
+    toast('白平衡手动控制将在 P2 加入（自动档与手动档互斥）');
+  });
+  $('iconISO').addEventListener('click', function(){
+    toast('感光度 ISO 手动控制将在 P2 加入（自动档与手动档互斥）');
+  });
+  $('iconShutter').addEventListener('click', function(){
+    toast('快门速度手动控制将在 P2 加入（自动档与手动档互斥）');
+  });
+  $('iconEV').addEventListener('click', function(){
+    setParams(true);
+    toast('参数排已展开，点 EV 数值可归零');
+  });
+  $('iconSettings').addEventListener('click', function(){
+    toast('设置页（简易模式持久化 / 毛玻璃开关 / 网格开关）将在 P2 补齐');
+  });
+
+  // 快门右侧：镜头切换
+  $('btnFlip').addEventListener('click', function(){
+    toast('原型占位：前后镜头切换在真机上重建会话输入（P2 交付）');
+  });
+
+  // 点取景器 = 对焦（黄框 1 秒淡出）+ 收起所有展开的浮层
+  $('viewport').addEventListener('click', function(e){
+    var rect = this.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+
+    var sq = document.createElement('div');
+    sq.className = 'focus-square';
+    sq.style.left = x + 'px';
+    sq.style.top  = y + 'px';
+    this.appendChild(sq);
+
+    // 用 Web Animations API 保证每次点击都重播
+    // （靠切 class 的话，在同一位置连点会因为 class 没变化而不触发动画）
+    var anim = sq.animate([
+      { transform:'translate(-50%,-50%) scale(1.45)', opacity:1, offset:0    },
+      { transform:'translate(-50%,-50%) scale(1)',    opacity:1, offset:0.22 },
+      { transform:'translate(-50%,-50%) scale(1)',    opacity:1, offset:0.78 },
+      { transform:'translate(-50%,-50%) scale(1)',    opacity:0, offset:1    }
+    ], { duration:1000, easing:'cubic-bezier(.22,.9,.3,1)' });
+    anim.onfinish = function(){ if (sq.parentNode) sq.parentNode.removeChild(sq); };
+
+    var chip = document.createElement('div');
+    chip.className = 'af-chip';
+    chip.textContent = '对焦锁定';
+    this.appendChild(chip);
+    setTimeout(function(){ if (chip.parentNode) chip.parentNode.removeChild(chip); }, 1000);
+
+    if (!hintHidden){
+      hintHidden = true;
+      $('vfHint').classList.add('hide');
+    }
+
+    if (!layout.simple && (layout.ssExpanded || layout.filterExpanded)) collapseAll();
+  });
+
+  // 快门
+  $('shutter').addEventListener('click', function(){
+    if (isBusy) return;
+    isBusy = true;
+    var btn = this;
+    btn.classList.add('busy');
+
+    var flash = $('flash');
+    flash.animate([{ opacity:0.85 }, { opacity:0 }], { duration:180, easing:'ease-out' });
+
+    var s = byId(STYLES, state.styleId);
+    var f = byId(FILTERS, state.filterId);
+    setTimeout(function(){
+      btn.classList.remove('busy');
+      isBusy = false;
+      toast('已保存到相册 · ' + (s ? s.name : '原片')
+        + (f ? ' + ' + f.name : '')
+        + ' · EV ' + (state.ev >= 0 ? '+' : '') + state.ev.toFixed(1)
+        + ' · ' + simulatedShutter(state.ev));
+    }, 700);
+  });
+
+  $('thumb').addEventListener('click', function(){
+    toast('原型占位：真机上是打开自己的相册页（P3 交付）');
+  });
+
+  /* =========================================================
+     11. 启动
+     ========================================================= */
+  (function init(){
+    // 简易模式 EV 条：这两处定位只设一次
+    var ef = $('evFill');
+    if (ef){ ef.style.top = '50%'; ef.style.marginTop = '-1.5px'; }
+    var ek = $('evKnob');
+    if (ek){ ek.style.marginLeft = '-8px'; }
+
+    buildLevels();
+    buildModeTabs();
+    buildFocal();
+    buildScenes();
+    buildStyles();
+    buildFilters();
+    refreshPicked();
+    renderPreview();
+    applyLayout();
+
+    bindVerticalSlider($('sliderEV'), {
+      min:-2, max:2, step:1/3,
+      disabled:false, disabledMsg:'',
+      onChange:function(v){ state.ev = v; renderPreview(); }
+    });
+
+    // 另外三列是 P2 才接硬件的占位：形态与 EV 完全一致，但不可拖动
+    [].forEach.call(document.querySelectorAll('.pcol.disabled .pcol-slider'), function(el){
+      el.addEventListener('pointerdown', function(){
+        toast('ISO / 快门 / 白平衡 的手动控制将在 P2 加入（自动档与手动档互斥）');
+      });
+    });
+
+    bindHorizontalEV($('evTrack'));
+    bindSwipe();
+
+    // 6.5 秒后自动收起取景提示
+    setTimeout(function(){
+      hintHidden = true;
+      $('vfHint').classList.add('hide');
+    }, 6500);
+  })();
+
+
+
+
+
+})();
+</script>
+
+</body>
+</html>

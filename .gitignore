@@ -1,0 +1,34 @@
+# XcodeGen 生成物：工程文件不入库，用 `xcodegen generate` 重新生成
+*.xcodeproj/
+*.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+
+# Xcode / build 产物
+build/
+DerivedData/
+*.moved-aside
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# SwiftPM（本项目不使用，留个口子）
+.swiftpm/
+.build/
+Packages/
+
+# macOS
+.DS_Store
+
+# 本地签名配置（每台机器的 Team 不同，不要提交）
+Local.xcconfig
+*.local.xcconfig
+
+# 自检脚本产出的临时报告（可随时用 node tools/check_prototype.js 重新生成）
+tools/*.txt
+
+# AI 助手的本地记忆与工具目录（本地数据，不进版本库）
+.workbuddy/
+
+# 文档打包件 / 压缩包（交付产物，非源码）
+*.zip

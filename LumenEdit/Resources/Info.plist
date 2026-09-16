@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>LumenEdit</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<!-- ===== 设备与系统要求 ===== -->
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>MinimumOSVersion</key>
+	<string>$(IPHONEOS_DEPLOYMENT_TARGET)</string>
+
+	<!-- ===== 界面：仅竖屏、仅 iPhone ===== -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<!-- 空字典 = 使用系统默认启动画面，可避免旧式 letterbox 黑边 -->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+
+	<!-- ===== 状态栏：相机页整体深色观感 ===== -->
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
+
+	<!-- ===== 权限文案（缺任何一条都会在首次调用时崩溃）===== -->
+	<key>NSCameraUsageDescription</key>
+	<string>LumenEdit 需要访问相机来拍摄照片、Live Photo 与视频。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LumenEdit 需要访问麦克风，为 Live Photo 和视频录制声音。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>LumenEdit 需要把拍摄和编辑后的作品保存到你的相册。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LumenEdit 需要读取相册，以便导入照片、Live Photo 与视频进行编辑。</string>
+
+	<!-- ===== 杂项 ===== -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.photography</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>
