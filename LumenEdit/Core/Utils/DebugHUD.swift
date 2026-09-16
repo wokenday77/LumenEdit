@@ -78,8 +78,12 @@ struct DebugHUDView: View {
 
     // MARK: - 收起态
 
-    /// 收起态：一个 34×34 的小圆标。有错误时右上角挂红点，
-    /// 保证收起状态下也不会漏掉问题。
+    /// 收起态：一个 32×32 的小圆标，**静置时压暗到半透明、融入取景画面**，
+    /// 不抢取景的注意力；点一下才展开成完整面板。
+    ///
+    /// 只压暗底板与文字，错误红点保持醒目——收起状态也不能漏掉问题。
+    /// 这里刻意**不用 `.ultraThinMaterial`**：毛玻璃要对每秒 30–60 帧的取景画面
+    /// 做实时模糊，有掉帧发热风险（见交接单风险 #7），先做静态半透明。
     private var collapsedIcon: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -88,17 +92,18 @@ struct DebugHUDView: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Text("DBG")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.yellow)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.black.opacity(0.55)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 0.5))
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.white.opacity(0.09)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.5))
+                    .opacity(0.55)
 
                 if hasError {
                     Circle()
-                        .fill(Color.red)
-                        .frame(width: 8, height: 8)
-                        .offset(x: 3, y: -1)
+                        .fill(Color.red.opacity(0.85))
+                        .frame(width: 7, height: 7)
+                        .offset(x: 2, y: -1)
                 }
             }
         }
