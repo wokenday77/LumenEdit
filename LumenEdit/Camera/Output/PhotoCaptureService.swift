@@ -124,8 +124,10 @@ final class PhotoCaptureService: NSObject {
 
     /// 触发一次 Live Photo 拍摄。
     ///
-    /// 和静态照片的区别只在 settings：多设 `livePhotoMovieFileURL` 与视频编码格式，
-    /// 并且**由我们自己指定 uniqueID**，这样才能把两个回调配对起来。
+    /// 和静态照片的区别只在 settings：多设 `livePhotoMovieFileURL` 与视频编码格式。
+    /// **uniqueID 不能自己指定**——`AVCapturePhotoSettings.uniqueID` 是只读属性，由系统分配。
+    /// 配对改用「运行时认领」：第一个到达的回调把系统 ID 记下来，之后校验一致性，
+    /// 详见 `LivePhotoCaptureService.claim(_:)`。
     /// 结果要等静态照片与配对视频**两半都到齐**才产出。
     func captureLivePhoto(completion: @escaping (Result<CaptureResult, Error>) -> Void) {
         guard output.isLivePhotoCaptureEnabled else {
@@ -146,10 +148,9 @@ final class PhotoCaptureService: NSObject {
         let templateSettings = template
         stateLock.unlock()
 
-        let uniqueID = LivePhotoCaptureService.makeUniqueID()
         let movieURL = LivePhotoCaptureService.makeTemporaryMovieURL()
 
-        let service = LivePhotoCaptureService(uniqueID: uniqueID, movieURL: movieURL) { [weak self] result in
+        let service = LivePhotoCaptureService(movieURL: movieURL) { [weak self] result in
             // Live Photo 的收尾不走本类的 finish(error:)，所以忙碌标志在这里放开
             self?.markNotBusy()
             completion(result)
@@ -171,11 +172,10 @@ final class PhotoCaptureService: NSObject {
         let settings = LivePhotoCaptureService.makeSettings(
             from: baseSettings,
             videoCodecType: LivePhotoCaptureService.preferredVideoCodecType(for: output),
-            movieURL: movieURL,
-            uniqueID: uniqueID
+            movieURL: movieURL
         )
 
-        DebugLog.shared.info("live", "Live Photo 快门触发 uniqueID=\(uniqueID)")
+        DebugLog.shared.info("live", "Live Photo 快门触发（uniqueID 由系统分配，首个回调到达时认领）")
         output.capturePhoto(with: settings, delegate: self)
     }
 

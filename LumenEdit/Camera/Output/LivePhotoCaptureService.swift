@@ -44,16 +44,16 @@ enum LivePhotoCaptureError: LocalizedError {
 /// ## 三个必须守住的点
 /// 1. **`livePhotoMovieFileURL` 每次都要是全新的 URL**。复用同一个路径会让拍摄直接失败，
 ///    所以这里用 UUID 生成文件名。
-/// 2. **`uniqueID` 由我们自己生成并写进 settings**，系统在 `resolvedSettings` 里原样带回。
-///    这样"上一次拍摄的迟到回调"能被一眼识别并忽略，不会污染这一次的配对。
+/// 2. **`uniqueID` 是系统分配的只读属性**——`AVCapturePhotoSettings.uniqueID` 只有 getter，
+///    自己赋值会报 `cannot assign to property: 'uniqueID' is a get-only property`
+///    （2026-09-16 云端 CI 实测踩到）。所以这里不预生成，改成**运行时认领**：
+///    第一个到达的回调把系统分配的 ID 记下来，之后所有回调都必须与它一致；
+///    不一致的（上一次拍摄的迟到回调）直接忽略，不会污染这一次的配对。
 /// 3. **两个回调顺序不保证**，谁先到都只是"等"，直到两半齐了才产出结果。
 ///    先到就存、后到再补的写法，会让相册里出现"静态图 + 孤立视频"，系统不认。
 final class LivePhotoCaptureService {
 
     // MARK: - 本次拍摄的标识
-
-    /// 本次拍摄的 uniqueID，写进 settings 并在回调里核对
-    let uniqueID: Int64
 
     /// 本次拍摄的临时视频路径
     let movieURL: URL
@@ -63,10 +63,13 @@ final class LivePhotoCaptureService {
     private let lock = NSLock()
     private var assembler = LivePhotoAssembler()
     private var didComplete = false
+
+    /// 系统分配的 uniqueID：第一次收到回调时认领，之后用于校验迟到回调。
+    private var claimedUniqueID: Int64?
+
     private let completion: (Result<CaptureResult, Error>) -> Void
 
-    init(uniqueID: Int64, movieURL: URL, completion: @escaping (Result<CaptureResult, Error>) -> Void) {
-        self.uniqueID = uniqueID
+    init(movieURL: URL, completion: @escaping (Result<CaptureResult, Error>) -> Void) {
         self.movieURL = movieURL
         self.completion = completion
     }
@@ -101,17 +104,6 @@ final class LivePhotoCaptureService {
         return FileManager.default.temporaryDirectory.appendingPathComponent(filename)
     }
 
-    /// 生成 uniqueID。用毫秒时间戳做种子再加计数，保证同一次运行内不重复。
-    static func makeUniqueID() -> Int64 {
-        uniqueIDLock.lock()
-        defer { uniqueIDLock.unlock() }
-        uniqueIDCounter += 1
-        return uniqueIDCounter
-    }
-
-    private static let uniqueIDLock = NSLock()
-    private static var uniqueIDCounter = Int64(Date().timeIntervalSince1970 * 1000)
-
     /// 构造 Live Photo 的拍摄设置。
     ///
     /// 仍然走"复制模板"的路子（`AVCapturePhotoSettings(from:)`），这样编码格式等
@@ -119,11 +111,10 @@ final class LivePhotoCaptureService {
     static func makeSettings(
         from template: AVCapturePhotoSettings,
         videoCodecType: AVVideoCodecType,
-        movieURL: URL,
-        uniqueID: Int64
+        movieURL: URL
     ) -> AVCapturePhotoSettings {
         let settings = AVCapturePhotoSettings(from: template)
-        settings.uniqueID = uniqueID
+        // 注意：**不要**写 settings.uniqueID —— 它是只读属性，由系统分配。
         settings.livePhotoMovieFileURL = movieURL
         settings.livePhotoVideoCodecType = videoCodecType
         settings.flashMode = .off
@@ -134,7 +125,7 @@ final class LivePhotoCaptureService {
 
     /// 静态照片那一半
     func ingestImage(uniqueID: Int64, data: Data?, pixelSize: CGSize, error: Error?) {
-        guard uniqueID == self.uniqueID else {
+        guard claim(uniqueID) else {
             DebugLog.shared.debug("live", "忽略过期回调（照片）uniqueID=\(uniqueID)")
             return
         }
@@ -156,7 +147,7 @@ final class LivePhotoCaptureService {
 
     /// 配对视频那一半
     func ingestMovie(uniqueID: Int64, url: URL?, error: Error?) {
-        guard uniqueID == self.uniqueID else {
+        guard claim(uniqueID) else {
             DebugLog.shared.debug("live", "忽略过期回调（视频）uniqueID=\(uniqueID)")
             return
         }
@@ -179,7 +170,7 @@ final class LivePhotoCaptureService {
     /// 整个拍摄流程结束（`didFinishCaptureFor`）。
     /// 此时若还缺一半，就是**真的失败**了，必须报错而不是当成功。
     func finishCapture(uniqueID: Int64, error: Error?) {
-        guard uniqueID == self.uniqueID else { return }
+        guard claim(uniqueID) else { return }
 
         if let error {
             abort(message: "拍摄失败：\(error.localizedDescription)")
@@ -202,7 +193,9 @@ final class LivePhotoCaptureService {
     /// 中途出错，丢弃并清理
     func abort(message: String) {
         lock.lock()
-        assembler.discard(uniqueID: uniqueID)
+        if let claimedUniqueID {
+            assembler.discard(uniqueID: claimedUniqueID)
+        }
         lock.unlock()
 
         complete(.failure(LivePhotoCaptureError.aborted(message)))
@@ -210,10 +203,26 @@ final class LivePhotoCaptureService {
 
     // MARK: - 私有
 
+    /// 认领 / 校验本次拍摄的 uniqueID。
+    ///
+    /// 第一次调用时把系统分配的 ID 记下来；之后每次都必须一致。
+    /// 这样即使上一次拍摄的迟到回调混进来，也会因为 ID 不匹配被丢掉。
+    /// 返回 false 表示这条回调不属于本次拍摄。
+    private func claim(_ uniqueID: Int64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let claimed = claimedUniqueID {
+            return claimed == uniqueID
+        }
+        claimedUniqueID = uniqueID
+        return true
+    }
+
     private func handle(_ result: LivePhotoAssembler.SubmitResult) {
         switch result {
         case .waiting:
-            DebugLog.shared.debug("live", "已收到一半，等待另一半（uniqueID \(uniqueID)）")
+            DebugLog.shared.debug("live", "已收到一半，等待另一半（uniqueID \(claimedUniqueID ?? -1)）")
 
         case .ignored(let reason):
             DebugLog.shared.warn("live", "配对回调被忽略：\(reason)")
