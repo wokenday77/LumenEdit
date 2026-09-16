@@ -13,8 +13,8 @@
 
 | 阶段 | 范围 | 状态 |
 |---|---|---|
-| **P1a** | 照片采集闭环：权限、取景、点按对焦、曝光补偿、快门、原始 HEIC 直存相册、相机控制按钮全按快门 | ✅ 代码已交付，待真机验证 |
-| **P1b-1** | **Live Photo 拍摄**：同一个 PhotoOutput 开启 Live 采集、静态照片与配对视频按 uniqueID 配对、成对入库 | ✅ 代码已交付，待真机验证 |
+| **P1a** | 照片采集闭环：权限、取景、点按对焦、曝光补偿、快门、原始 HEIC 直存相册、相机控制按钮全按快门 | ✅ 已通过云端 CI 编译，待真机验证 |
+| **P1b-1** | **Live Photo 拍摄**：同一个 PhotoOutput 开启 Live 采集、静态照片与配对视频按 uniqueID 配对、成对入库 | ✅ 已通过云端 CI 编译，待真机验证 |
 | P1b-2 | 视频录制（`AVCaptureMovieFileOutput`）+ 录制指示 + 录制中禁止拍照 | 待做 |
 | P2 | ISO / 快门 / 白平衡手动档、镜头切换与变焦、格式帧率选择、相机控制按钮轻按滑杆、修图页预设注入 | 待做 |
 | P3 | 媒体导入（PHPicker + PHAsset 类型识别 + Live Photo 双资源解析） | 待做 |
@@ -245,14 +245,24 @@ Live Photo（P1b-1）
 
 ---
 
-## 五、编译报错怎么办
+## 五、编译状态
 
-我在 Windows 上写代码，**无法本地编译**。如果 Xcode 报错，请把报错原文贴回来（连同文件名和行号），我来修。
+**已于 2026-09-16 在 GitHub Actions（macos-15 + Xcode 16 + 无签名）编译通过**——零 error、零代码 warning。
+工作流见 `.github/workflows/build.yml`，push 即自动跑，结果页：
+`https://github.com/wokenday77/LumenEdit/actions`
 
-已知有两处需要 SDK 确认，都集中在 `CameraControlButton.swift`，代码注释里也标了：
+首轮编译曾暴露两个真实错误，**均已修复**（留档在此，避免以后重复踩）：
 
-1. `AVCaptureEventInteraction(primaryAction:)` 的初始化签名 —— 若报错，按 Xcode 自动补全给出的形参名改 `attach(to:)` 里那一行即可；
-2. 该类型是否提供 `isEnabled` —— 代码已改为自行管理开关，绕开了这个 API。
+1. **`AVCaptureEventInteraction` / `AVCaptureEvent` 属于 AVKit，不是 AVFoundation** ——
+   只 `import AVFoundation` 会报 `cannot find type ... in scope`，已补 `import AVKit`。
+   同时确认初始化签名只有 `init(handler:)` 与 `init(primary:secondary:)`，**没有 `primaryAction:` 这个标签**
+   （那是 SwiftUI `onCameraCaptureEvent` 的参数名）。
+2. **`AVCapturePhotoSettings.uniqueID` 是只读属性**（由系统分配），不能自己赋值 ——
+   原来"自生成 ID 写进 settings"的做法编译不过，已改为**运行时认领**：
+   第一个回调到达时记下系统 ID，之后校验一致性，迟到回调按 ID 不匹配丢弃。
+
+> ⚠️ **编译通过 ≠ 功能正常。** 相机预览、点按对焦、Live Photo 成对入库、相机控制按钮这些
+> **必须真机验证**，见下方验收清单。真机若报错，把报错原文（连同文件名和行号）贴回来即可。
 
 ---
 

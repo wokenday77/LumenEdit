@@ -2,21 +2,21 @@
   "total_count": 1,
   "jobs": [
     {
-      "id": 104659455236,
-      "run_id": 35053751274,
+      "id": 104662061262,
+      "run_id": 35054619273,
       "workflow_name": "Build",
       "head_branch": "main",
-      "run_url": "https://api.github.com/repos/wokenday77/LumenEdit/actions/runs/35053751274",
+      "run_url": "https://api.github.com/repos/wokenday77/LumenEdit/actions/runs/35054619273",
       "run_attempt": 1,
-      "node_id": "CR_kwDOUc4TTM8AAAAYXjCNBA",
-      "head_sha": "66ac70af0aaf6b998b7848eb10591d9c93591759",
-      "url": "https://api.github.com/repos/wokenday77/LumenEdit/actions/jobs/104659455236",
-      "html_url": "https://github.com/wokenday77/LumenEdit/actions/runs/35053751274/job/104659455236",
+      "node_id": "CR_kwDOUc4TTM8AAAAYXlhQzg",
+      "head_sha": "35b9acf1852a6ee79d9f09383f1e91871ffa55ec",
+      "url": "https://api.github.com/repos/wokenday77/LumenEdit/actions/jobs/104662061262",
+      "html_url": "https://github.com/wokenday77/LumenEdit/actions/runs/35054619273/job/104662061262",
       "status": "completed",
-      "conclusion": "failure",
-      "created_at": "2026-09-16T03:57:29Z",
-      "started_at": "2026-09-16T03:57:36Z",
-      "completed_at": "2026-09-16T03:58:10Z",
+      "conclusion": "success",
+      "created_at": "2026-09-16T04:11:13Z",
+      "started_at": "2026-09-16T04:11:20Z",
+      "completed_at": "2026-09-16T04:12:27Z",
       "name": "Build iOS (no signing)",
       "steps": [
         {
@@ -24,96 +24,96 @@
           "status": "completed",
           "conclusion": "success",
           "number": 1,
-          "started_at": "2026-09-16T03:57:36Z",
-          "completed_at": "2026-09-16T03:57:37Z"
+          "started_at": "2026-09-16T04:11:20Z",
+          "completed_at": "2026-09-16T04:11:20Z"
         },
         {
           "name": "Checkout",
           "status": "completed",
           "conclusion": "success",
           "number": 2,
-          "started_at": "2026-09-16T03:57:37Z",
-          "completed_at": "2026-09-16T03:57:38Z"
+          "started_at": "2026-09-16T04:11:20Z",
+          "completed_at": "2026-09-16T04:11:22Z"
         },
         {
           "name": "Select newest Xcode 16",
           "status": "completed",
           "conclusion": "success",
           "number": 3,
-          "started_at": "2026-09-16T03:57:38Z",
-          "completed_at": "2026-09-16T03:57:39Z"
+          "started_at": "2026-09-16T04:11:22Z",
+          "completed_at": "2026-09-16T04:11:24Z"
         },
         {
           "name": "Install XcodeGen",
           "status": "completed",
           "conclusion": "success",
           "number": 4,
-          "started_at": "2026-09-16T03:57:39Z",
-          "completed_at": "2026-09-16T03:57:41Z"
+          "started_at": "2026-09-16T04:11:24Z",
+          "completed_at": "2026-09-16T04:11:26Z"
         },
         {
           "name": "Generate Xcode project",
           "status": "completed",
           "conclusion": "success",
           "number": 5,
-          "started_at": "2026-09-16T03:57:41Z",
-          "completed_at": "2026-09-16T03:57:41Z"
+          "started_at": "2026-09-16T04:11:26Z",
+          "completed_at": "2026-09-16T04:11:27Z"
         },
         {
           "name": "Show scheme list",
           "status": "completed",
           "conclusion": "success",
           "number": 6,
-          "started_at": "2026-09-16T03:57:41Z",
-          "completed_at": "2026-09-16T03:57:45Z"
+          "started_at": "2026-09-16T04:11:27Z",
+          "completed_at": "2026-09-16T04:11:29Z"
         },
         {
           "name": "Build for device (signing disabled)",
           "status": "completed",
-          "conclusion": "failure",
+          "conclusion": "success",
           "number": 7,
-          "started_at": "2026-09-16T03:57:45Z",
-          "completed_at": "2026-09-16T03:58:04Z"
+          "started_at": "2026-09-16T04:11:29Z",
+          "completed_at": "2026-09-16T04:12:22Z"
         },
         {
           "name": "Show compile errors",
           "status": "completed",
-          "conclusion": "success",
+          "conclusion": "skipped",
           "number": 8,
-          "started_at": "2026-09-16T03:58:04Z",
-          "completed_at": "2026-09-16T03:58:05Z"
+          "started_at": "2026-09-16T04:12:22Z",
+          "completed_at": "2026-09-16T04:12:22Z"
         },
         {
           "name": "Upload build log",
           "status": "completed",
           "conclusion": "success",
           "number": 9,
-          "started_at": "2026-09-16T03:58:05Z",
-          "completed_at": "2026-09-16T03:58:06Z"
+          "started_at": "2026-09-16T04:12:22Z",
+          "completed_at": "2026-09-16T04:12:23Z"
         },
         {
           "name": "Post Checkout",
           "status": "completed",
           "conclusion": "success",
           "number": 18,
-          "started_at": "2026-09-16T03:58:06Z",
-          "completed_at": "2026-09-16T03:58:07Z"
+          "started_at": "2026-09-16T04:12:23Z",
+          "completed_at": "2026-09-16T04:12:24Z"
         },
         {
           "name": "Complete job",
           "status": "completed",
           "conclusion": "success",
           "number": 19,
-          "started_at": "2026-09-16T03:58:07Z",
-          "completed_at": "2026-09-16T03:58:08Z"
+          "started_at": "2026-09-16T04:12:24Z",
+          "completed_at": "2026-09-16T04:12:25Z"
         }
       ],
-      "check_run_url": "https://api.github.com/repos/wokenday77/LumenEdit/check-runs/104659455236",
+      "check_run_url": "https://api.github.com/repos/wokenday77/LumenEdit/check-runs/104662061262",
       "labels": [
         "macos-15"
       ],
-      "runner_id": 1000000001,
-      "runner_name": "GitHub Actions 1000000001",
+      "runner_id": 1000000002,
+      "runner_name": "GitHub Actions 1000000002",
       "runner_group_id": 0,
       "runner_group_name": "GitHub Actions"
     }
