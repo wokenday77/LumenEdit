@@ -423,12 +423,15 @@
   }
 
   /* ---------- 快门排（浮层 · 常驻 80px） ---------- */
-  .shutter-row{height:80px;display:flex;align-items:center;gap:14px;padding:0 18px;}
+  /* 快门排：缩略图靠左 / 快门**绝对居中** / 镜头切换 + 风格方块靠右。
+     快门用绝对定位居中 —— 之前是 flex 默认左对齐，整排挤在左边、快门偏左。 */
+  .shutter-row{height:80px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;position:relative;}
+  .shutter-right{display:flex;align-items:center;gap:11px;}
   .thumb{
     width:50px;height:50px;border-radius:12px;overflow:hidden;position:relative;flex:0 0 auto;
     box-shadow:0 0 0 1.5px rgba(255,255,255,.34);cursor:pointer;isolation:isolate;background:#1a1d21;
   }
-  .shutter-center{flex:1 1 auto;display:flex;justify-content:center;}
+  .shutter-center{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;}
   .shutter{
     width:66px;height:66px;border-radius:50%;background:none;border:0;padding:0;cursor:pointer;
     position:relative;display:grid;place-items:center;
@@ -444,14 +447,18 @@
   .shutter.busy .spin{opacity:1;}
   @keyframes spin{to{transform:rotate(360deg);}}
   /* 镜头切换：快门右侧的小圆按钮（对标参考图那颗圆形箭头键） */
+  /* 镜头切换：弱化的圆形小钮。
+     与右侧「方形 + 彩色渐变」的风格预览刻意拉开差异 ——
+     两者都是小圆按钮时会看着像重复功能（用户反馈过）。 */
   .flip-btn{
-    flex:0 0 30px;width:30px;height:30px;padding:0;border:0;border-radius:50%;cursor:pointer;
-    background:rgba(255,255,255,.16);color:#fff;
+    flex:0 0 28px;width:28px;height:28px;padding:0;border:0;border-radius:50%;cursor:pointer;
+    background:rgba(255,255,255,.10);color:rgba(255,255,255,.9);
     display:flex;align-items:center;justify-content:center;
   }
-  /* 右下角：当前风格预览（彩色描边），点击展开场景与风格 */
+  /* 右下角：当前风格预览（彩色渐变描边 + 方形）。
+     圆角压到 10px 让它一眼是"方块"，和左侧的圆形镜头切换钮区分开。 */
   .style-thumb{
-    flex:0 0 50px;width:50px;height:50px;padding:2px;border:0;border-radius:13px;cursor:pointer;
+    flex:0 0 50px;width:50px;height:50px;padding:2px;border:0;border-radius:10px;cursor:pointer;
     background:linear-gradient(135deg,#ffd23c,#ff7a59,#8b7bff,#34d058);
     display:block;
   }
@@ -556,6 +563,37 @@
   .st-sheet-item:active{background:rgba(255,255,255,.08);}
   .st-sheet-item .tick{position:absolute;left:18px;font-size:15px;}
 
+  /* =========================================================
+     阶段标记（「更多 → 阶段标记」打开）
+     给每个功能区块描边 + 角标，一眼看清它属于哪个交付阶段。
+     绿 = P1 已有真机能力 / 蓝 = P1b / 黄 = P2 / 橙 = P4
+     ========================================================= */
+  .screen.stage-on [data-stage]{position:relative;}
+  .screen.stage-on [data-stage]::after{
+    content:attr(data-stage);
+    position:absolute;top:0;right:0;z-index:12;
+    font-size:8.5px;font-weight:800;letter-spacing:.3px;line-height:1;
+    padding:2px 5px;border-radius:0 5px 0 7px;
+    color:#15181c;pointer-events:none;
+  }
+  .screen.stage-on [data-stage="P1"]{box-shadow:inset 0 0 0 1.5px rgba(48,209,88,.85);}
+  .screen.stage-on [data-stage="P1"]::after{background:#30d158;}
+  .screen.stage-on [data-stage="P1b"]{box-shadow:inset 0 0 0 1.5px rgba(90,200,250,.85);}
+  .screen.stage-on [data-stage="P1b"]::after{background:#5ac8fa;}
+  .screen.stage-on [data-stage="P2"]{box-shadow:inset 0 0 0 1.5px rgba(255,210,60,.85);}
+  .screen.stage-on [data-stage="P2"]::after{background:#ffd23c;}
+  .screen.stage-on [data-stage="P4"]{box-shadow:inset 0 0 0 1.5px rgba(255,122,89,.85);}
+  .screen.stage-on [data-stage="P4"]::after{background:#ff7a59;}
+  /* 图例（打开时贴在左上角，解释颜色） */
+  .stage-legend{
+    position:absolute;left:12px;top:96px;z-index:14;display:none;
+    background:rgba(10,12,15,.86);border:.5px solid var(--stroke);border-radius:9px;
+    padding:7px 9px;font-size:9.5px;line-height:1.6;color:var(--txt-2);
+  }
+  .stage-legend b{color:#fff;font-weight:600;}
+  .stage-legend i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;}
+  .screen.stage-on .stage-legend{display:block;}
+
   /* ---------- 页脚说明（手机外面） ---------- */
   .caption{
     position:fixed;left:16px;bottom:12px;max-width:min(430px, 44vw);
@@ -633,7 +671,7 @@
           <div class="lv"><span class="ch">L</span><span class="dots" id="dotsL"></span></div>
           <div class="lv"><span class="ch">R</span><span class="dots" id="dotsR"></span></div>
         </div>
-        <div class="mode-tabs" id="modeTabs"></div>
+        <div class="mode-tabs" id="modeTabs" data-stage="P1"></div>
         <div class="tb-icons">
           <button class="tb-icon" id="btnFlash" type="button" title="闪光灯">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2 4.6 13.4h6.1l-1.1 8.6 8.9-11.6h-6.2l1-8.4Z"/></svg>
@@ -661,8 +699,17 @@
     <!-- 更多菜单：简易模式 / 调试浮层 / 设置 收在这里 -->
     <div class="more-menu" id="moreMenu">
       <button type="button" data-act="simple">简易模式<span class="st" id="stSimple">关</span></button>
+      <button type="button" data-act="stage">阶段标记<span class="st" id="stStage">关</span></button>
       <button type="button" data-act="hud">调试浮层 HUD<span class="st" id="stHud">关</span></button>
       <button type="button" data-act="settings">设置<span class="st" id="stSettings">›</span></button>
+    </div>
+
+    <!-- 阶段标记图例（仅「阶段标记」开启时显示） -->
+    <div class="stage-legend">
+      <div><i style="background:#30d158"></i><b>P1</b> 真机已可用</div>
+      <div><i style="background:#5ac8fa"></i><b>P1b</b> Live Photo 批次</div>
+      <div><i style="background:#ffd23c"></i><b>P2</b> 手动参数 / 变焦</div>
+      <div><i style="background:#ff7a59"></i><b>P4</b> 滤镜与修图</div>
     </div>
 
     <!-- ===== 调试浮层（含实时净可见取景高度） ===== -->
@@ -672,7 +719,7 @@
     <div class="bottom-stack" id="bottomStack">
 
       <!-- 滤镜条：默认隐藏，上划呼出 -->
-      <div class="row row-filter">
+      <div class="row row-filter" data-stage="P4">
         <div class="ss-block-title">
           <span><b>滤镜</b> · 只叠颜色层（再点一次取消）</span>
           <span id="filterPicked">无</span>
@@ -681,7 +728,7 @@
       </div>
 
       <!-- 场景 · 风格：折叠 36px / 展开 144px -->
-      <div class="row row-scenestyle">
+      <div class="row row-scenestyle" data-stage="P2">
         <div class="ss-collapsed">
           <button class="ss-capsule" id="ssCapsule" type="button">
             <span class="tag">场景</span><span class="val strong" id="ssScene">人像</span>
@@ -743,7 +790,7 @@
             <div class="pcol-value" id="valWB">5600K</div>
           </div>
         </div>
-        <div class="params-closed-bar" id="paramsClosed">
+        <div class="params-closed-bar" id="paramsClosed" data-stage="P2">
           <button class="icon-item" id="btnFrontCam" type="button" title="切换前置 / 后置镜头（P2）">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 0 1 15.5-3.5L21 7"/><path d="M21 3v4h-4"/><path d="M21 16a9 9 0 0 1-15.5 3.5L3 17"/><path d="M3 21v-4h4"/></svg>
             <span class="t">前置</span>
@@ -776,7 +823,7 @@
       </div>
 
       <!-- 焦段条：13 / 24 / 48 / 120mm（对标参考视频：紧贴快门排上方、右对齐） -->
-      <div class="row row-focal">
+      <div class="row row-focal" data-stage="P2">
         <div class="focal-strip" id="focalStrip"></div>
       </div>
 
@@ -803,12 +850,14 @@
               <span class="ring"></span><span class="core"></span><span class="spin"></span>
             </button>
           </div>
-          <button class="flip-btn" id="btnFlip" type="button" title="切换前置 / 后置镜头（P2 交付）">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 0 1 15.5-3.5L21 7"/><path d="M21 3v4h-4"/><path d="M21 16a9 9 0 0 1-15.5 3.5L3 17"/><path d="M3 21v-4h4"/></svg>
-          </button>
-          <button class="style-thumb" id="btnSceneStyle" type="button" title="场景与风格">
-            <span class="inner" id="styleThumbInner"></span>
-          </button>
+          <div class="shutter-right">
+            <button class="flip-btn" id="btnFlip" type="button" title="切换前置 / 后置镜头（P2 交付）">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 0 1 15.5-3.5L21 7"/><path d="M21 3v4h-4"/><path d="M21 16a9 9 0 0 1-15.5 3.5L3 17"/><path d="M3 21v-4h4"/></svg>
+            </button>
+            <button class="style-thumb" id="btnSceneStyle" type="button" title="场景与风格">
+              <span class="inner" id="styleThumbInner"></span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1056,6 +1105,7 @@
      这样取景器的净可见面积永远不低于 50%（详见 docs/03-布局调整方案.md） */
   var layout = {
     simple:false,
+    stageMark:false,
     ssExpanded:false,
     filterExpanded:false,
     paramsOpen:true,
@@ -1220,12 +1270,15 @@
     s.classList.toggle('params-closed', !layout.simple && !layout.paramsOpen);
     s.classList.toggle('hud-on', layout.hud);
     s.classList.toggle('more-on', layout.moreOpen);
+    s.classList.toggle('stage-on', layout.stageMark);
     s.classList.toggle('grid-off', !layout.gridOn);
 
     var stS = $('stSimple');
     if (stS){ stS.textContent = layout.simple ? '开' : '关'; stS.classList.toggle('on', layout.simple); }
     var stH = $('stHud');
     if (stH){ stH.textContent = layout.hud ? '开' : '关'; stH.classList.toggle('on', layout.hud); }
+    var stG = $('stStage');
+    if (stG){ stG.textContent = layout.stageMark ? '开' : '关'; stG.classList.toggle('on', layout.stageMark); }
     var bg = $('btnGrid');
     if (bg) bg.classList.toggle('on', layout.gridOn);
 
@@ -1838,6 +1891,14 @@
     var act = btn.getAttribute('data-act');
     layout.moreOpen = false;
     if (act === 'simple'){ toggleSimple(); return; }
+    if (act === 'stage'){
+      layout.stageMark = !layout.stageMark;
+      applyLayout();
+      toast(layout.stageMark
+        ? '阶段标记已开：绿 P1 可用 / 蓝 P1b / 黄 P2 / 橙 P4'
+        : '阶段标记已关');
+      return;
+    }
     if (act === 'hud'){
       layout.hud = !layout.hud;
       applyLayout();
