@@ -33,7 +33,7 @@
     /* ---- 对焦圆盘组的四个尺寸参数 ----
        提到 :root 是为了让自检脚本能"从 CSS 真读数值"，而不是在脚本里再抄一份数字。
        改这里，圆盘和自检规则会一起跟着变。 */
-    --fd-size:372px;   /* 圆盘直径：372 = 屏内宽（390−2×9）＝「完整露出」的几何上限 */
+    --fd-size:280px;   /* 圆盘直径：280 = 折中值（完整露出 + 数值框在右侧 + 视觉尽量接近参考图） */
     --fd-gap:12px;     /* 圆盘下沿 → 开关行的间距 */
     --fd-pad:18px;     /* 圆盘组距屏幕底部（= 底部安全区） */
     --fd-auto-h:29px;  /* 「自动对焦」开关行高（= .sw 开关的高度） */
@@ -670,7 +670,10 @@
      两个都不压。若要把框放到**盘外**右侧，圆盘必须缩到 ≤224px（见交接说明）。 */
   .fd-val{
     position:absolute;left:50%;top:50%;
-    transform:translate(-50%,-50%) translate(84px,-6px);
+    /* 偏移按 --fd-size 的比例给（不用死值）——圆盘改尺寸时框会自动跟着走，
+       不会出现"圆盘缩了、框还停在原地压住 0.5 数字"这种脱节。
+       0.20×尺寸 的右侧落点，对 ≥258px 的圆盘都能同时避开中心图标与 0.5 数字。 */
+    transform:translate(-50%,-50%) translate(calc(var(--fd-size) * 0.20), -5px);
     border:1.5px solid #00E08A;border-radius:9px;padding:4px 12px;
     font-size:16px;font-weight:700;color:#00E08A;background:rgba(13,16,19,.92);
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
