@@ -39,6 +39,15 @@ struct CapturePreset: Codable, Equatable {
     /// 手动色调（-150 ~ 150）。必须与色温同时存在。
     var whiteBalanceTint: Double?
 
+    // MARK: 对焦（P2 新增 —— 手动对焦圆盘驱动它）
+
+    /// 手动对焦位置：**归一化 0 ~ 1**（0 = 最近、1 = 无穷远）。nil 表示自动对焦。
+    ///
+    /// ⚠️ 这是 `AVCaptureDevice.lensPosition` 的原始量纲，**不是米数**。
+    /// 硬件只认 0~1；中心（0.5 附近）大致对应几米处，且不同镜头的映射不一样。
+    /// 米数只在 UI 上显示用，换算放在 UI 侧做，不要污染这个模型。
+    var lensPosition: Float?
+
     // MARK: 其他
 
     /// 变焦倍率，1.0 表示广角原生倍率
@@ -50,6 +59,9 @@ struct CapturePreset: Codable, Equatable {
     // MARK: - 派生属性
 
     static let `default` = CapturePreset()
+
+    /// 是否处于手动对焦档
+    var isManualFocus: Bool { lensPosition != nil }
 
     /// 是否处于手动曝光档
     var isManualExposure: Bool {
@@ -85,6 +97,9 @@ struct CapturePreset: Codable, Equatable {
             parts.append(String(format: "%.0fK/%+.0f", whiteBalanceTemperature ?? 0, whiteBalanceTint ?? 0))
         } else {
             parts.append("AWB")
+        }
+        if isManualFocus, let lensPosition {
+            parts.append(String(format: "MF %.2f", lensPosition))
         }
         if abs(zoomFactor - 1.0) > 0.001 {
             parts.append(String(format: "%.1fx", zoomFactor))

@@ -256,6 +256,47 @@ if (styleMatch) {
     if (worst < 50) bad('最差状态的净可见取景面积只有 ' + worst + '%，低于 50% 底线');
     else ok('所有合法状态净可见 ≥ 50%（最差 ' + worst + '%）');
 
+    /* ---- 圆盘态（.screen.dial-on）：模态操作，规则与常驻浮层不同 ----
+       打开圆盘时底部浮层整条收起，只剩「圆盘 + 间距 + 开关行 + 底部安全区」。
+       底线是 30% 而不是 50% —— 圆盘是模态操作，用户此时专心调焦、不需要看全取景画面；
+       30% 的作用是防止"圆盘把屏幕占满"。
+       四个尺寸参数从 :root 真读，不在脚本里抄第二份。 */
+    const pickVar = (name) => {
+      const m = css.match(new RegExp(name + '\\s*:\\s*([\\d.]+)px'));
+      return m ? parseFloat(m[1]) : null;
+    };
+    const FD_SIZE = pickVar('--fd-size');
+    const FD_GAP  = pickVar('--fd-gap');
+    const FD_PAD  = pickVar('--fd-pad');
+    const FD_AUTO = pickVar('--fd-auto-h');
+    const SCREEN_W = 390 - 18;          // 屏内宽（外壳 390 − 左右各 9px padding）
+
+    const fdMissing = Object.entries({ FD_SIZE, FD_GAP, FD_PAD, FD_AUTO })
+      .filter(([, v]) => v === null).map(([k]) => k);
+    if (fdMissing.length) {
+      bad('圆盘参数读不到（:root 里少了）：' + fdMissing.join(', '));
+    } else {
+      // 规则 A：圆盘必须**完整露出** —— 直径不得超过屏内宽，否则左右会被裁掉
+      if (FD_SIZE > SCREEN_W) {
+        bad('圆盘直径 ' + FD_SIZE + 'px 超过屏内宽 ' + SCREEN_W + 'px —— 会被裁，不满足"完整露出"');
+      } else {
+        ok('圆盘完整露出：直径 ' + FD_SIZE + 'px ≤ 屏内宽 ' + SCREEN_W + 'px');
+      }
+
+      // 规则 B：圆盘态净可见取景面积 ≥ 30%
+      const dialStack = FD_SIZE + FD_GAP + FD_AUTO + FD_PAD;
+      const dialNet = SCREEN_H - TOP - dialStack;
+      const dialPct = Math.round(dialNet / SCREEN_H * 1000) / 10;
+      const dialH   = Math.round(FD_SIZE / SCREEN_H * 1000) / 10;
+      console.log('    ' + '圆盘打开（模态）'.padEnd(22, ' ') + dialNet + 'px · ' + dialPct + '%'
+        + '   （圆盘占屏高 ' + dialH + '%）');
+      if (dialPct < 30) {
+        bad('圆盘打开时净可见只有 ' + dialPct + '%，低于 30% 底线（圆盘过度占屏）');
+      } else {
+        ok('圆盘打开时净可见 ≥ 30%（' + dialPct + '%）· 圆盘占屏高 ' + dialH + '%');
+      }
+    }
+
     // 反证：如果三个浮层允许同时展开会掉到多少 —— 这就是必须互斥的原因
     const bad372 = H_SAFE + H_SHUTTER + H_PARAMS_ON + H_SS_ON + H_FILTER_ON;
     const badPct = Math.round((SCREEN_H - TOP - bad372) / SCREEN_H * 1000) / 10;

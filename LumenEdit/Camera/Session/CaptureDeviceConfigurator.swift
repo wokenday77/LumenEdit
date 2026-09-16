@@ -10,6 +10,7 @@ enum CaptureConfigurationError: LocalizedError {
     case partialManualExposure
     case partialManualWhiteBalance
     case unsupportedWhiteBalance
+    case unsupportedFocus
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +24,8 @@ enum CaptureConfigurationError: LocalizedError {
             return "手动白平衡参数不完整：色温与色调必须同时设置"
         case .unsupportedWhiteBalance:
             return "当前设备不支持锁定的白平衡"
+        case .unsupportedFocus:
+            return "当前设备不支持手动对焦（锁定焦点）"
         }
     }
 }
@@ -37,6 +40,40 @@ struct CaptureDeviceState {
     var exposureText: String = "—"
     var focusText: String = "—"
     var whiteBalanceText: String = "—"
+}
+
+// MARK: - 参数能力（数值，供 UI 画刻度）
+
+/// 相机可调参数的**数值范围与当前值**。
+///
+/// 与上面的 `CaptureDeviceState` 分工不同：
+///   - `CaptureDeviceState` → 全是**可读字符串**，给调试浮层看；
+///   - 本类型 → 全是**数值**，给参数控件（对焦圆盘 / 白平衡横尺…）算刻度与指针位置用。
+struct CameraParameterCapabilities {
+
+    /// 单个可调参数的区间与当前值
+    struct Span {
+        var min: Double
+        var max: Double
+        var current: Double
+
+        /// 值 → 归一化 0~1（UI 用它摆指针）
+        func normalized(_ value: Double) -> Double {
+            guard max > min else { return 0 }
+            return ((value - min) / (max - min)).clamped(to: 0...1)
+        }
+
+        /// 归一化 0~1 → 值（UI 拖动结束后用它写回硬件）
+        func denormalized(_ t: Double) -> Double {
+            min + (max - min) * t.clamped(to: 0...1)
+        }
+    }
+
+    var iso: Span?
+    var exposureSeconds: Span?
+    var lensPosition: Span?
+    var zoom: Span?
+    var whiteBalanceTemperature: Span?
 }
 
 // MARK: - 配置器
@@ -156,6 +193,74 @@ final class CaptureDeviceConfigurator {
         }
 
         DebugLog.shared.debug("device", "对焦点 → (\(String(format: "%.2f", target.x)), \(String(format: "%.2f", target.y)))")
+    }
+
+    // MARK: - 手动对焦（P2 · 对焦圆盘驱动它）
+
+    /// 手动对焦。`lensPosition` 归一化 0 ~ 1（0 最近、1 无穷远）。
+    ///
+    /// 与 `setFocusAndExposurePoint` 的分工：
+    ///   - 那个是「点一下画面某处，让系统自动对到那儿」——一次性、自动档；
+    ///   - 这个是「把焦点锁死在某个距离」——持续、手动档。
+    /// 调用本方法后焦点会一直锁着，直到 `setAutoFocus` 或用户再次点按画面。
+    func setManualFocus(lensPosition: Float, on device: AVCaptureDevice) throws {
+        guard device.isFocusModeSupported(.locked) else {
+            throw CaptureConfigurationError.unsupportedFocus
+        }
+        // 越界写 lensPosition 同样是**抛异常**（不是被忽略），必须先钳。
+        let safe = lensPosition.sanitized(or: 0.5).clamped(to: 0...1)
+        try withLock(device) {
+            device.setFocusModeLocked(lensPosition: safe, completionHandler: nil)
+        }
+    }
+
+    /// 恢复自动对焦（从手动档退回）
+    func setAutoFocus(on device: AVCaptureDevice) throws {
+        try withLock(device) {
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            } else if device.isFocusModeSupported(.autoFocus) {
+                device.focusMode = .autoFocus
+            }
+        }
+    }
+
+    // MARK: - 参数能力（P2 · 供 UI 画刻度）
+
+    /// 读取设备当前可调参数的**数值范围与当前值**。
+    ///
+    /// UI（对焦圆盘 / 白平衡横尺 / ISO 横尺…）靠它决定刻度范围与指针位置。
+    /// 与 `snapshot(of:)` 的区别：那个产出给人看的可读字符串，这个产出给控件用的数值
+    /// —— 用途不同，不要合并。
+    func capabilities(of device: AVCaptureDevice) -> CameraParameterCapabilities {
+        let format = device.activeFormat
+        var caps = CameraParameterCapabilities()
+
+        caps.iso = .init(
+            min: Double(format.minISO),
+            max: Double(format.maxISO),
+            current: Double(device.iso)
+        )
+
+        caps.exposureSeconds = .init(
+            min: format.minExposureDuration.safeSeconds,
+            max: format.maxExposureDuration.safeSeconds,
+            current: device.exposureDuration.safeSeconds
+        )
+
+        // 对焦位置天生就是 0~1，不需要探测范围
+        caps.lensPosition = .init(min: 0, max: 1, current: Double(device.lensPosition))
+
+        let maxZoom = max(
+            1.0,
+            Double(min(format.videoMaxZoomFactor, device.maxAvailableVideoZoomFactor))
+        )
+        caps.zoom = .init(min: 1, max: maxZoom, current: Double(device.videoZoomFactor))
+
+        // 色温范围 iOS 没有提供查询 API，按业界惯例取值域
+        caps.whiteBalanceTemperature = .init(min: 2000, max: 10000, current: 5600)
+
+        return caps
     }
 
     // MARK: - 快照
