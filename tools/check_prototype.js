@@ -321,14 +321,16 @@ if (scriptMatch) {
     ['id="btnMore"',         '更多'],
     ['id="btnTone"',         '影调预览'],
     ['id="chipStorage"',     '剩余存储'],
-    ['id="btnFlip"',         '镜头切换'],
+    // 镜头切换入口在 7 图标行的「前置」上；快门排那颗圆钮 2026-09-16 按用户要求移除
+    // （它与「前置」功能重复，两处入口冗余）
+    ['id="btnFrontCam"',      '镜头切换（前置）'],
     ['id="styleThumbInner"', '风格预览方块'],
     ['.focal-pill{',         '焦段药丸样式'],
     ['ICON_LIVE',            '「实况」Live Photo 同心圆图标']
   ];
   const miss = need.filter(([k]) => html.indexOf(k) < 0).map(([, n]) => n);
   if (miss.length) bad('缺少元素：' + miss.join('、'));
-  else ok('参考图元素齐备（电平表 / 闪光灯·网格·更多 / 影调预览 / 存储 / 镜头切换 / 风格方块 / 焦段药丸）');
+  else ok('参考图元素齐备（电平表 / 闪光灯·网格·更多 / 影调预览 / 存储 / 镜头切换·前置 / 风格方块 / 焦段药丸）');
 }
 
 /* ---------- 结论 ---------- */

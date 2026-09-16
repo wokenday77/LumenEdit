@@ -446,15 +446,9 @@
   }
   .shutter.busy .spin{opacity:1;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  /* 镜头切换：快门右侧的小圆按钮（对标参考图那颗圆形箭头键） */
-  /* 镜头切换：弱化的圆形小钮。
-     与右侧「方形 + 彩色渐变」的风格预览刻意拉开差异 ——
-     两者都是小圆按钮时会看着像重复功能（用户反馈过）。 */
-  .flip-btn{
-    flex:0 0 28px;width:28px;height:28px;padding:0;border:0;border-radius:50%;cursor:pointer;
-    background:rgba(255,255,255,.10);color:rgba(255,255,255,.9);
-    display:flex;align-items:center;justify-content:center;
-  }
+  /* 快门右侧原本有一个「镜头切换」圆钮，2026-09-16 按用户要求移除：
+     它与底部 7 图标行第 1 项「前置」是同一个功能，两处入口重复。
+     镜头切换现在只保留在 7 图标行的「前置」里。 */
   /* 右下角：当前风格预览（彩色渐变描边 + 方形）。
      圆角压到 10px 让它一眼是"方块"，和左侧的圆形镜头切换钮区分开。 */
   .style-thumb{
@@ -851,9 +845,6 @@
             </button>
           </div>
           <div class="shutter-right">
-            <button class="flip-btn" id="btnFlip" type="button" title="切换前置 / 后置镜头（P2 交付）">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 0 1 15.5-3.5L21 7"/><path d="M21 3v4h-4"/><path d="M21 16a9 9 0 0 1-15.5 3.5L3 17"/><path d="M3 21v-4h4"/></svg>
-            </button>
             <button class="style-thumb" id="btnSceneStyle" type="button" title="场景与风格">
               <span class="inner" id="styleThumbInner"></span>
             </button>
@@ -1961,10 +1952,7 @@
     toast('设置页（简易模式持久化 / 毛玻璃开关 / 网格开关）将在 P2 补齐');
   });
 
-  // 快门右侧：镜头切换
-  $('btnFlip').addEventListener('click', function(){
-    toast('原型占位：前后镜头切换在真机上重建会话输入（P2 交付）');
-  });
+  // 「镜头切换」的绑定已随按钮一并移除（该入口与 7 图标行「前置」重复）
 
   // 点取景器 = 对焦（黄框 1 秒淡出）+ 收起所有展开的浮层
   $('viewport').addEventListener('click', function(e){
