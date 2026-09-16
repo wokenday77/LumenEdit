@@ -8,10 +8,10 @@
   /* ============================================================
      LumenEdit 网页版界面原型 · 单文件 / 无外部依赖 / 双击即开
 
-     布局骨架参考飓风相机（取景器为主体、参数滑块排在底部、隐藏模块上划呼出、
+     布局骨架参考同类相机 App（取景器为主体、参数滑块排在底部、隐藏模块上划呼出、
      设置里有简易模式），产品逻辑与视觉权重按 LumenEdit 自己的走：
        · 场景 / 风格 的视觉权重高于参数条（我们的核心是"选场景直接拍"）
-       · 所有参数滑块只用一种形态（竖向），不重复飓风相机圆环+横条混排的问题
+       · 所有参数滑块只用一种形态（竖向），不重复"圆环 + 横条混排"的问题
 
      取景器铺满全屏，所有控件都是叠在它上面的浮层 —— 只遮挡，不挤压。
      预设数据（STYLES / FILTERS / SCENES）与 docs/02-风格与滤镜清单.md 同源。
@@ -129,7 +129,7 @@
   }
 
   /* ---------- 顶部控制行（浮层 · 常驻 56px = 主行 30 + 副行 26） ----------
-     严格对标飓风相机：
+     严格对标参考图：
        主行 = 左「L / R 音频电平表」 + 中「模式条」 + 右「闪光灯 / 网格 / 更多」
        副行 = 左「影调预览」 + 右「剩余存储」
      两行都是浮层，只遮挡不挤压取景器。 */
@@ -139,17 +139,6 @@
   }
   .tb-row1{height:30px;display:flex;align-items:center;gap:8px;padding:0 14px;}
   .tb-row2{height:26px;display:flex;align-items:center;gap:8px;padding:0 14px;}
-
-  /* 黄色提示条（对标参考视频）：静态文字提示，居中浮在顶栏正下方，不参与布局高度 */
-  .tip-bar{
-    position:absolute;left:50%;top:88px;transform:translateX(-50%);
-    z-index:7;max-width:80%;
-    background:var(--accent);color:#15181c;
-    font-size:11.5px;font-weight:600;letter-spacing:.1px;
-    padding:5px 13px;border-radius:9px;white-space:nowrap;
-    box-shadow:0 4px 16px rgba(0,0,0,.5);
-    pointer-events:none;
-  }
 
   /* L / R 音频电平表：静态示意，录音时由 AVAudioRecorder 驱动（P1b） */
   .levels{display:flex;flex-direction:column;gap:2.5px;flex:0 0 auto;}
@@ -161,11 +150,13 @@
   .levels .dots i.hot{background:var(--accent);box-shadow:0 0 4px rgba(242,175,60,.75);}
 
   /* 主行右侧图标：闪光灯 / 网格 / 更多 */
-  .tb-icons{display:flex;align-items:center;gap:15px;flex:0 0 auto;}
+  .tb-icons{display:flex;align-items:center;gap:11px;flex:0 0 auto;}
   .tb-icon{
-    width:20px;height:20px;padding:0;border:0;background:none;cursor:pointer;
+    width:17px;height:17px;padding:0;border:0;background:none;cursor:pointer;
     color:rgba(255,255,255,.88);display:flex;align-items:center;justify-content:center;
   }
+  /* 顶栏图标统一压到 15px —— 与缩小的模式条配套，让顶栏更透气 */
+  .tb-icon svg{width:15px;height:15px;}
   .tb-icon.on{color:#fff;}
   .tb-icon.accent{color:var(--accent);}
 
@@ -196,14 +187,24 @@
   .more-menu .st{margin-left:auto;font-size:10px;color:var(--txt-3);}
   .more-menu .st.on{color:var(--accent);}
 
-  /* ---------- 模式条：纯文字标签（对标系统相机 / 飓风相机的顶部标签页） ----------
+  /* ---------- 模式条：纯文字标签（对标系统相机的顶部标签页） ----------
      选中 = 白色加粗，未选中 = 半透明灰，置灰入口带挂锁。
      刻意不用强调色 —— 参考图里模式条的选中态就是"变白变粗"。 */
-  .mode-tabs{display:flex;align-items:center;gap:16px;margin:0 auto;}
+  /* 模式条：横向可滑动 —— 内容放不下时在条内滑动，不挤压两侧的图标；
+     滚动条隐藏，保持顶栏干净 */
+  .mode-tabs{
+    display:flex;align-items:center;gap:10px;
+    flex:1 1 auto;min-width:0;margin:0 8px;
+    overflow-x:auto;overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .mode-tabs::-webkit-scrollbar{display:none;}
   .mode-tab{
-    height:30px;padding:0;border:0;background:none;cursor:pointer;
-    display:inline-flex;align-items:center;gap:4px;
-    font-family:inherit;font-size:12.5px;font-weight:600;color:rgba(255,255,255,.5);
+    height:26px;padding:0;border:0;background:none;cursor:pointer;
+    display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;
+    font-family:inherit;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.5);
     transition:.18s;white-space:nowrap;
   }
   .mode-tab svg{display:block;}
@@ -591,9 +592,6 @@
       </div>
     </div>
 
-    <!-- 黄色提示条：对标参考视频的静态文字提示 -->
-    <div class="tip-bar" id="tipBar">如何选择飓风相机的三种模式</div>
-
     <!-- 更多菜单：简易模式 / 调试浮层 / 设置 收在这里 -->
     <div class="more-menu" id="moreMenu">
       <button type="button" data-act="simple">简易模式<span class="st" id="stSimple">关</span></button>
@@ -756,7 +754,7 @@
 </div>
 
 <div class="caption">
-  <b>LumenEdit 原型 · 全屏取景 + 浮层式（严格对标飓风相机参考图）</b><br>
+  <b>LumenEdit 原型 · 全屏取景 + 浮层式（严格对标参考图）</b><br>
   顶栏两行：L/R 电平 + 模式条（照片 / 实况 / Log 实况 / 视频）+ 闪光灯·网格·更多 ｜ 影调预览 · 剩余存储<br>
   底部：焦段药丸 13/24/48/120mm ｜ 图标行 7 项（前置 / 对焦 / 白平衡 / 感光 / 快门速度 / 曝光补偿 / 设置）｜ 缩略图 · 快门 · 镜头切换 · 风格预览<br>
   点画面 = 对焦 + 收起浮层 ｜ <b>上划</b> 呼出滤镜条 / 场景风格条 ｜ <b>更多 → HUD</b> 看实时净可见取景高度
@@ -946,9 +944,10 @@
   var MODES = [
     { id:'photo', name:'照片',     enabled:true },
     { id:'live',  name:'实况',     enabled:true, icon:'live' },
-    { id:'log',   name:'Log 实况', enabled:false,
-      reason:'Log 实况（Log 视频套 LUT 导出实况照片）将在后续阶段交付' },
-    { id:'video', name:'视频',     enabled:false,
+    // 本产品全部功能免费开放，不设任何锁定 ——
+    // 参考视频里出现的 🔒 是对方 App 的付费墙，不是功能本身需要权限。
+    { id:'log',   name:'Log 实况', enabled:true },
+    { id:'video', name:'视频',     enabled:true,
       reason:'视频录制将在 P1b 交付' }
   ];
 
