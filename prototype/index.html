@@ -140,6 +140,17 @@
   .tb-row1{height:30px;display:flex;align-items:center;gap:8px;padding:0 14px;}
   .tb-row2{height:26px;display:flex;align-items:center;gap:8px;padding:0 14px;}
 
+  /* 黄色提示条（对标参考视频）：静态文字提示，居中浮在顶栏正下方，不参与布局高度 */
+  .tip-bar{
+    position:absolute;left:50%;top:88px;transform:translateX(-50%);
+    z-index:7;max-width:80%;
+    background:var(--accent);color:#15181c;
+    font-size:11.5px;font-weight:600;letter-spacing:.1px;
+    padding:5px 13px;border-radius:9px;white-space:nowrap;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);
+    pointer-events:none;
+  }
+
   /* L / R 音频电平表：静态示意，录音时由 AVAudioRecorder 驱动（P1b） */
   .levels{display:flex;flex-direction:column;gap:2.5px;flex:0 0 auto;}
   .levels .lv{display:flex;align-items:center;gap:3px;height:5px;}
@@ -493,6 +504,10 @@
 
   /* ---------- 纯 CSS 画的挂锁（不依赖字体/emoji） ---------- */
   .lk{width:7px;height:8px;flex:0 0 auto;background:currentColor;opacity:.55;border-radius:1.5px;position:relative;margin-top:2px;}
+
+  /* 参数图标选中态：绿色高亮（对标参考视频 —— 标示当前正在调节的那一项） */
+  .icon-item.active{color:#3ddc84;}
+  .icon-item.active .t{color:#3ddc84;}
   .lk::before{
     content:"";position:absolute;left:1px;top:-3.5px;width:3px;height:4px;
     border:1.3px solid currentColor;border-bottom:0;border-radius:3px 3px 0 0;
@@ -576,6 +591,9 @@
       </div>
     </div>
 
+    <!-- 黄色提示条：对标参考视频的静态文字提示 -->
+    <div class="tip-bar" id="tipBar">如何选择飓风相机的三种模式</div>
+
     <!-- 更多菜单：简易模式 / 调试浮层 / 设置 收在这里 -->
     <div class="more-menu" id="moreMenu">
       <button type="button" data-act="simple">简易模式<span class="st" id="stSimple">关</span></button>
@@ -618,11 +636,6 @@
             <div class="strip" id="styleStrip"></div>
           </div>
         </div>
-      </div>
-
-      <!-- 焦段条：13 / 24 / 48 / 120mm（对标系统相机与飓风相机的焦段切换） -->
-      <div class="row row-focal">
-        <div class="focal-strip" id="focalStrip"></div>
       </div>
 
       <!-- 参数排：四列竖向滑块（平铺 104 / 收起 44） -->
@@ -696,6 +709,11 @@
             <span class="t">设置</span>
           </button>
         </div>
+      </div>
+
+      <!-- 焦段条：13 / 24 / 48 / 120mm（对标参考视频：紧贴快门排上方、右对齐） -->
+      <div class="row row-focal">
+        <div class="focal-strip" id="focalStrip"></div>
       </div>
 
       <!-- 简易模式的 EV 单条横滑（平时高度 0） -->
