@@ -592,15 +592,18 @@
      对焦圆盘（1:1 复刻用户提供的参考样式）
      下半圆刻度 1.0（左）→ 0.0（右）：密集刻度 + 绿色三角指针 + 绿色描边数值框 + 自动对焦开关
      ========================================================= */
+  /* ⚠️ 位置修正：圆盘必须**完整可见**。之前 bottom 用了负值（-210px），
+     导致圆盘一半在屏幕外、只露出一小段弧，还被底部图标行压住。
+     现在改成正值 —— 圆盘整体落在屏幕内（下沿距屏幕底 110px），
+     它会盖住底部的图标行 / 快门排（与参考图一致，那边也看不到图标行）。 */
   .focus-dial{
-    position:absolute;left:50%;bottom:-210px;transform:translateX(-50%);
-    width:480px;height:480px;border-radius:50%;
-    /* 深色渐变 + 半透明，让取景画面能透出来（参考图的效果） */
-    background:radial-gradient(circle at 50% 42%,
-      rgba(30,33,39,.86) 0%, rgba(17,20,24,.90) 55%, rgba(11,13,16,.93) 100%);
+    position:absolute;left:50%;bottom:110px;transform:translateX(-50%);
+    width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 50% 45%,
+      rgba(28,31,37,.90) 0%, rgba(16,19,23,.93) 55%, rgba(10,12,15,.95) 100%);
     box-shadow:
-      0 -4px 32px rgba(0,0,0,.58),
-      inset 0 0 0 1px rgba(255,255,255,.05);
+      0 4px 34px rgba(0,0,0,.6),
+      inset 0 0 0 1px rgba(255,255,255,.06);
     z-index:9;display:none;
   }
   .screen.dial-on .focus-dial{display:block;}
@@ -614,20 +617,23 @@
   }
   .fd-tick.mid{height:13px;background:rgba(255,255,255,.4);}
   .fd-tick.major{height:19px;width:1.5px;margin-left:-0.75px;margin-top:-9.5px;background:rgba(255,255,255,.72);}
-  .fd-tick.on{background:#30d158;}
+  .fd-tick.on{background:#00E08A;}
+  /* 数字：等宽字体 + 沿圆周旋转朝圆心（旋转角由 JS 注入到 inline style） */
   .fd-num{
     position:absolute;left:50%;top:50%;
-    font-size:11px;font-weight:600;color:rgba(255,255,255,.82);
-    font-variant-numeric:tabular-nums;transform-origin:50% 50%;letter-spacing:.1px;
+    font-size:10px;font-weight:600;color:rgba(255,255,255,.85);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums;transform-origin:50% 50%;letter-spacing:0;
+    white-space:nowrap;
   }
 
-  /* 绿色三角指针 + 外发光 */
+  /* 绿色三角指针 + 外发光（颜色统一为 #00E08A，对照图2） */
   .fd-pointer{position:absolute;left:50%;top:50%;width:0;height:0;margin-left:-5px;transform-origin:50% 50%;}
   .fd-pointer::after{
-    content:"";position:absolute;left:0;top:-232px;
+    content:"";position:absolute;left:0;top:-172px;
     border-left:5.5px solid transparent;border-right:5.5px solid transparent;
-    border-bottom:11px solid #30d158;
-    filter:drop-shadow(0 0 6px rgba(48,209,88,.6));
+    border-bottom:11px solid #00E08A;
+    filter:drop-shadow(0 0 6px rgba(0,224,138,.65));
   }
 
   /* 盘内标签：中心偏左下（对照参考图位置） */
@@ -640,14 +646,15 @@
   .fd-hub svg{opacity:.92;}
   .fd-hub .t{font-size:13px;font-weight:600;letter-spacing:.6px;color:rgba(255,255,255,.9);}
 
-  /* 数值框：右侧中间，紧贴指针（对照参考图位置） */
+  /* 数值框：右侧、绿色描边 + 绿色等宽数字（对照图2） */
   .fd-val{
     position:absolute;left:50%;top:50%;
-    transform:translate(-50%,-50%) translate(172px,-8px);
-    border:1.5px solid rgba(48,209,88,.9);border-radius:9px;padding:4px 12px;
-    font-size:17px;font-weight:700;color:#30d158;background:rgba(13,16,19,.9);
-    font-variant-numeric:tabular-nums;letter-spacing:.3px;pointer-events:none;
-    box-shadow:0 0 14px rgba(48,209,88,.24), inset 0 1px 0 rgba(255,255,255,.06);
+    transform:translate(-50%,-50%) translate(120px,-4px);
+    border:1.5px solid rgba(0,224,138,.92);border-radius:9px;padding:4px 12px;
+    font-size:16px;font-weight:700;color:#00E08A;background:rgba(13,16,19,.92);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums;letter-spacing:0;pointer-events:none;
+    box-shadow:0 0 14px rgba(0,224,138,.26), inset 0 1px 0 rgba(255,255,255,.06);
   }
 
   /* 自动对焦开关：贴在圆盘下方中央，随圆盘一起显隐（对照参考图） */

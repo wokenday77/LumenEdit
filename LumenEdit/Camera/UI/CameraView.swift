@@ -164,9 +164,19 @@ struct CameraView: View {
 
                 ShutterButton(
                     isBusy: viewModel.isSaving,
-                    isEnabled: env.session.state == .running && !viewModel.isSaving
+                    isRecording: viewModel.isRecording,
+                    // ⚠️ 录制中快门**必须保持可用** —— 那是唯一的"停止录制"入口，
+                    // 禁用掉就会出现"录上了停不下来"。
+                    isEnabled: viewModel.isRecording
+                        || (env.session.state == .running && !viewModel.isSaving)
                 ) {
                     viewModel.shutterTapped()
+                }
+                .overlay(alignment: .top) {
+                    if viewModel.isRecording {
+                        RecordingBadge(seconds: viewModel.recordingSeconds)
+                            .offset(y: -38)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -201,6 +211,8 @@ struct CameraView: View {
 private struct ShutterButton: View {
 
     let isBusy: Bool
+    /// 是否正在录制视频 —— 录制中内圈变成红色方块（"停止录制"的行业标准形态）
+    let isRecording: Bool
     let isEnabled: Bool
     let action: () -> Void
 
@@ -211,28 +223,75 @@ private struct ShutterButton: View {
                     .stroke(Color.white, lineWidth: Theme.Size.shutterRingWidth)
                     .frame(width: Theme.Size.shutterDiameter, height: Theme.Size.shutterDiameter)
 
-                Circle()
-                    .fill(Color.white)
-                    .frame(
-                        width: Theme.Size.shutterDiameter - 14,
-                        height: Theme.Size.shutterDiameter - 14
-                    )
-                    // 拍摄/保存时内圈收缩，和系统相机的反馈一致
-                    .scaleEffect(isBusy ? 0.68 : 1.0)
-                    .animation(.easeInOut(duration: 0.15), value: isBusy)
+                if isRecording {
+                    // 录制中：红色圆角方块 = 点它停止录制
+                    RoundedRectangle(cornerRadius: Theme.Size.shutterDiameter * 0.15, style: .continuous)
+                        .fill(Theme.Color.recording)
+                        .frame(
+                            width: Theme.Size.shutterDiameter * 0.42,
+                            height: Theme.Size.shutterDiameter * 0.42
+                        )
+                } else {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(
+                            width: Theme.Size.shutterDiameter - 14,
+                            height: Theme.Size.shutterDiameter - 14
+                        )
+                        // 拍摄/保存时内圈收缩，和系统相机的反馈一致
+                        .scaleEffect(isBusy ? 0.68 : 1.0)
+                        .animation(.easeInOut(duration: 0.15), value: isBusy)
 
-                if isBusy {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(.black)
+                    if isBusy {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.black)
+                    }
                 }
             }
             .contentShape(Circle())
+            .animation(.easeInOut(duration: 0.18), value: isRecording)
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1.0 : 0.45)
-        .accessibilityLabel("快门")
+        .accessibilityLabel(isRecording ? "停止录制" : "快门")
+    }
+}
+
+// MARK: - 录制计时徽标
+
+/// 录制中显示的红点 + 计时，浮在快门上方（不参与布局，避免顶动快门）。
+private struct RecordingBadge: View {
+
+    let seconds: Double
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Theme.Color.recording)
+                .frame(width: 7, height: 7)
+            Text(Self.format(seconds))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.Color.primaryText)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.black.opacity(0.55)))
+        .accessibilityLabel("正在录制，已录制 \(Int(seconds)) 秒")
+    }
+
+    /// mm:ss；超过一小时显示 h:mm:ss
+    static func format(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%02d:%02d", m, s)
     }
 }
 

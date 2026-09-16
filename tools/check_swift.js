@@ -143,8 +143,12 @@ if (ph === 0) ok('无 TODO / 占位符');
 
 /* ---------- 4. 引用未来阶段的类型 ---------- */
 console.log('\n[4] 是否引用了尚未创建的类型');
+// ⚠️ 这个清单要随阶段推进维护：某个类型一旦真的创建了，就必须从这里移除，
+// 否则自检会把「正常引用自己刚新建的类型」误报成「引用了未创建的类型」。
+// 2026-09-16：MovieCaptureService 已在 P1b-2 创建（Camera/Output/MovieCaptureService.swift），
+// 故从清单移除。
 const FUTURE = [
-  'MovieCaptureService', 'RecordingIndicator', 'SessionControlsCoordinator',
+  'RecordingIndicator', 'SessionControlsCoordinator',
   'PhotoExporter', 'LivePhotoExporter', 'VideoExporter', 'ImageLoader',
   'LibraryView', 'LibraryViewModel', 'ImportCoordinator', 'AssetResourceResolver',
   'EditRecipe', 'AdjustmentPipeline', 'AdjustmentKind', 'FilterCatalog', 'FilterRenderer',

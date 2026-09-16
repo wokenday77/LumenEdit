@@ -89,6 +89,7 @@ final class CaptureSessionController: ObservableObject {
     private let sessionQueue = DispatchQueue(label: "com.lumenedit.capture.session", qos: .userInitiated)
     private let configurator = CaptureDeviceConfigurator()
     private let photoService = PhotoCaptureService()
+    private let movieService = MovieCaptureService()
     private let audioSession = AudioSessionManager()
 
     private var device: AVCaptureDevice?
@@ -148,6 +149,15 @@ final class CaptureSessionController: ObservableObject {
     /// 而且几乎无法从现象定位。按模式重配输出只是一次 `beginConfiguration` 的开销。
     func switchMode(to newMode: CaptureSessionMode) {
         guard newMode != mode else { return }
+
+        // 录制中不允许切模式：换模式会重配 session 输出，
+        // 正在写入的文件会被中途截断（产物损坏）。
+        guard !movieService.isRecording else {
+            DebugLog.shared.warn("session", "录制中不允许切换模式")
+            publish { self.lastErrorMessage = "请先停止录制再切换模式" }
+            return
+        }
+
         guard newMode.isImplemented else {
             let reason = newMode.unavailableReason ?? "该模式暂不可用"
             DebugLog.shared.warn("session", "模式 \(newMode.displayName) 未实现：\(reason)")
@@ -263,6 +273,50 @@ final class CaptureSessionController: ObservableObject {
     }
 
     var isPhotoOutputBusy: Bool { photoService.isBusy }
+
+    // MARK: - 视频录制（P1b-2）
+
+    /// 当前是否在录制视频
+    var isRecording: Bool { movieService.isRecording }
+
+    /// 录制时长心跳（秒），供 UI 计时。setter 转发给录制服务。
+    var onRecordingTick: ((TimeInterval) -> Void)? {
+        get { movieService.onTick }
+        set { movieService.onTick = newValue }
+    }
+
+    /// 开始录制。只在**视频模式且会话就绪**时有效。
+    ///
+    /// 与 `capture(completion:)` 的区别：那个是"一次性快门"，
+    /// 这个的开始/停止跨越一段时间，产物要等停止后的代理回调。
+    func startRecording(completion: @escaping (Result<CaptureResult, Error>) -> Void) {
+        guard mode == .video else {
+            let error = MovieCaptureError.notReady
+            DebugLog.shared.warn("session", "非视频模式下请求开始录制（当前 \(mode.rawValue)）")
+            publish { self.lastErrorMessage = error.localizedDescription }
+            completion(.failure(error))
+            return
+        }
+        guard state == .running else {
+            let error = SessionConfigurationError.notRunning
+            DebugLog.shared.warn("session", "会话未就绪就请求录制")
+            publish { self.lastErrorMessage = error.localizedDescription }
+            completion(.failure(error))
+            return
+        }
+
+        movieService.startRecording { [weak self] result in
+            if case .failure(let error) = result {
+                self?.publish { self?.lastErrorMessage = error.localizedDescription }
+            }
+            completion(result)
+        }
+    }
+
+    /// 请求停止录制。产物仍走开始录制时传入的那个 completion。
+    func stopRecording() {
+        movieService.stopRecording()
+    }
 
     // MARK: - 调试快照
 
@@ -596,16 +650,14 @@ final class CaptureSessionController: ObservableObject {
             return true
 
         case .video:
-            // ⚠️ P1a 里这个分支**不可达**：CaptureSessionMode.video.isImplemented == false，
-            // UI 与 switchMode 都会先拦下来。保留它只是为了模式枚举完整。
-            //
-            // 这里刻意只挂照片输出，**不引用任何尚未实现的类型**（例如将来的录制服务），
-            // 保证 P1a 一定能编译通过。P1b 打开视频模式时，在本分支里换成
-            // 录制输出即可（届时会新增对应的 Service 文件）。
-            guard session.canAddOutput(photoService.output) else { return false }
-            session.addOutput(photoService.output)
-            photoService.configure(for: .photo)
-            applyRotationLocked(to: photoService.output)
+            // P1b-2 起这一支挂真正的录制输出（切换逻辑见本函数开头：先清空所有输出）。
+            // 视频与照片输出互斥 —— 所以这里**只**挂 movieService.output，不挂 photoOutput。
+            guard session.canAddOutput(movieService.output) else {
+                DebugLog.shared.error("session", "无法加入录制输出")
+                return false
+            }
+            session.addOutput(movieService.output)
+            applyRotationLocked(to: movieService.output)
             return true
         }
     }

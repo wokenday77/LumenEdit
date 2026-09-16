@@ -20,6 +20,11 @@ final class CameraViewModel: ObservableObject {
 
     @Published private(set) var mode: CaptureSessionMode = .photo
     @Published private(set) var isSaving = false
+
+    /// 是否正在录制视频（P1b-2）
+    @Published private(set) var isRecording = false
+    /// 已录制秒数，供录制指示器计时
+    @Published private(set) var recordingSeconds: Double = 0
     @Published private(set) var toast: String?
 
     /// 对焦方框位置（视图坐标）与重播令牌
@@ -116,6 +121,14 @@ final class CameraViewModel: ObservableObject {
 
     func shutterTapped() {
         guard let environment else { return }
+
+        // 视频模式：快门 = 开始 / 停止录制（不是一次性拍照）。
+        // 放在最前面，避免走下面那套"拍一张等保存"的逻辑。
+        if environment.session.mode == .video {
+            toggleRecording()
+            return
+        }
+
         guard !isSaving, !environment.session.isPhotoOutputBusy else {
             DebugLog.shared.debug("ui", "上一次保存尚未结束，忽略快门")
             return
@@ -143,6 +156,62 @@ final class CameraViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - 视频录制（P1b-2）
+
+    /// 视频模式下按快门 = 开始 / 停止录制。
+    private func toggleRecording() {
+        guard let environment else { return }
+
+        if isRecording {
+            Haptics.shutter()
+            environment.session.stopRecording()
+            return
+        }
+
+        guard environment.session.state == .running else {
+            showToast("相机尚未就绪，请稍候")
+            return
+        }
+        guard !isSaving else {
+            DebugLog.shared.debug("ui", "上一次保存尚未结束，忽略录制请求")
+            return
+        }
+
+        Haptics.shutter()
+        lastShownError = nil
+        recordingSeconds = 0
+
+        environment.session.startRecording { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                // 录制结束（正常或失败）都要复位状态
+                self.isRecording = false
+                self.recordingSeconds = 0
+                switch result {
+                case .success(let capture):
+                    await self.persist(capture)
+                case .failure(let error):
+                    Haptics.warning()
+                    self.showToast("录制失败：\(error.localizedDescription)")
+                }
+            }
+        }
+
+        isRecording = true
+        environment.session.onRecordingTick = { [weak self] seconds in
+            Task { @MainActor in
+                self?.recordingSeconds = seconds
+            }
+        }
+    }
+
+    /// 停止录制（供切模式 / 退到后台时调用）。停止后产物仍会正常保存。
+    func stopRecordingIfNeeded() {
+        guard isRecording, let environment else { return }
+        DebugLog.shared.info("ui", "外部触发停止录制")
+        environment.session.stopRecording()
     }
 
     // MARK: - 保存
