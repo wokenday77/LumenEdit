@@ -589,32 +589,42 @@
   .screen.stage-on .stage-legend{display:block;}
 
   /* =========================================================
-     对焦圆盘（对标用户提供的真机截图）
-     下半圆刻度 0.0 → 1.0（左 → 下 → 右），绿色三角指针 + 绿色描边数值框 + 自动对焦开关
+     对焦圆盘（对标用户提供的真机截图 · 视觉打磨版）
+     下半圆刻度 1.0（左）→ 0.0（右），绿色三角指针 + 绿色描边数值框 + 自动对焦开关
      ========================================================= */
   .focus-dial{
     position:absolute;left:50%;bottom:-118px;transform:translateX(-50%);
     width:320px;height:320px;border-radius:50%;
-    background:radial-gradient(circle at 50% 45%, rgba(26,29,34,.94), rgba(14,16,19,.965));
-    box-shadow:0 -2px 26px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.06);
+    /* 深色多层渐变：中心略亮、边缘更深，像实体仪表盘 */
+    background:radial-gradient(circle at 50% 42%,
+      rgba(34,38,45,.96) 0%, rgba(20,23,28,.97) 52%, rgba(12,14,17,.98) 100%);
+    box-shadow:
+      0 -4px 32px rgba(0,0,0,.62),
+      inset 0 0 0 1px rgba(255,255,255,.07),
+      inset 0 16px 34px rgba(255,255,255,.045),    /* 顶部内光 → 凸面感 */
+      inset 0 -22px 36px rgba(0,0,0,.52);          /* 底部内暗 → 凹陷感 */
     z-index:9;display:none;
   }
   .screen.dial-on .focus-dial{display:block;}
   .fd-ticks{position:absolute;inset:0;}
 
-  /* 刻度：元素居中于圆心，再按角度旋转并向外推 R */
+  /* 刻度：细刻度更淡、主刻度更醒目，信息层级靠透明度拉开 */
   .fd-tick{
-    position:absolute;left:50%;top:50%;width:1.5px;height:12px;border-radius:1px;
-    margin-left:-0.75px;margin-top:-6px;transform-origin:50% 50%;
-    background:rgba(255,255,255,.28);
+    position:absolute;left:50%;top:50%;width:1px;height:11px;border-radius:1px;
+    margin-left:-0.5px;margin-top:-5.5px;transform-origin:50% 50%;
+    background:rgba(255,255,255,.20);
   }
-  .fd-tick.major{background:rgba(255,255,255,.56);height:15px;}
+  .fd-tick.major{
+    background:rgba(255,255,255,.62);
+    height:16px;width:1.5px;margin-left:-0.75px;margin-top:-8px;
+  }
   .fd-num{
     position:absolute;left:50%;top:50%;
-    font-size:9.5px;font-weight:600;color:rgba(255,255,255,.6);
-    font-variant-numeric:tabular-nums;transform-origin:50% 50%;
+    font-size:9.5px;font-weight:500;color:rgba(255,255,255,.5);
+    font-variant-numeric:tabular-nums;transform-origin:50% 50%;letter-spacing:.1px;
   }
-  /* 绿色三角指针 */
+
+  /* 绿色三角指针：加外发光，让它在深色盘上"浮"起来 */
   .fd-pointer{
     position:absolute;left:50%;top:50%;width:0;height:0;
     margin-left:-5px;transform-origin:50% 50%;
@@ -622,29 +632,73 @@
   .fd-pointer::after{
     content:"";position:absolute;left:0;top:-118px;
     border-left:5px solid transparent;border-right:5px solid transparent;
-    border-bottom:10px solid #30d158;
+    border-bottom:11px solid #30d158;
+    filter:drop-shadow(0 0 6px rgba(48,209,88,.6));
   }
+
   /* 盘内标签 */
   .fd-hub{
     position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    display:flex;flex-direction:column;align-items:center;gap:5px;
+    display:flex;flex-direction:column;align-items:center;gap:6px;
     color:#fff;pointer-events:none;
   }
-  .fd-hub .t{font-size:12.5px;font-weight:600;letter-spacing:.3px;}
-  /* 右侧绿色描边数值框 */
+  .fd-hub svg{opacity:.92;}
+  .fd-hub .t{font-size:13px;font-weight:600;letter-spacing:.6px;color:rgba(255,255,255,.9);}
+
+  /* 右侧绿色描边数值框：外发光 + 一点内亮边，像 LED 数字窗 */
   .fd-val{
     position:absolute;left:50%;top:50%;
     transform:translate(-50%,-50%) translate(88px,-52px);
-    border:1.5px solid #30d158;border-radius:9px;padding:4px 11px;
-    font-size:16px;font-weight:700;color:#30d158;background:rgba(12,14,17,.92);
-    font-variant-numeric:tabular-nums;pointer-events:none;
+    border:1.5px solid rgba(48,209,88,.88);border-radius:9px;padding:4px 11px;
+    font-size:16.5px;font-weight:700;color:#30d158;background:rgba(13,16,19,.94);
+    font-variant-numeric:tabular-nums;letter-spacing:.3px;pointer-events:none;
+    box-shadow:0 0 14px rgba(48,209,88,.24), inset 0 1px 0 rgba(255,255,255,.07);
   }
+
   /* 自动对焦开关 */
   .fd-auto{
     position:absolute;left:50%;top:50%;
     transform:translate(-50%,-50%) translate(0,74px);
-    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt-2);white-space:nowrap;
+    display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.55);
+    white-space:nowrap;letter-spacing:.2px;
   }
+
+  /* =========================================================
+     全局微交互与质感打磨（只改视觉，不动结构 / 交互 / 数据绑定）
+     ========================================================= */
+
+  /* 按钮按下反馈：整体轻缩 + 加深，给"按下去"的手感。
+     transition 里把 background / color 一并列出 —— 否则会覆盖掉 .focal-pill 等
+     原有的背景/颜色过渡（CSS 的 transition 是整体替换，不合并）。 */
+  button{transition:transform .1s ease, opacity .15s ease, background .16s ease, color .16s ease;}
+  button:active{transform:scale(.95);opacity:.82;}
+
+  /* 快门例外：不整体缩放，改成内核收缩（更像相机快门的按下感） */
+  .shutter:active{transform:none;opacity:1;}
+  .shutter:active .core{transform:scale(.8);}
+
+  /* 滑块旋钮：内高光 + 投影，像实体旋钮 */
+  .pcol-knob{
+    box-shadow:0 1px 5px rgba(0,0,0,.55),
+               inset 0 1px 0 rgba(255,255,255,.22),
+               0 0 0 1px rgba(255,255,255,.08);
+  }
+
+  /* 选中态高亮：轻微外发光，"当前选中"一眼可辨 */
+  .mode-tab.on{text-shadow:0 0 10px rgba(255,255,255,.4);}
+  .focal-pill.on{box-shadow:0 2px 12px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.28), 0 0 14px rgba(255,255,255,.12);}
+  .icon-item.active{text-shadow:0 0 8px rgba(61,220,132,.4);}
+
+  /* 胶囊 / 卡片：加一点内亮边和投影，更透气 */
+  .chip{box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 2px 8px rgba(0,0,0,.28);}
+  .ss-capsule{box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 2px 10px rgba(0,0,0,.3);}
+
+  /* 相册缩略图 / 风格预览：柔和投影，更像"浮起的卡片" */
+  .thumb{box-shadow:0 2px 10px rgba(0,0,0,.5), 0 0 0 1.5px rgba(255,255,255,.3);}
+  .style-thumb{box-shadow:0 2px 12px rgba(0,0,0,.5);}
+
+  /* 快门：整体加柔和投影，更像实体按钮 */
+  .shutter{filter:drop-shadow(0 2px 8px rgba(0,0,0,.45));}
 
   /* ---------- 页脚说明（手机外面） ---------- */
   .caption{
@@ -2010,7 +2064,11 @@
   var focusVal = 0.56;      // 当前值 0 ~ 1（1 视为无穷远）
   var focusAuto = false;    // 自动对焦开关
 
-  function focusAngle(v){ return 180 + v * 180; }   // 180°(左) → 270°(下) → 360°(右)
+  // 角度约定（2026-09-16 修正：数值与指针对不上，因为刻度 / 数字 / 指针的角度基准不一致）。
+  // CSS rotate 顺时针，0°=上、90°=右、180°=下、270°=左。
+  // 刻度弧覆盖下半圆：1.0 在左上、0.0 在右下（与参考截图一致）。
+  function focusAngle(v){ return 120 + v * 180; }    // v=0 → 120°(右下) / v=0.5 → 210°(左下) / v=1 → 300°(左上)
+  function focusMathDeg(v){ return 30 + v * 180; }   // 对应数学角（0°=右），cos/sin 定位数字用
 
   function buildFocusDial(){
     var box = $('fdTicks');
@@ -2024,7 +2082,7 @@
       h += '<i class="fd-tick' + (major ? ' major' : '') + '" style="transform:rotate('
          + deg + 'deg) translateY(-' + R + 'px)"></i>';
       if (major){
-        var rad = deg * Math.PI / 180, nr = 123;
+        var rad = focusMathDeg(v) * Math.PI / 180, nr = 123;
         h += '<span class="fd-num" style="transform:translate(-50%,-50%) translate('
            + (Math.cos(rad) * nr).toFixed(1) + 'px,' + (Math.sin(rad) * nr).toFixed(1) + 'px)">'
            + v.toFixed(1) + '</span>';
@@ -2051,11 +2109,13 @@
     var r = dial.getBoundingClientRect();
     var dx = clientX - (r.left + r.width / 2);
     var dy = clientY - (r.top + r.height / 2);
-    var deg = Math.atan2(dy, dx) * 180 / Math.PI;
-    if (deg < 0) deg += 360;
+    var mdeg = Math.atan2(dy, dx) * 180 / Math.PI;   // 数学角：0°=右、90°=下、180°=左、270°=上
+    if (mdeg < 0) mdeg += 360;
+    // 有效弧 = 下半圆（数学角 30° → 210°）：右下(0.0) → 正下(0.5) → 左下(1.0)
     var v;
-    if (deg < 180){ v = (deg < 90) ? 1 : 0; }     // 点到上半圆：就近吸附到端点
-    else { v = (deg - 180) / 180; }
+    if (mdeg >= 30 && mdeg <= 210){ v = (mdeg - 30) / 180; }
+    else if (mdeg > 210){ v = 1; }                   // 左上区域：吸附到 1.0 端
+    else { v = 0; }                                  // 右上 / 上方：吸附到 0.0 端
     focusVal = Math.max(0, Math.min(1, v));
     renderFocus();
   }
