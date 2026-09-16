@@ -78,11 +78,14 @@ struct DebugHUDView: View {
 
     // MARK: - 收起态
 
-    /// 收起态：一个 32×32 的小圆标，**静置时压暗到半透明、融入取景画面**，
-    /// 不抢取景的注意力；点一下才展开成完整面板。
+    /// 收起态：一个 32×32 的小圆标，点一下才展开成完整面板。
     ///
-    /// 只压暗底板与文字，错误红点保持醒目——收起状态也不能漏掉问题。
-    /// 这里刻意**不用 `.ultraThinMaterial`**：毛玻璃要对每秒 30–60 帧的取景画面
+    /// 视觉取舍：**只有圆底是半透明的（12% 白），文字用 95% 白保持醒目**。
+    /// 早先把整块一起压到 55% 不透明度，实测反馈字母太暗、看不清；
+    /// 改成"底板淡、字母亮"，既有融入取景画面的通透感，又保证一眼能读到。
+    /// 另补一层淡黑影，避免纯白字落在明亮场景（天空、白墙）上糊成一片。
+    ///
+    /// 刻意**不用 `.ultraThinMaterial`**：毛玻璃要对每秒 30–60 帧的取景画面
     /// 做实时模糊，有掉帧发热风险（见交接单风险 #7），先做静态半透明。
     private var collapsedIcon: some View {
         Button {
@@ -92,16 +95,16 @@ struct DebugHUDView: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Text("DBG")
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.95))
                     .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.white.opacity(0.09)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.5))
-                    .opacity(0.55)
+                    .background(Circle().fill(Color.white.opacity(0.12)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.55), radius: 1.5, y: 0.5)
 
                 if hasError {
                     Circle()
-                        .fill(Color.red.opacity(0.85))
+                        .fill(Color.red.opacity(0.92))
                         .frame(width: 7, height: 7)
                         .offset(x: 2, y: -1)
                 }
