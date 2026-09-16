@@ -495,6 +495,67 @@
      改用三重选择器，保证显示优先级更高。 */
   .screen.simple.more-on .more-menu{display:flex;}
 
+  /* =========================================================
+     设置页（全屏覆盖）—— 对标参考截图：
+     纯黑底 + 大圆角卡片 + 分组灰标题 + iOS 开关 + 带副标题说明的行
+     ========================================================= */
+  .settings{
+    position:absolute;inset:0;z-index:20;
+    background:#000;overflow-y:auto;overflow-x:hidden;display:none;
+    padding-bottom:28px;scrollbar-width:none;
+  }
+  .settings::-webkit-scrollbar{display:none;}
+  .settings.on{display:block;}
+
+  .st-nav{position:sticky;top:0;z-index:2;background:#000;height:52px;display:flex;align-items:center;padding:0 14px;}
+  .st-back{
+    width:34px;height:34px;border-radius:50%;border:0;padding:0;cursor:pointer;
+    background:#2c2c2e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;
+  }
+  .st-nav h2{position:absolute;left:50%;transform:translateX(-50%);margin:0;font-size:16.5px;font-weight:600;color:#fff;}
+
+  .st-group-title{font-size:12px;color:rgba(255,255,255,.45);padding:14px 22px 7px;}
+  .st-card{background:#1c1c1e;border-radius:17px;margin:0 14px;overflow:hidden;}
+  .st-card + .st-card{margin-top:10px;}
+
+  .st-row{display:flex;align-items:center;gap:11px;min-height:52px;padding:0 16px;position:relative;}
+  .st-row + .st-row::before{
+    content:"";position:absolute;left:16px;right:0;top:0;height:.5px;background:rgba(255,255,255,.10);
+  }
+  .st-ic{flex:0 0 auto;width:20px;height:20px;display:flex;align-items:center;justify-content:center;color:#fff;}
+  .st-ic svg{width:19px;height:19px;}
+  .st-label{font-size:14.5px;color:#fff;flex:1 1 auto;min-width:0;}
+  .st-info{color:rgba(255,255,255,.32);font-size:12.5px;flex:0 0 auto;}
+  .st-val{font-size:14px;color:rgba(255,255,255,.5);flex:0 0 auto;}
+  .st-arrow{color:rgba(255,255,255,.26);font-size:15px;flex:0 0 auto;}
+
+  /* iOS 风格开关 */
+  .sw{
+    flex:0 0 auto;width:47px;height:29px;border-radius:15px;border:0;padding:0;cursor:pointer;
+    background:#39393d;position:relative;transition:background .2s;
+  }
+  .sw::after{
+    content:"";position:absolute;top:2px;left:2px;width:25px;height:25px;border-radius:50%;
+    background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.35);transition:transform .2s;
+  }
+  .sw.on{background:#30d158;}
+  .sw.on::after{transform:translateX(18px);}
+
+  /* 行下方的说明文字（性能设置 / 烧录方式那两页大量使用） */
+  .st-sub{font-size:12px;line-height:1.5;color:rgba(255,255,255,.42);padding:0 16px 13px 47px;}
+  .st-row.with-sub{min-height:0;padding-top:14px;padding-bottom:6px;}
+
+  /* 页首说明段落 */
+  .st-intro{font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.5);padding:4px 22px 14px;}
+
+  /* 弹层选择器（如「稳定器」的 关闭/标准/电影级/极致） */
+  .st-sheet{position:absolute;inset:0;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.5);}
+  .st-sheet.on{display:flex;}
+  .st-sheet-card{width:74%;background:#2c2c2e;border-radius:14px;overflow:hidden;padding:5px 0;}
+  .st-sheet-item{height:44px;display:flex;align-items:center;justify-content:center;font-size:15.5px;color:#fff;cursor:pointer;position:relative;}
+  .st-sheet-item:active{background:rgba(255,255,255,.08);}
+  .st-sheet-item .tick{position:absolute;left:18px;font-size:15px;}
+
   /* ---------- 页脚说明（手机外面） ---------- */
   .caption{
     position:fixed;left:16px;bottom:12px;max-width:min(430px, 44vw);
@@ -601,7 +662,7 @@
     <div class="more-menu" id="moreMenu">
       <button type="button" data-act="simple">简易模式<span class="st" id="stSimple">关</span></button>
       <button type="button" data-act="hud">调试浮层 HUD<span class="st" id="stHud">关</span></button>
-      <button type="button" data-act="settings">设置<span class="st" id="stSettings">P2</span></button>
+      <button type="button" data-act="settings">设置<span class="st" id="stSettings">›</span></button>
     </div>
 
     <!-- ===== 调试浮层（含实时净可见取景高度） ===== -->
@@ -753,6 +814,11 @@
 
       <div class="row row-safe"></div>
     </div>
+
+    <!-- ===== 设置页（全屏覆盖，由「更多 → 设置」进入）===== -->
+    <div class="settings" id="settings"></div>
+    <!-- 弹层选择器（如「稳定器」的 关闭/标准/电影级/极致） -->
+    <div class="st-sheet" id="stSheet"><div class="st-sheet-card" id="stSheetCard"></div></div>
 
     <div class="toast" id="toast"></div>
   </div>
@@ -1597,6 +1663,174 @@
     applyLayout();
   });
 
+  /* =========================================================
+     设置页 —— 对标参考截图（3 页：设置 / 性能设置 / 烧录方式）
+     数据驱动渲染，避免堆重复 HTML
+     ========================================================= */
+  var ST_IC = {
+    cam:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7.5" width="18" height="12" rx="2.5"/><circle cx="12" cy="13.5" r="3.3"/><path d="M8.5 7.5 10 5.2h4l1.5 2.3"/></svg>',
+    stab:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="6.8" r="2.5"/><circle cx="6.4" cy="16.4" r="2.5"/><circle cx="17.6" cy="16.4" r="2.5"/><path d="M10.5 9 8.2 13.9M13.5 9l2.3 4.9M8.9 16.4h6.2"/></svg>',
+    grid:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="3.5" width="17" height="17" rx="2.2"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/></svg>',
+    level:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14.6 9 8.6l5 5 3-3 4 4"/></svg>',
+    save:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="14" rx="2.4"/><rect x="6.6" y="8.4" width="7" height="4.2" rx="1" fill="currentColor" stroke="none"/></svg>',
+    expo:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17V9M9 17V5M14 17v-6M19 17v-9"/></svg>',
+    mirror: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.8" y="5" width="6.6" height="14" rx="1.6"/><rect x="13.6" y="5" width="6.6" height="14" rx="1.6" stroke-dasharray="2.6 2.2"/></svg>',
+    geo:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21c4-4.6 6-8 6-10.6A6 6 0 0 0 6 10.4C6 13 8 16.4 12 21Z"/><circle cx="12" cy="10.4" r="2.2"/></svg>',
+    qr:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 9V5.6A1.6 1.6 0 0 1 5.6 4H9M15 4h3.4A1.6 1.6 0 0 1 20 5.6V9M20 15v3.4a1.6 1.6 0 0 1-1.6 1.6H15M9 20H5.6A1.6 1.6 0 0 1 4 18.4V15M4 12h16"/></svg>',
+    gear:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7.6"/></svg>',
+    perf:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h4l2.4-6 4 12L16 12h5"/></svg>',
+    burn:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.2"/><path d="M12 3.8v16.4" stroke-dasharray="2.6 2.2"/></svg>',
+    clock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.6V12l3 2"/></svg>',
+    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3.5 5 6.4v5.2c0 4.2 2.9 7.6 7 8.9 4.1-1.3 7-4.7 7-8.9V6.4L12 3.5Z"/></svg>'
+  };
+
+  var SETTINGS = {
+    main: {
+      title: '设置',
+      groups: [
+        { name: '拍摄', rows: [
+          { k:'simple',  ic:'cam',    label:'简易模式', info:1, sw:0 },
+          { k:'stab',    ic:'stab',   label:'稳定器', go:1, sel:'关闭', opts:['关闭','标准','电影级','极致'] },
+          { k:'grid',    ic:'grid',   label:'预览网格', sw:0 },
+          { k:'level',   ic:'level',  label:'水平指示器', sw:0 },
+          { k:'storage', ic:'save',   label:'存储空间提示', sw:1 },
+          { k:'expo',    ic:'expo',   label:'曝光参考', sw:0 },
+          { k:'mirror',  ic:'mirror', label:'前置镜像', sw:0 },
+          { k:'geo',     ic:'geo',    label:'录制保存地理位置', sw:1 },
+          { k:'qr',      ic:'qr',     label:'二维码扫描', info:1, sw:1 },
+          { k:'keep',    ic:'gear',   label:'保留设置', go:1 }
+        ]},
+        { name: '性能', rows: [
+          { k:'perf', ic:'perf', label:'性能设置', go:1 }
+        ]},
+        { name: '', rows: [
+          { k:'burn', ic:'burn', label:'烧录模式', go:1, sel:'保留原片' }
+        ]}
+      ]
+    },
+    perf: {
+      title: '性能设置',
+      intro: '如果你发现在拍摄时出现性能问题，可以试试开启以下选项。',
+      groups: [{ name:'', rows: [
+        { k:'p1', ic:'clock',  label:'限制预览画面帧率', sw:1, sub:'限制预览画面帧率可以降低系统压力，但不会影响录制帧率。' },
+        { k:'p2', ic:'shield', label:'系统过载保护', sw:1, sub:'App 内的保护机制会在设备过载时采取禁止录制、自动停止录制、不渲染影调等措施降低系统压力。禁用后可能导致系统过载时录制的视频质量不稳定甚至导致闪退。' },
+        { k:'p3', ic:'cam',    label:'开启专业模式', sw:1, sub:'简易模式下系统会同时调用所有的镜头，会对性能有一定影响。' },
+        { k:'p4', ic:'burn',   label:'使用影调预览', sw:1, sub:'在影调烧录情况下会实时执行影调烧录操作，对性能影响较大，长时间录制可能导致卡顿；仅预览影调、录制原片性能更优。' },
+        { k:'p5', ic:'grid',   label:'禁用沉浸式背景', sw:1, sub:'拍摄页空白区域的动态背景会占用一些额外性能，禁用后可略微提升性能。系统压力大以及视频录制时会自动禁用沉浸式背景。' }
+      ]}]
+    },
+    burn: {
+      title: '烧录方式',
+      groups: [{ name:'', rows: [
+        { k:'b1', ic:'burn', label:'保留可调色原片', sw:1, sub:'拍摄时仅预览当前影调，保存后仍可在媒体库里切换影调并重新导出，更适合后续继续调色。' },
+        { k:'b2', ic:'burn', label:'直接输出成片', sw:0, sub:'拍摄时会把当前影调直接烧录到结果中，导出更快，但后续不能再切换为其他影调。' }
+      ]}]
+    }
+  };
+
+  var stStack = [];    // 页面栈，用于返回
+  var stState = {};    // 开关状态（本次会话内保持）
+  var stStab = '关闭'; // 稳定器当前档位
+
+  function renderSettings(page){
+    var S = SETTINGS[page];
+    var h = '<div class="st-nav"><button class="st-back" data-back="1" type="button">‹</button><h2>' + S.title + '</h2></div>';
+    if (S.intro) h += '<div class="st-intro">' + S.intro + '</div>';
+    (S.groups || []).forEach(function(g){
+      if (g.name) h += '<div class="st-group-title">' + g.name + '</div>';
+      h += '<div class="st-card">';
+      g.rows.forEach(function(r){
+        var on = (stState[r.k] !== undefined) ? stState[r.k] : r.sw;
+        var sel = (r.k === 'stab') ? stStab : r.sel;
+        h += '<div class="st-row' + (r.sub ? ' with-sub' : '') + '"' + (r.go ? ' data-go="' + r.k + '"' : '') + '>';
+        h += '<span class="st-ic">' + (ST_IC[r.ic] || '') + '</span>';
+        h += '<span class="st-label">' + r.label + '</span>';
+        if (r.info) h += '<span class="st-info">ⓘ</span>';
+        if (r.sw !== undefined) h += '<button class="sw' + (on ? ' on' : '') + '" data-sw="' + r.k + '" type="button"></button>';
+        else if (r.go) h += (sel ? '<span class="st-val">' + sel + '</span>' : '') + '<span class="st-arrow">›</span>';
+        h += '</div>';
+        if (r.sub) h += '<div class="st-sub">' + r.sub + '</div>';
+      });
+      h += '</div>';
+    });
+    $('settings').innerHTML = h;
+  }
+
+  function openSettings(){
+    layout.moreOpen = false;   // 先收起「更多」菜单，避免两层浮层叠加
+    applyLayout();
+    stStack = ['main'];
+    renderSettings('main');
+    $('settings').classList.add('on');
+  }
+
+  function closeSettings(){
+    $('settings').classList.remove('on');
+    $('stSheet').classList.remove('on');
+  }
+
+  $('settings').addEventListener('click', function(e){
+    var t = e.target;
+    if (!t || !t.closest) return;
+
+    var sw = t.closest('[data-sw]');
+    if (sw){
+      var k = sw.getAttribute('data-sw');
+      var now = !sw.classList.contains('on');
+      sw.classList.toggle('on', now);
+      stState[k] = now ? 1 : 0;
+      if (k === 'simple'){ layout.simple = !!now; applyLayout(); }
+      return;
+    }
+
+    if (t.closest('[data-back]')){
+      if (stStack.length > 1){
+        stStack.pop();
+        renderSettings(stStack[stStack.length - 1]);
+      } else {
+        closeSettings();
+      }
+      return;
+    }
+
+    var row = t.closest('[data-go]');
+    if (row){
+      var key = row.getAttribute('data-go');
+      if (key === 'perf'){ stStack.push('perf'); renderSettings('perf'); return; }
+      if (key === 'burn'){ stStack.push('burn'); renderSettings('burn'); return; }
+      if (key === 'stab'){ openSheet(['关闭','标准','电影级','极致'], 'stab'); return; }
+      toast('「' + row.querySelector('.st-label').textContent + '」的二级页面还在排期');
+      return;
+    }
+  });
+
+  var sheetCtx = null;
+  function openSheet(opts, key){
+    sheetCtx = { opts: opts, key: key };
+    var h = '';
+    opts.forEach(function(o){
+      var cur = (key === 'stab') ? stStab : null;
+      h += '<div class="st-sheet-item" data-opt="' + o + '">' + (o === cur ? '<span class="tick">✓</span>' : '') + o + '</div>';
+    });
+    $('stSheetCard').innerHTML = h;
+    $('stSheet').classList.add('on');
+  }
+
+  $('stSheet').addEventListener('click', function(e){
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var item = t.closest('[data-opt]');
+    if (item && sheetCtx){
+      var v = item.getAttribute('data-opt');
+      if (sheetCtx.key === 'stab'){ stStab = v; }
+      toast('已选择：' + v);
+      $('stSheet').classList.remove('on');
+      if (stStack[stStack.length - 1] === 'main') renderSettings('main');
+      return;
+    }
+    if (t === $('stSheet')) $('stSheet').classList.remove('on');
+  });
+
   // 「更多」菜单：简易模式 / 调试浮层 / 设置
   $('moreMenu').addEventListener('click', function(e){
     var btn = (e.target && e.target.closest) ? e.target.closest('button[data-act]') : null;
@@ -1612,7 +1846,7 @@
     }
     if (act === 'settings'){
       applyLayout();
-      toast('设置页（简易模式持久化 / 毛玻璃开关 / 网格开关）将在 P2 补齐');
+      openSettings();
     }
   });
 
