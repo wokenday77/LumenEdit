@@ -226,7 +226,7 @@ private struct ShutterButton: View {
                 if isRecording {
                     // 录制中：红色圆角方块 = 点它停止录制
                     RoundedRectangle(cornerRadius: Theme.Size.shutterDiameter * 0.15, style: .continuous)
-                        .fill(Theme.Color.recording)
+                        .fill(Theme.Palette.recording)
                         .frame(
                             width: Theme.Size.shutterDiameter * 0.42,
                             height: Theme.Size.shutterDiameter * 0.42
@@ -269,11 +269,11 @@ private struct RecordingBadge: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(Theme.Color.recording)
+                .fill(Theme.Palette.recording)
                 .frame(width: 7, height: 7)
             Text(Self.format(seconds))
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Theme.Color.primaryText)
+                .foregroundStyle(Theme.Palette.primaryText)
                 .monospacedDigit()
         }
         .padding(.horizontal, 10)
