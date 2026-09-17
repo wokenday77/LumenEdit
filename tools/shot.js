@@ -424,10 +424,43 @@ async page => {
     };
   });
 
+  // ---- 15 参数导入：入口行 → 编辑器 → 导入后（全对会自动退回拍摄页）----
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  await page.click('#iconSettings');
+  await page.waitForTimeout(600);
+  await page.locator('.phone').screenshot({ path: OUT + '20-import-entry.png' });
+  await page.click('[data-go="preset"]');
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '21-import-editor.png' });
+  await page.click('#prApply');
+  await page.waitForTimeout(700);
+  await page.locator('.phone').screenshot({ path: OUT + '22-import-applied.png' });
+  report.参数导入 = await page.evaluate(() => {
+    const onFocal = Array.from(document.querySelectorAll('.focal-pill'))
+      .filter((b) => b.classList.contains('on')).map((b) => b.textContent.trim());
+    return {
+      设置页已关: !document.getElementById('settings').classList.contains('on'),
+      焦段选中: onFocal,
+      画幅比: document.querySelector('#fnRatio .fn-ic').textContent,
+      遮幅黑边: document.getElementById('ratioMask').style.getPropertyValue('--rm-h'),
+      EV: document.getElementById('valEV').textContent,
+      ISO: document.getElementById('valISO').textContent,
+      快门: document.getElementById('valShutter').textContent,
+      白平衡: document.getElementById('valWB').textContent,
+      圆盘值: document.querySelector('.fd-val') ? document.querySelector('.fd-val').textContent : '(未开)',
+      闪光灯开: document.getElementById('fnFlash').classList.contains('on'),
+      倒计时: document.querySelector('#fnTimer .fn-ic').textContent,
+      toast: document.querySelector('.toast').textContent
+    };
+  });
+
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
                  '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
                  '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu',
-                 '18-zoom-normal', '19-zoom-on'];
+                 '18-zoom-normal', '19-zoom-on',
+                 '20-import-entry', '21-import-editor', '22-import-applied'];
   if (missing.length) report.量不到 = missing;
 
   return JSON.stringify(report, null, 2);

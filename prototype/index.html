@@ -660,6 +660,26 @@
   .hud .hl{color:var(--accent);}
   .hud .dim{color:rgba(255,255,255,.45);}
 
+  /* ---------- 参数导入编辑器（设置页内的二级页）----------
+     纯文本输入：等宽字体 + 预填示例（所见即格式）。 */
+  .pr-text{
+    width:100%;box-sizing:border-box;min-height:250px;resize:vertical;
+    background:rgba(255,255,255,.05);border:.5px solid var(--stroke);border-radius:12px;
+    color:var(--txt);font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:12px;line-height:1.7;padding:12px;margin-top:10px;
+  }
+  .pr-text:focus{outline:none;border-color:rgba(255,255,255,.3);}
+  .pr-btns{display:flex;gap:10px;margin-top:12px;}
+  .pr-btn{
+    flex:1 1 0;height:40px;border-radius:12px;border:.5px solid var(--stroke);cursor:pointer;
+    font-family:inherit;font-size:13px;font-weight:600;
+    background:rgba(255,255,255,.06);color:var(--txt);
+  }
+  .pr-btn.primary{background:var(--accent);border-color:var(--accent);color:#111;}
+  .pr-result{margin-top:12px;font-size:11.5px;line-height:1.8;color:var(--txt-2);word-break:break-all;}
+  .pr-result b{color:var(--ok);}
+  .pr-result .pr-skip{color:#ff9f0a;}
+
   /* ---------- 提示条 ---------- */
   .toast{
     position:absolute;left:50%;top:58%;transform:translate(-50%,8px);
@@ -1526,6 +1546,9 @@
     fn:  { live:false, ratio:'4:3', flash:false, timer:'关', hdr:false },
     /* 视频格式（视频 / Log 实况模式的右上角芯片）。码率表见 FMT_BITRATE。 */
     fmt: { res:'4K', fps:60 },
+    /* 参数导入落到"仅记录 + 显示"的硬件字段（真机 P2 由 AVCaptureDevice 接管）：
+       iso / shutter / wb / tint。null = 未导入，显示走原有模拟值。 */
+    cal: { iso:null, shutter:null, wb:null, tint:0 },
     ev:0.33
   };
 
@@ -1669,12 +1692,14 @@
     $('valEV').textContent = evText;
     $('evNum').textContent = evText + ' EV';
 
-    var sh = simulatedShutter(state.ev);
-    $('valShutter').textContent = sh;
+    // 快门 / 白平衡 / ISO：参数导入给了值就显示导入值（真机 P2 由 AVCaptureDevice 接管）
+    $('valShutter').textContent = state.cal.shutter ? (state.cal.shutter + 's') : simulatedShutter(state.ev);
 
     // 白平衡显示当前场景的建议色温（P2 才能手动调，现在是占位）
     var sc = byId(SCENES, state.scene);
-    if (sc) $('valWB').textContent = sc.wb;
+    if (sc) $('valWB').textContent = state.cal.wb || sc.wb;
+    var isoEl = $('valISO');
+    if (isoEl) isoEl.textContent = state.cal.iso ? ('ISO ' + state.cal.iso) : '自动';
 
     var t = (state.ev + 2) / 4;          // 0 = 底部，1 = 顶部
     var topPct = (1 - t) * 100;
@@ -2321,6 +2346,10 @@
           { k:'qr',      ic:'qr',     label:'二维码扫描', info:1, sw:1 },
           { k:'keep',    ic:'gear',   label:'保留设置', go:1 }
         ]},
+        { name: '工具', rows: [
+          { k:'preset', ic:'save', label:'参数导入', go:1,
+            sub:'粘贴或手打拍摄参数（每行「键 值」），相机立即响应' }
+        ]},
         { name: '性能', rows: [
           { k:'perf', ic:'perf', label:'性能设置', go:1 }
         ]},
@@ -2406,7 +2435,8 @@
         mode: state.mode,
         scene: state.scene, style: state.styleId, filter: state.filterId, ev: state.ev,
         fmt: state.fmt,   // 视频格式（视频 / Log 实况模式右上角芯片）
-        fn: state.fn      // 功能面板的拍摄开关（实况/画幅比/闪光灯/倒计时/高亮增益）
+        fn: state.fn,     // 功能面板的拍摄开关（实况/画幅比/闪光灯/倒计时/高亮增益）
+        cal: state.cal    // 参数导入的硬件字段（ISO / 快门 / 白平衡 / 色调）
       }));
     } catch(e){}
   }
@@ -2446,6 +2476,7 @@
       if (sh.mode !== undefined)              state.mode = sh.mode;
       if (sh.fmt)                             state.fmt = sh.fmt;
       if (sh.fn)                              state.fn = sh.fn;
+      if (sh.cal)                             state.cal = sh.cal;
     } catch(e){}
     // 回填 stState，设置页开关才能显示真实状态
     stState.simple  = layout.simple ? 1 : 0;
@@ -2462,6 +2493,7 @@
   // 代价是：改完设置 500ms 内直接关页会丢那一下，原型可接受。
 
   function renderSettings(page){
+    if (page === 'preset'){ renderPresetEditor(); return; }   // 参数导入是自定义页，不走 SETTINGS 模板
     var S = SETTINGS[page];
     var h = '<div class="st-nav"><button class="st-back" data-back="1" type="button">‹</button><h2>' + S.title + '</h2></div>';
     if (S.intro) h += '<div class="st-intro">' + S.intro + '</div>';
@@ -2483,6 +2515,242 @@
       h += '</div>';
     });
     $('settings').innerHTML = h;
+  }
+
+  /* =========================================================
+     参数导入（纯文本 → 拍摄参数，CapturePreset 的原型映射）
+       格式：每行「键 值」；空格 / 冒号 / 等号都行；# 开头是注释；
+             键名大小写随意、中英文别名都认（见 PRESET_ALIAS）。
+       容错：非法值**吸附 / 夹取**到最近合法档，不拒收；
+             不认识的键只跳过该行并逐行记录，不中断整体导入。
+       生效分两级：
+         立即生效（原型真响应）—— EV / 对焦 / 焦段 / 画幅比 / 闪光灯 / 倒计时 / 场景 / 风格 / 滤镜
+         记录 + 显示（真机 P2）—— ISO / 快门 / 白平衡 / 色调（走 state.cal，参数排立即显示导入值）
+     ========================================================= */
+  /* 示例刻意把「场景 / 风格 / 滤镜」放在前面、显式参数放在后面：
+     场景会带出推荐 EV / 风格 / 滤镜，写在后面的显式值才盖得住 —— 行序即优先级。 */
+  var PRESET_SAMPLE = [
+    '# 每行一个参数：键 值（空格 / 冒号 / 等号都行，# 开头是注释）',
+    '场景 人像',
+    '风格 柔暖人像',
+    '滤镜 无',
+    '焦段 48mm',
+    '画幅比 16:9',
+    'EV +0.7',
+    '对焦 0.6',
+    'ISO 200',
+    '快门 1/125',
+    '白平衡 5600K',
+    '色调 +5',
+    '闪光灯 关',
+    '倒计时 3s'
+  ].join('\n');
+
+  var PRESET_ALIAS = {
+    iso:     ['iso', '感光度', '感光', 'iso值'],
+    shutter: ['快门', '快门速度', 'shutter', '速度'],
+    ev:      ['ev', '曝光', '曝光补偿', '补偿'],
+    wb:      ['白平衡', '色温', 'wb', '白温'],
+    tint:    ['色调', 'tint'],
+    focus:   ['对焦', '焦距', 'focus', '对焦点'],
+    focal:   ['焦段', '镜头', 'focal', '焦距mm'],
+    ratio:   ['画幅比', '比例', '画幅', 'ratio'],
+    flash:   ['闪光灯', 'flash'],
+    timer:   ['倒计时', 'timer', '定时'],
+    scene:   ['场景', 'scene'],
+    style:   ['风格', 'style'],
+    filter:  ['滤镜', 'filter']
+  };
+  /* ISO 整档（真机 AVCaptureDevice 的合法档位），导入值吸附到最近档 */
+  var ISO_STOPS = [50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1250,1600,2000,2500,3200];
+
+  function presetKeyOf(word){
+    var w = String(word).toLowerCase();
+    for (var k in PRESET_ALIAS){
+      if (PRESET_ALIAS[k].indexOf(w) >= 0) return k;
+    }
+    return null;
+  }
+  function presetClamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+  function presetSnap(v, list){
+    var best = list[0], bd = Infinity;
+    for (var i=0;i<list.length;i++){
+      var d = Math.abs(list[i] - v);
+      if (d < bd){ bd = d; best = list[i]; }
+    }
+    return best;
+  }
+
+  /** 单条应用。返回人类可读的说明；值看不懂则返回 null（由调用方记入跳过）。 */
+  function applyPresetItem(key, val){
+    var v = String(val).trim();
+
+    if (key === 'ev'){
+      var ev = parseFloat(v);
+      if (isNaN(ev)) return null;
+      state.ev = Math.round(presetClamp(ev, -2, 2) * 10) / 10;
+      return 'EV ' + (state.ev >= 0 ? '+' : '') + state.ev.toFixed(1) + '（已生效）';
+    }
+    if (key === 'focus'){
+      if (/∞|inf/i.test(v)){ focusVal = 1; renderFocus(); return '对焦 ∞（已生效）'; }
+      var f = parseFloat(v);
+      if (isNaN(f)) return null;
+      focusVal = presetClamp(f, 0, 1);
+      renderFocus();
+      return '对焦 ' + (focusVal >= 0.995 ? '∞' : focusVal.toFixed(2)) + '（已生效）';
+    }
+    if (key === 'focal'){
+      var mm = parseInt(v, 10);
+      if (isNaN(mm)) return null;
+      var list = FOCALS.map(function(x){ return parseInt(x.id, 10); });
+      mm = presetSnap(presetClamp(mm, list[0], list[list.length - 1]), list);
+      FOCALS.forEach(function(x){ x.on = (parseInt(x.id, 10) === mm); });
+      buildFocal();
+      return '焦段 ' + mm + 'mm（已生效）';
+    }
+    if (key === 'ratio'){
+      var rr = v.replace(/[：:]/g, ':').replace(/[xX×\-]/g, ':').replace(/\s/g, '');
+      if (FN_RATIOS.indexOf(rr) < 0) return null;
+      state.fn.ratio = rr;
+      return '画幅比 ' + rr + '（已生效）';
+    }
+    if (key === 'flash'){
+      var fl = /^(开|on|true|是|1)$/i.test(v) ? true
+             : /^(关|off|false|否|0|无)$/i.test(v) ? false : null;
+      if (fl === null) return null;
+      state.fn.flash = fl;
+      return '闪光灯 ' + (fl ? '开' : '关') + '（真机 P2 生效）';
+    }
+    if (key === 'timer'){
+      if (/^(关|off|0|无)$/i.test(v)){ state.fn.timer = '关'; return '倒计时 关'; }
+      var sec = parseInt(v, 10);
+      if (isNaN(sec)) return null;
+      state.fn.timer = presetSnap(presetClamp(sec, 1, 30), [3, 10]) + 's';
+      return '倒计时 ' + state.fn.timer + '（真机 P2 生效）';
+    }
+    if (key === 'scene' || key === 'style' || key === 'filter'){
+      var arr = (key === 'scene') ? SCENES : (key === 'style' ? STYLES : FILTERS);
+      if (key === 'filter' && /^(无|关|off|none|原片)$/i.test(v)){
+        state.filterId = null;
+        return '滤镜 无（回到原片）';
+      }
+      var found = null;
+      arr.forEach(function(x){ if (x.name === v) found = x; });
+      if (!found) arr.forEach(function(x){ if (!found && x.name.indexOf(v) >= 0) found = x; });
+      if (!found) return null;
+      if (key === 'scene'){
+        state.scene = found.id;
+        // 与"点场景"同一套语义：场景 = 拍摄建议 + 修图推荐组合（EV / 风格 / 滤镜一并带上）
+        if (found.ev !== undefined) state.ev = found.ev;
+        if (found.style) state.styleId = found.style;
+        state.filterId = (found.filter === undefined) ? null : found.filter;
+        return '场景 ' + found.name + '（含推荐 EV / 风格）';
+      }
+      if (key === 'style'){
+        state.styleId = found.id;
+        state.filterId = null;   // 与点风格一致：一键成片，滤镜重置为「无」
+        return '风格 ' + found.name + '（滤镜已重置为「无」）';
+      }
+      state.filterId = found.id;
+      return '滤镜 ' + found.name;
+    }
+    if (key === 'iso'){
+      var iso = parseInt(v, 10);
+      if (isNaN(iso)) return null;
+      state.cal.iso = presetSnap(presetClamp(iso, 50, 3200), ISO_STOPS);
+      return 'ISO ' + state.cal.iso + '（显示，真机 P2 生效）';
+    }
+    if (key === 'shutter'){
+      var t = v.replace(/s$/i, '');
+      var sec;
+      if (t.indexOf('/') > 0){
+        var p = t.split('/');
+        sec = parseFloat(p[0]) / parseFloat(p[1]);
+      } else {
+        sec = parseFloat(t);
+      }
+      if (isNaN(sec) || sec <= 0) return null;
+      var idx = 0, bd = Infinity;
+      SHUTTER_VAL.forEach(function(x, i){
+        var d = Math.abs(Math.log(x / sec));
+        if (d < bd){ bd = d; idx = i; }
+      });
+      state.cal.shutter = SHUTTER_LABEL[idx];
+      return '快门 ' + SHUTTER_LABEL[idx] + 's（显示，真机 P2 生效）';
+    }
+    if (key === 'wb'){
+      var kk = parseInt(v.replace(/[kK]/g, ''), 10);
+      if (isNaN(kk)) return null;
+      state.cal.wb = (Math.round(presetClamp(kk, 2500, 8500) / 100) * 100) + 'K';
+      return '白平衡 ' + state.cal.wb + '（显示，真机 P2 生效）';
+    }
+    if (key === 'tint'){
+      var ti = parseFloat(v);
+      if (isNaN(ti)) return null;
+      state.cal.tint = Math.round(presetClamp(ti, -50, 50));
+      return '色调 ' + (state.cal.tint >= 0 ? '+' : '') + state.cal.tint + '（无显示位，真机 P2 生效）';
+    }
+    return null;
+  }
+
+  /** 解析整段文本并应用。返回 { ok:[说明], skip:[行号说明] } */
+  function importPreset(text){
+    var ok = [], skip = [];
+    String(text || '').split(/\r?\n/).forEach(function(line, i){
+      var raw = line.trim();
+      if (!raw || raw.charAt(0) === '#') return;
+      var m = raw.match(/^([^\s:=：]+)\s*[:=：]?\s*(.+)$/);
+      if (!m){ skip.push('第 ' + (i + 1) + ' 行：读不出「键 值」'); return; }
+      var key = presetKeyOf(m[1]);
+      if (!key){ skip.push('第 ' + (i + 1) + ' 行：不认识的键「' + m[1] + '」'); return; }
+      var note = applyPresetItem(key, m[2].trim());
+      if (note) ok.push(note);
+      else skip.push('第 ' + (i + 1) + ' 行：' + key + ' 的值「' + m[2].trim() + '」看不懂');
+    });
+    if (ok.length){
+      applyLayout();       // 面板开关 / 画幅比遮幅
+      buildScenes(); buildStyles(); buildFilters(); buildFocal(); refreshPicked();
+      renderPreview();     // EV / 风格 / 滤镜 → 成片管线 + 缩略图 + renderStatus
+      scheduleSave();
+    }
+    return { ok: ok, skip: skip };
+  }
+
+  function renderPresetEditor(){
+    var h = '<div class="st-nav"><button class="st-back" data-back="1" type="button">‹</button><h2>参数导入</h2></div>';
+    h += '<div class="st-intro">每行一条「键 值」，空格 / 冒号 / 等号都行，<b>#</b> 开头是注释。'
+       + '键名中英文都认（ISO / 快门 / EV / 白平衡 / 色调 / 对焦 / 焦段 / 画幅比 / 闪光灯 / 倒计时 / 场景 / 风格 / 滤镜）。'
+       + '超出范围的值自动夹取、不在档位的自动吸附到最近档；不认识的键只跳过那一行。</div>';
+    h += '<textarea class="pr-text" id="prText" spellcheck="false" autocapitalize="off"></textarea>';
+    h += '<div class="pr-btns">'
+       + '<button class="pr-btn" id="prReset" type="button">还原示例</button>'
+       + '<button class="pr-btn primary" id="prApply" type="button">导入</button>'
+       + '</div>';
+    h += '<div class="pr-result" id="prResult"></div>';
+    $('settings').innerHTML = h;
+    $('prText').value = PRESET_SAMPLE;
+  }
+
+  /** 「导入」按钮：解析 → 应用 → 反馈。全对就自动退回拍摄页看效果；有跳过的行就留在编辑器里让人改。 */
+  function applyPresetText(){
+    var res = importPreset($('prText').value);
+    var r = $('prResult');
+    var head = '成功 ' + res.ok.length + ' 项'
+             + (res.skip.length ? ' · 跳过 ' + res.skip.length + ' 行' : '');
+    var html = '<b>' + head + '</b>';
+    if (res.ok.length)   html += '<br>' + res.ok.slice(0, 6).join(' · ').replace(/（[^）]*）/g, '');
+    if (res.skip.length) html += '<br><span class="pr-skip">' + res.skip.slice(0, 4).join('<br>') + '</span>';
+    if (!res.ok.length && !res.skip.length) html = '没有可识别的参数 —— 每行按「键 值」写，例如 <b>EV +0.7</b>';
+    if (r) r.innerHTML = html;
+
+    if (res.ok.length && !res.skip.length){
+      toast('参数已导入 ' + res.ok.length + ' 项：' + res.ok.slice(0, 3).join(' · ').replace(/（[^）]*）/g, ''));
+      closeSettings();          // 全对 → 直接回拍摄页看效果
+    } else if (res.ok.length){
+      toast('已导入 ' + res.ok.length + ' 项，有 ' + res.skip.length + ' 行没认出来（见下方）');
+    } else {
+      toast('没有可用的参数，相机保持原状');
+    }
   }
 
   function openSettings(){
@@ -2551,6 +2819,9 @@
       return;
     }
 
+    if (t.closest('#prApply')){ applyPresetText(); return; }
+    if (t.closest('#prReset')){ $('prText').value = PRESET_SAMPLE; $('prResult').innerHTML = ''; return; }
+
     var row = t.closest('[data-go]');
     if (row){
       var key = row.getAttribute('data-go');
@@ -2559,6 +2830,7 @@
       if (key === 'stab'){ openSheet(['关闭','标准','电影级','极致'], 'stab'); return; }
       if (key === 'keep'){ stStack.push('keep'); renderSettings('keep'); return; }
       if (key === 'simplemode'){ stStack.push('simplemode'); renderSettings('simplemode'); return; }
+      if (key === 'preset'){ stStack.push('preset'); renderSettings('preset'); return; }
       toast('「' + row.querySelector('.st-label').textContent + '」的二级页面还在排期');
       return;
     }

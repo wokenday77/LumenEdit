@@ -554,6 +554,20 @@ if (scriptMatch) {
   } else {
     ok('圆盘「自动对焦」开关行无任何隐藏规则（基础高度 var(--fd-auto-h) 正常）');
   }
+
+  // 参数导入（纯文本 → 拍摄参数）：入口行 + 编辑器三件套 + 解析器骨架必须都在。
+  // 别名表要求 ≥12 键（ISO/快门/EV/白平衡/色调/对焦/焦段/画幅比/闪光灯/倒计时/场景/风格/滤镜），
+  // 少一个键就等于有一类参数静默失效 —— 这是最容易"悄悄少一条"的地方。
+  const prRow    = /k:'preset'[^}]*label:'参数导入'/.test(html);
+  const prEditor = /id="prText"/.test(html) && /id="prApply"/.test(html) && /id="prReset"/.test(html);
+  const prAlias  = (html.match(/^\s{4}(iso|shutter|ev|wb|tint|focus|focal|ratio|flash|timer|scene|style|filter):\s+\[/gm) || []).length;
+  const prStops  = /var ISO_STOPS = \[/.test(html) && /SHUTTER_VAL/.test(html);
+  if (!prRow || !prEditor || prAlias < 12 || !prStops) {
+    bad('参数导入不完整：设置页入口=' + prRow + '，编辑器三件套=' + prEditor
+      + '，别名表键数=' + prAlias + '/12，档位表=' + prStops);
+  } else {
+    ok('参数导入齐备：设置页入口 + 编辑器（示例/导入/还原）+ 别名表 ' + prAlias + ' 键 + ISO/快门档位表');
+  }
 }
 
 /* ---------- 结论 ---------- */
