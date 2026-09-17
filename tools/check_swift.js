@@ -249,13 +249,18 @@ if (!themeFile || !modeSelFile || !topBarFile) {
       ok('顶栏主行 spacing = 0（中段可用宽度不被行间距侵蚀）');
     }
 
-    // 各机型：screen ≥390 用 13pt 版，需留 ≥8pt 余量；375（SE / mini）允许 12pt 版小幅溢出
-    // —— 溢出的部分由两侧块内部各约 23pt 的空白吸收，见 Theme.Size.modeTabHitHeight 注释
+    // 各机型：全部要求"装得下且留余量"。
+    // 375（SE / mini）用 12pt 版、余 5.4pt（≈2.7%，覆盖宽度模型 ≈1% 的误差）。
+    //
+    // ⚠️ 这里曾经给 375 留过 −6pt 的容差（允许小幅溢出、靠两侧块空白吸收）——
+    // 那是基于一个**算错的**中段宽度（181pt，错把主行 spacing 算进去了）。
+    // 真实中段是 197pt，紧凑版 191.6pt 本来就够，容差已收紧为 0：
+    // 一旦将来真的装不下，宁可自检报错，也不要靠"溢出被吸收"这种隐含假设。
     const devices = [
       { name: 'iPhone 16 Pro（402pt）', screen: 402, font: T.regularFont, bar: regular, slack: 8 },
       { name: 'iPhone 16 / 15（393pt）', screen: 393, font: T.regularFont, bar: regular, slack: 8 },
       { name: 'iPhone 14（390pt）', screen: 390, font: T.regularFont, bar: regular, slack: 8 },
-      { name: 'iPhone SE / mini（375pt）', screen: 375, font: T.compactFont, bar: compact, slack: -6 }
+      { name: 'iPhone SE / mini（375pt）', screen: 375, font: T.compactFont, bar: compact, slack: 0 }
     ];
 
     for (const d of devices) {
