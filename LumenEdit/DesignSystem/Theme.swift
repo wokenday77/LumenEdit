@@ -62,12 +62,37 @@ enum Theme {
         static let shutterRingWidth: CGFloat = 5
         static let thumbnailSide: CGFloat = 52
 
-        /// 模式条单档高度（原型 `.mode-tab{ height:26px }`，此前用的是 34）
+        /// 模式条单档的**视觉**高度（原型 `.mode-tab{ height:26px }`，此前用的是 34）
         static let modeSelectorHeight: CGFloat = 26
-        /// 模式条单档的间距（原型 `.mode-tabs{ gap:10px }`）
-        static let modeSelectorSpacing: CGFloat = 10
-        /// 模式条「实况」档的同心圆图标尺寸（原型里 `ICON_LIVE` 的 svg 宽 18）
-        static let modeSelectorGlyphSize: CGFloat = 18
+
+        /// 模式条相邻两档的**视觉**间距 = 每档两端各一半的透明内边距。
+        ///
+        /// 原型是 `.mode-tabs{ gap:10px }` 且档位 `padding: 0`；这里把间距改由**热区内边距**
+        /// 产生（`padding(.horizontal, 间距/2)`），因为原型那种写法在真机上可点区域只剩
+        /// 文字本身（「照片」约 23×26pt）。
+        ///
+        /// ⚠️ **别把"档间距"和"内边距"叠加**。曾经因为写成"内边距 5 + `HStack` spacing 10"，
+        /// 实际视觉间距变成 20pt 而文档里记的是 10pt —— 算宽度时整笔账都对不上。
+        /// 现在 `HStack` 的 spacing 固定为 0，间距只有这一个来源。
+        static let modeSelectorSpacing: CGFloat = 18
+
+        /// 窄屏降档时的档间距（375pt 机型用）
+        static let modeSelectorCompactSpacing: CGFloat = 12
+
+        /// 模式条单档的**命中下限**（HIG 44×44）。
+        ///
+        /// 高度 44 靠"行高 30 + 上下各溢出 7pt"实现（顶栏行高是固定的，子视图溢出不影响布局）：
+        ///   - **上溢 7pt** 只到「安全区下沿 + 3pt」（顶栏内容距安全区还有 10pt padding）
+        ///     → 碰不到状态栏，也不会与系统的下拉手势打架
+        ///   - **下溢 7pt** 落在副行**中段的空白**里（副行只有左右两颗胶囊，中段约 228pt 全空；
+        ///     模式条热区跨度约 202pt ⊂ 那段空白）
+        /// 所以这个溢出**不抢任何控件的点击**。
+        static let modeTabMinHitWidth: CGFloat = 44
+        static let modeTabHitHeight: CGFloat = 44
+
+        /// 模式条「实况」档的同心圆图标尺寸。
+        /// 原型是 18（配 11.5pt 文字）；字号提到 13 之后按比例提到 **20**，视觉重量才配得上。
+        static let modeSelectorGlyphSize: CGFloat = 20
 
         // MARK: 顶栏（两行）
         //
@@ -88,10 +113,19 @@ enum Theme {
         ///
         /// 真机实测与推算（iPhone 16 Pro / iOS 26.6，屏宽 402pt、顶栏可用宽 370pt）：
         ///   - 左侧电平表块与右侧图标块各 73pt → 中段 370 − 146 = **224pt**
-        ///   - 模式条改版后约 **150pt**（原型同形态是 139.6：无胶囊底、档位无内边距、
-        ///     字号 11.5、档间距 10、「实况」档用 18pt 图标；我们多出的约 10pt
-        ///     是每档两端各 5pt 的**透明命中区扩展**，文字之间的视觉间距仍是 10）
-        ///     → 中段 224 装得下 150，两侧各余 **约 37pt**
+        ///     （前提：主行 `HStack` 的 `spacing` 必须为 **0**，见 `TopBarView.mainRow`；
+        ///      给了间距就不止 224 了，393/390 机型会当场溢出）
+        ///   - 模式条 **202pt**（字号 13、档间距 18、每档命中下限 44×44）
+        ///     → 中段 224 装得下，**两侧各余约 11pt**
+        ///
+        /// 模式条宽度的拆解（模型见 `docs/08` 三.2，已用两处实测标定、误差 <1%）：
+        ///   照片 44 + 实况 44 + Log 实况 70 + 视频 44 = 202
+        ///   其中「Log 实况」的 70 不是命中下限 44，而是内容（52pt）+ 两端各 9pt
+        ///   —— 它本来就比 44 宽，热区跟着内容走。
+        ///
+        /// 窄屏：375pt 机型（SE / mini）中段只有 197pt → `ModeSelector` 用 `ViewThatFits`
+        /// 自动降到字号 12 + 档间距 12（总宽 191.6pt）。**这是 ModeSelector 内部的事，
+        /// 两侧 73pt 不跟着变**，所以模式条在任何机型上都保持居中。
         ///
         /// ⚠️ **73 / 224 / 140 这组数字是「4 档、三图标、iPhone 16 Pro」这个形态下的结论。**
         /// 三件事会让它失效，改完必须重新测量并更新本注释：
@@ -140,12 +174,23 @@ enum Theme {
         static let toast = Font.system(size: 13, weight: .medium, design: .rounded)
         static let mono = Font.system(size: 11, design: .monospaced)
 
-        /// 模式条档位文字：原型 `.mode-tab{ font-size:11.5px }`，
-        /// 选中态 `.on{ font-weight:700 }`，未选中 600。
-        /// 做成函数是因为"选中加粗"这个变化没法用同一个 Font 表达。
-        static let modeTitleSize: CGFloat = 11.5
-        static func modeTitle(selected: Bool) -> Font {
-            .system(size: modeTitleSize, weight: selected ? .bold : .semibold, design: .rounded)
+        /// 模式条档位文字。原型 `.mode-tab{ font-size:11.5px; font-weight:600 }`、
+        /// 选中态 `.on{ font-weight:700 }`。做成函数是因为"选中加粗"没法用同一个 Font 表达。
+        ///
+        /// **2026-09-17 由 11.5 提到 13。** 11.5 是原型在 390px 宽的 CSS 稿上定的数，
+        /// 真机上偏小。13pt 是能在**所有现行机型**（屏宽 ≥390pt）都放下的最大档：
+        /// 宽度模型（`docs/08` 三.2）算出 402pt 机型其实能容到 15pt、393/390 机型到 14pt，
+        /// 但 14 在 390 机型只剩 2.4pt 余量，太紧 —— 取 13 给窄屏留余量。
+        static let modeTitleSize: CGFloat = 13
+        /// 窄屏降档用：375pt 机型（SE / mini）的中段只有 197pt，13pt 那版 202pt 放不下。
+        static let modeTitleCompactSize: CGFloat = 12
+
+        static func modeTitle(selected: Bool, compact: Bool = false) -> Font {
+            .system(
+                size: compact ? modeTitleCompactSize : modeTitleSize,
+                weight: selected ? .bold : .semibold,
+                design: .rounded
+            )
         }
 
         /// 顶栏副行胶囊文字（原型 `.chip{ font-size:11px; font-weight:600 }`）

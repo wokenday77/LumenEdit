@@ -63,11 +63,18 @@ struct TopBarView: View {
     // MARK: - 主行
 
     private var mainRow: some View {
-        HStack(spacing: Theme.Size.topBarRowSpacing) {
+        // ⚠️ **spacing 必须是 0**：中段要给模式条留出「370 − 73×2 = 224pt」的完整盒子，
+        // 一旦这里给 8（原型 `.tb-row1{ gap:8px }` 的值），中段就只剩 208pt ——
+        // 393/390pt 宽的机型（iPhone 16/15/14）当场溢出。
+        //
+        // 那视觉间距从哪来？两侧块自己就有：
+        //   - 电平表块 73pt 宽、点是**左对齐**的 → 右边约 23pt 是空白
+        //   - 三图标块 73pt 宽、图标是**右对齐**的 → 左边约 23pt 是空白
+        // 于是模式条两侧实际各有 23 + 11 ≈ 34pt 的呼吸空间，与原型（≈39pt）基本一致。
+        HStack(spacing: 0) {
             AudioLevelMeterView()
 
-            // 中段吃满余量（370 − 73×2 = 224pt），模式条在它内部居中
-            // → 模式条的盒中心 = 屏中心。
+            // 中段吃满余量（224pt），模式条在它内部居中 → 模式条的盒中心 = 屏中心。
             // 少了 `frame(maxWidth: .infinity)`，HStack 会先收缩到自然宽再被居中，
             // 右侧图标就会内缩（真机实测过：齿轮右端 372.3pt，应为 386pt）。
             ModeSelector(selection: mode) { tapped in
