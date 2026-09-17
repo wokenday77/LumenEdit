@@ -36,3 +36,11 @@ tools/*.txt
 # 视频抽帧的原始单帧：体积大、可随时用工具重新生成
 # 只保留拼图总览 sheet_*.jpg 作为对标基准
 reference/**/frames/
+
+# 原型截图与并排对比图：可随时用工具重新生成
+#   playwright-cli run-code --filename=tools/shot.js
+#   python tools/compare_dial.py
+shots/
+
+# playwright-cli 的工作目录（快照 / 控制台日志，本地数据）
+.playwright-cli/

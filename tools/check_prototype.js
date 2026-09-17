@@ -257,35 +257,93 @@ if (styleMatch) {
     else ok('所有合法状态净可见 ≥ 50%（最差 ' + worst + '%）');
 
     /* ---- 圆盘态（.screen.dial-on）：模态操作，规则与常驻浮层不同 ----
-       打开圆盘时底部浮层整条收起，只剩「圆盘 + 间距 + 开关行 + 底部安全区」。
+       打开圆盘时底部浮层整条收起；**圆心 X + Y 一起钉在底部图标行「对焦」按钮的中心上**，
+       以该点为心向四周对称展开 —— 不是"贴屏幕底往上排"。
        底线是 30% 而不是 50% —— 圆盘是模态操作，用户此时专心调焦、不需要看全取景画面；
        30% 的作用是防止"圆盘把屏幕占满"。
-       四个尺寸参数从 :root 真读，不在脚本里抄第二份。 */
+       参数全部从 :root / CSS 真读，不在脚本里抄第二份。 */
     const pickVar = (name) => {
       const m = css.match(new RegExp(name + '\\s*:\\s*([\\d.]+)px'));
       return m ? parseFloat(m[1]) : null;
     };
-    const FD_SIZE = pickVar('--fd-size');
-    const FD_GAP  = pickVar('--fd-gap');
-    const FD_PAD  = pickVar('--fd-pad');
-    const FD_AUTO = pickVar('--fd-auto-h');
-    const SCREEN_W = 390 - 18;          // 屏内宽（外壳 390 − 左右各 9px padding）
+    const FD_SIZE  = pickVar('--fd-size');
+    const FD_CX    = pickVar('--fd-center-x');
+    const FD_CY    = pickVar('--fd-center-y');
+    const FD_GAP   = pickVar('--fd-gap');
+    const FD_PAD   = pickVar('--fd-pad');
+    const FD_AUTO  = pickVar('--fd-auto-h');
+    const SCREEN_W = 390 - 18;           // 屏内宽（外壳 390 − 左右各 9px padding）
+    const pctOf    = (v) => Math.round(v / SCREEN_H * 1000) / 10;
 
-    const fdMissing = Object.entries({ FD_SIZE, FD_GAP, FD_PAD, FD_AUTO })
+    const fdMissing = Object.entries({ FD_SIZE, FD_CX, FD_CY, FD_GAP, FD_PAD, FD_AUTO })
       .filter(([, v]) => v === null).map(([k]) => k);
     if (fdMissing.length) {
       bad('圆盘参数读不到（:root 里少了）：' + fdMissing.join(', '));
     } else {
-      // 规则 A：圆盘必须**完整露出** —— 直径不得超过屏内宽，否则左右会被裁掉
-      if (FD_SIZE > SCREEN_W) {
-        bad('圆盘直径 ' + FD_SIZE + 'px 超过屏内宽 ' + SCREEN_W + 'px —— 会被裁，不满足"完整露出"');
+      // 规则 A：圆心必须对齐图标行第 2 项「对焦」按钮的中心
+      //   图标行 = N 项等分 + 左右各 padding 6px → 第 2 项（index 1）中心 = pad + 项宽 × 1.5
+      const padM = css.match(/\.params-closed-bar\s*\{[^}]*?padding:\s*0\s+(\d+)px/);
+      const barPad = padM ? parseInt(padM[1], 10) : null;
+      const iconCount = (html.match(/class="icon-item/g) || []).length;
+      if (barPad === null) {
+        bad('从 CSS 读不到 .params-closed-bar 的左右 padding，无法校验圆心对齐');
+      } else if (iconCount !== 7) {
+        bad('图标行应为 7 项，实际 ' + iconCount + ' 项 —— 圆心对齐公式依赖"7 项等分"');
       } else {
-        ok('圆盘完整露出：直径 ' + FD_SIZE + 'px ≤ 屏内宽 ' + SCREEN_W + 'px');
+        const itemW = (SCREEN_W - barPad * 2) / iconCount;
+        const btnCx = barPad + itemW * 1.5;
+        if (Math.abs(FD_CX - btnCx) > 1) {
+          bad('圆心 X ' + FD_CX + 'px 与「对焦」按钮中心 ' + btnCx.toFixed(1)
+            + 'px 不对齐（差 ' + Math.abs(FD_CX - btnCx).toFixed(1) + 'px）');
+        } else {
+          ok('圆心 X 对齐「对焦」按钮：' + FD_CX + 'px ≈ 按钮中心 ' + btnCx.toFixed(1) + 'px');
+        }
       }
 
-      // 规则 B：圆盘态净可见取景面积 ≥ 30%
-      const dialStack = FD_SIZE + FD_GAP + FD_AUTO + FD_PAD;
-      const dialNet = SCREEN_H - TOP - dialStack;
+      // 规则 E：圆心 Y 必须对齐「对焦」按钮中心的 Y
+      //   按钮中心的 Y 可纯从 CSS 推导 —— 底部浮层栈自下而上是
+      //   安全区 → 快门排 → 焦段条 → 图标行（图标行正好填满"参数排收起态"那 44px）。
+      //   所以 按钮中心 Y = 屏高 −(安全区 + 快门 + 焦段)− 图标行高 / 2。
+      //   tools/shot.js 会独立给出浏览器实测值，两边一致才说明布局真的落到了设计位置。
+      const btnCy = SCREEN_H - H_SAFE - H_SHUTTER - H_FOCAL - H_PARAMS_OFF / 2;
+      if (Math.abs(FD_CY - btnCy) > 1) {
+        bad('圆心 Y ' + FD_CY + 'px 与「对焦」按钮中心 ' + btnCy.toFixed(1)
+          + 'px 不对齐（差 ' + Math.abs(FD_CY - btnCy).toFixed(1)
+          + 'px）—— 圆盘会显得和按钮是"分开的两个东西"');
+      } else {
+        ok('圆心 Y 对齐「对焦」按钮：' + FD_CY + 'px ≈ 按钮中心 ' + btnCy.toFixed(1)
+          + 'px（屏高 ' + pctOf(btnCy) + '%）');
+      }
+
+      // 规则 B：右侧不得越界。左侧允许被裁 —— 参考图本身就不是"完整露出"
+      const rightEdge = FD_CX + FD_SIZE / 2;
+      const leftCut = Math.max(0, FD_SIZE / 2 - FD_CX);
+      if (rightEdge > SCREEN_W) {
+        bad('圆盘右缘 ' + rightEdge.toFixed(1) + 'px 超过屏内宽 ' + SCREEN_W + 'px —— 会盖到屏幕外');
+      } else {
+        ok('圆盘右侧不越界：右缘 ' + rightEdge.toFixed(1) + 'px ≤ ' + SCREEN_W + 'px；'
+          + '左侧按参考图裁 ' + leftCut.toFixed(1) + 'px（占屏宽 '
+          + Math.round(leftCut / SCREEN_W * 1000) / 10 + '%）');
+      }
+
+      // 规则 D：**圆盘组**不得越过屏幕底
+      //   圆心钉在按钮上之后，先被顶出屏幕的不是圆盘，而是它下面的「自动对焦」开关行 ——
+      //   所以这一条量的是"圆盘 + 间距 + 开关行"整组的下沿；只量圆盘下沿拦不住真正的故障。
+      const dialTopY     = FD_CY - FD_SIZE / 2;
+      const dialBottomY  = FD_CY + FD_SIZE / 2;
+      const groupBottomY = dialBottomY + FD_GAP + FD_AUTO;
+      if (groupBottomY > SCREEN_H) {
+        bad('圆盘组下沿 ' + groupBottomY.toFixed(1) + 'px 越过屏高 ' + SCREEN_H
+          + 'px —— 「自动对焦」开关行会被屏幕切掉（圆盘下沿 '
+          + dialBottomY.toFixed(1) + 'px，本身还在屏内）');
+      } else {
+        ok('圆盘组纵向不越界：圆盘 ' + dialTopY.toFixed(1) + '..' + dialBottomY.toFixed(1)
+          + 'px（下沿占屏高 ' + pctOf(dialBottomY) + '%）· 开关行下沿 '
+          + groupBottomY.toFixed(1) + 'px（余量 ' + (SCREEN_H - groupBottomY).toFixed(1) + 'px）');
+      }
+
+      // 规则 C：圆盘态净可见取景面积 ≥ 30%
+      const dialNet = dialTopY - TOP;
       const dialPct = Math.round(dialNet / SCREEN_H * 1000) / 10;
       const dialH   = Math.round(FD_SIZE / SCREEN_H * 1000) / 10;
       console.log('    ' + '圆盘打开（模态）'.padEnd(22, ' ') + dialNet + 'px · ' + dialPct + '%'

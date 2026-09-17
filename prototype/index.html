@@ -30,13 +30,18 @@
     --accent-dim:rgba(242,175,60,.20);
     --ok:#34d058;
     --scene:none;
-    /* ---- 对焦圆盘组的四个尺寸参数 ----
+    /* ---- 对焦圆盘组的参数（2026-09-16 定稿：圆心对齐「对焦」按钮） ----
        提到 :root 是为了让自检脚本能"从 CSS 真读数值"，而不是在脚本里再抄一份数字。
        改这里，圆盘和自检规则会一起跟着变。 */
-    --fd-size:280px;   /* 圆盘直径：280 = 折中值（完整露出 + 数值框在右侧 + 视觉尽量接近参考图） */
-    --fd-gap:12px;     /* 圆盘下沿 → 开关行的间距 */
-    --fd-pad:18px;     /* 圆盘组距屏幕底部（= 底部安全区） */
-    --fd-auto-h:29px;  /* 「自动对焦」开关行高（= .sw 开关的高度） */
+    --fd-size:246px;      /* 圆盘直径：246/372 = 66.1%（参考图实测 75%；246 是"开关行不被切"的上限） */
+    --fd-center-x:83.1px; /* 圆心 X = 底部图标行第 2 项「对焦」按钮中心的 X（浏览器实测） */
+    --fd-center-y:662px;  /* 圆心 Y = 同一个按钮中心的 Y（浏览器实测，屏高 80.1%）
+                             2026-09-17 定稿：圆心 X + Y 一起钉在「对焦」按钮上 —— 圆盘是
+                             "以按钮为中心展开"，不是"贴屏幕底往上排"。上下只调这一个值。
+                             662 = 826 −(安全区 18 + 快门 80 + 焦段 44)− 图标行 44/2，可推导。 */
+    --fd-gap:12px;        /* 圆盘下沿 → 开关行的间距 */
+    --fd-pad:18px;        /* 圆盘组尾部留白（钉圆心后不再参与定位，只保证布局盒不外溢） */
+    --fd-auto-h:29px;     /* 「自动对焦」开关行高（= .sw 开关的高度） */
   }
 
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -488,6 +493,9 @@
     text-align:center;line-height:1.5;opacity:0;transition:.22s;pointer-events:none;z-index:20;
   }
   .toast.show{opacity:1;transform:translate(-50%,0);}
+  /* 圆盘打开时，提示条默认的 58% 位置会正好压在圆盘中心与右侧数值框上
+     —— 把提示条抬到取景器上半区，让圆盘这块干净地露出来。 */
+  .screen.dial-on .toast{top:38%;}
 
   /* ---------- 简易模式：只保留取景器 / 快门 / 缩略图 / 场景 / EV ---------- */
   .screen.simple .row-params{height:0;opacity:0;pointer-events:none;}
@@ -601,20 +609,29 @@
      密集刻度 + 绿色三角指针 + 绿色描边数值框 + 自动对焦开关
      ========================================================= */
   /* 定位容器：竖排「圆盘在上 + 自动对焦开关在下」。
-     开关是布局上的下一个 flex 项 —— 物理上不可能压在圆盘上，也不可能和底部 UI 打架；
-     圆盘上下挪动时开关自动跟着走，不用同步维护两个 bottom 值。 */
+     开关是布局上的下一个 flex 项 —— 物理上不可能压在圆盘上，也不可能和底部 UI 打架。
+     横向用 width:0 + align-items:center 把圆心**钉在** --fd-center-x 这一点上，
+     圆盘再宽也是围绕该点左右对称展开（因此左半出屏、右半留着放数值框）。 */
   .fd-wrap{
-    position:absolute;left:0;right:0;bottom:0;z-index:9;
+    position:absolute;left:var(--fd-center-x);right:auto;width:0;
+    /* 按圆心钉位：容器顶边 = 圆心 Y − 半径，于是圆心正好落在 (--fd-center-x, --fd-center-y) 这一点。
+       若用 bottom 定位，圆盘会随直径变大而上移，圆心就钉不住按钮了。 */
+    top:calc(var(--fd-center-y) - var(--fd-size) / 2);z-index:9;
     display:none;flex-direction:column;align-items:center;
     gap:var(--fd-gap);padding-bottom:var(--fd-pad);
   }
   .screen.dial-on .fd-wrap{display:flex;}
+  /* 自动对焦进行中：光标改成不可拖（真正的锁定在 focusFromPoint() 里） */
+  .focus-dial.auto{cursor:default;}
 
   /* 尺寸唯一可调旋钮：--fd-size。SVG 的半径写在 400 坐标系里、随容器等比缩放，
      所以改这一个值，刻度 / 数字 / 指针 / 高亮段会一起同步 → 不可能再脱节。
-     372（屏宽）− 12 = 360，是「完整露出」前提下能取到的最大值。 */
+     2026-09-16 定稿 228px：圆心对齐「对焦」按钮后左半出屏 31px（占屏宽 8.5%），
+     与参考图的裁切比例（8.6%）几乎一致 —— 参考图本身就不是「完整露出」。
+     2026-09-17 定稿 246px + 圆心钉在按钮 (83.1, 662)：左裁 39.9px（占屏宽 10.7%），
+     向参考图的 75% 屏宽 / 15% 左裁靠拢；246 是"圆盘组（含开关行）仍留在屏内"的上限。 */
   .focus-dial{
-    position:relative;flex:0 0 auto;
+    position:relative;flex:0 0 auto;cursor:grab;
     width:var(--fd-size);height:var(--fd-size);border-radius:50%;
     background:radial-gradient(circle at 50% 45%,
       rgba(28,31,37,.78) 0%, rgba(16,19,23,.84) 55%, rgba(10,12,15,.88) 100%);
@@ -664,16 +681,14 @@
   .fd-hub svg{opacity:.92;}
   .fd-hub .t{font-size:13px;font-weight:600;letter-spacing:.6px;color:rgba(255,255,255,.9);}
 
-  /* 数值框：圆盘右侧、绿色描边 + 绿色等宽数字（对照参考图）。
-     偏移 84px 是算出来的：圆盘取到最大 372 后，圆盘右缘就在屏幕右缘，
-     框只能落在盘内 —— 84±33px 刚好避开中心图标（±25）与 0.5 数字（118~142），
-     两个都不压。若要把框放到**盘外**右侧，圆盘必须缩到 ≤224px（见交接说明）。 */
+  /* 数值框：**圆盘外侧**右侧、绿色描边 + 绿色等宽数字（对照参考图）。
+     圆心对齐「对焦」按钮后右侧空出约 175px，框终于能像参考图那样放到盘外。
+     用 left:calc(50% + 半径 + 8px) 把框的**左边缘**钉在圆盘右缘外 8px ——
+     不依赖框自身宽度（框宽是内容算出来的），圆盘改尺寸也不用重算。 */
   .fd-val{
-    position:absolute;left:50%;top:50%;
-    /* 偏移按 --fd-size 的比例给（不用死值）——圆盘改尺寸时框会自动跟着走，
-       不会出现"圆盘缩了、框还停在原地压住 0.5 数字"这种脱节。
-       0.20×尺寸 的右侧落点，对 ≥258px 的圆盘都能同时避开中心图标与 0.5 数字。 */
-    transform:translate(-50%,-50%) translate(calc(var(--fd-size) * 0.20), -5px);
+    position:absolute;top:50%;
+    left:calc(50% + var(--fd-size) / 2 + 8px);
+    transform:translateY(-50%);
     border:1.5px solid #00E08A;border-radius:9px;padding:4px 12px;
     font-size:16px;font-weight:700;color:#00E08A;background:rgba(13,16,19,.92);
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
@@ -1257,7 +1272,9 @@
     dialOpen:false,
     ssExpanded:false,
     filterExpanded:false,
-    paramsOpen:true,
+    // 2026-09-16 改为默认收起：这样底部 7 图标行是**常驻**的，
+    // 「对焦」按钮随时可点（原来默认平铺参数滑块、图标行 display:none，按钮宽高为 0 根本点不到）
+    paramsOpen:false,
     hud:false,
     gridOn:true,
     moreOpen:false,
@@ -1432,6 +1449,9 @@
     var bg = $('btnGrid');
     if (bg) bg.classList.toggle('on', layout.gridOn);
 
+    // 圆盘关掉时立刻停掉自动对焦动画，别让 rAF 在后台空跑
+    if (!layout.dialOpen) cancelAutoFocus();
+
     renderHUD();
     // 高度有 300ms 过渡，等动画停下来再量一次才准
     setTimeout(renderHUD, 340);
@@ -1490,6 +1510,7 @@
       ['风格', st ? st.name : '—'],
       ['滤镜', f ? f.name : '无'],
       ['参数排', layout.simple ? '隐藏' : (layout.paramsOpen ? '平铺 104px' : '收起 44px')],
+      ['对焦', focusAuto ? '自动(' + focusVal.toFixed(2) + ')' : '手动(' + focusVal.toFixed(2) + ')'],
       ['浮层', overlay]
     ];
     var html = '';
@@ -2183,6 +2204,8 @@
 
     var a = $('fdAuto');
     if (a) a.classList.toggle('on', focusAuto);
+    var dEl = $('focusDial');
+    if (dEl) dEl.classList.toggle('auto', focusAuto);
 
     // 绿色高亮段：当前值 ±0.06 内的刻度，单独一条 path（各格用自己的长度，所以段内有长短变化）
     var lit = $('fdLit');
@@ -2198,6 +2221,7 @@
   }
 
   function focusFromPoint(clientX, clientY){
+    if (focusAuto) return;   // 自动对焦进行中 → 锁住手动拖动（原来漏了这个判断，toast 一直在说谎）
     var dial = $('focusDial');
     if (!dial) return;
     var r = dial.getBoundingClientRect();
@@ -2228,11 +2252,61 @@
   dialEl.addEventListener('pointerup', function(){ dialDrag = false; });
   dialEl.addEventListener('pointercancel', function(){ dialDrag = false; });
 
+  /* ---------- 自动对焦：模拟「自动找到焦点」 ----------
+     原型没有真硬件可调，用一次平滑过渡 + 锁定回弹来模拟：
+       开 → 数值在 ~900ms 内从当前值过渡到 0.20~0.80 的随机值，指针 / 高亮段 / 数值框跟着走
+       关 → 立刻停住，数值停在当前值，恢复手动拖动
+
+     帧驱动用 16ms 定时器而不是 requestAnimationFrame：
+       rAF 在无头 / 离屏环境**不产帧、永远不回调**（实测 1.2 秒内 0 次），
+       那样动画既跑不起来、也没法靠自动化截图验证。定时器两条路都通，肉眼无差别。 */
+  var fdAutoTimer = null;
+
+  function cancelAutoFocus(){
+    if (fdAutoTimer !== null){ clearTimeout(fdAutoTimer); fdAutoTimer = null; }
+  }
+
+  function runAutoFocus(){
+    cancelAutoFocus();
+    var from = focusVal;
+    var to = 0.2 + Math.random() * 0.6;          // 目标：0.20 ~ 0.80
+    var DUR = 900, SETTLE = 140, t0 = null;
+
+    function step(){
+      var now = (window.performance && performance.now) ? performance.now() : Date.now();
+      if (t0 === null) t0 = now;
+      var el = now - t0;
+      if (el < DUR){
+        var t = el / DUR;
+        var e = 1 - Math.pow(1 - t, 3);          // ease-out：先快后慢，像"扫过去再对上"
+        focusVal = from + (to - from) * e;
+      } else if (el < DUR + SETTLE){
+        var t2 = (el - DUR) / SETTLE;            // 锁定回弹：越过目标约 3% 再收回来
+        focusVal = to + Math.sin(t2 * Math.PI) * (to - from) * 0.03;
+      } else {
+        focusVal = to;
+        renderFocus();
+        fdAutoTimer = null;
+        return;
+      }
+      focusVal = Math.max(0, Math.min(1, focusVal));
+      renderFocus();
+      fdAutoTimer = setTimeout(step, 16);
+    }
+    step();
+  }
+
   $('fdAuto').addEventListener('click', function(e){
     e.stopPropagation();
     focusAuto = !focusAuto;
+    if (focusAuto){
+      runAutoFocus();
+      toast('自动对焦已开：正在自动找焦点（手动拖动已锁定）');
+    } else {
+      cancelAutoFocus();                          // 立即停住，数值停在当前值
+      toast('自动对焦已关：现在可以拖动圆盘手动调焦');
+    }
     renderFocus();
-    toast(focusAuto ? '自动对焦已开（手动盘锁定）' : '自动对焦已关（可拖动圆盘）');
   });
 
   // 点屏幕任意处关闭对焦圆盘。
