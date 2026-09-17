@@ -391,9 +391,43 @@ async page => {
     存储文字: document.getElementById('storageText').textContent
   }));
 
+  // ---- 14 ⤢ 放大态（v2 卡片化）：常态 vs 放大 ----
+  // 前面步骤留下的持久态（简易模式 / 视频模式 / 画幅比 / 保留项开关）会把画面搅乱，
+  // 这里清一次 localStorage 回到出厂常态 —— 放大态要在"标准拍摄页"上看才有意义。
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  await page.locator('.phone').screenshot({ path: OUT + '18-zoom-normal.png' });
+  await page.click('#btnZoom');
+  await page.waitForTimeout(650);              // 等卡片 inset / 高度 / transform 过渡走完
+  await page.locator('.phone').screenshot({ path: OUT + '19-zoom-on.png' });
+  report.放大态 = await page.evaluate(() => {
+    const gs = (sel) => getComputedStyle(document.querySelector(sel));
+    const rf = document.querySelector('.row-focal').getBoundingClientRect();
+    const vp = document.querySelector('.viewport').getBoundingClientRect();
+    const sh = document.querySelector('.shutter').getBoundingClientRect();
+    const zb = document.getElementById('btnZoom').getBoundingClientRect();
+    return {
+      图标行高: gs('.row-params').height,
+      场景条高: gs('.row-scenestyle').height,
+      取景器卡片: { 左: Math.round(vp.left), 上: Math.round(vp.top),
+                   下: Math.round(vp.bottom), 圆角: gs('.viewport').borderRadius },
+      焦段条: { 定位: gs('.row-focal').position,
+               底距卡底px: Math.round(vp.bottom - rf.bottom) },
+      快门排高: gs('.row-shutter').height,
+      快门渲染宽: Math.round(sh.width),
+      '⤢中心X': Math.round(zb.left + zb.width / 2),
+      镜像前置可见: gs('#btnFrontMirror').display !== 'none',
+      镜像设置可见: gs('#btnSettingsMirror').display !== 'none',
+      '⤢转绿': gs('#btnZoom').color,
+      zoomOn: document.getElementById('screen').classList.contains('zoom-on')
+    };
+  });
+
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
                  '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
-                 '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu'];
+                 '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu',
+                 '18-zoom-normal', '19-zoom-on'];
   if (missing.length) report.量不到 = missing;
 
   return JSON.stringify(report, null, 2);

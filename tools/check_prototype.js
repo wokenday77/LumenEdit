@@ -219,15 +219,17 @@ if (styleMatch) {
   const H_FOCAL     = pick('.row-focal');
   const H_FOCAL_OFF = pick('.screen.ss-on .row-focal');
   const H_FOCAL_SIMPLE = pick('.screen.simple .row-focal');
+  const H_SHUTTER_ZOOM = pick('.screen.zoom-on .row-shutter');
+  const H_SS_ZOOM      = pick('.screen.zoom-on .row-scenestyle');
   const H_STATUS    = pick('.statusbar');
   const H_TOPBAR    = pick('.topbar');
 
-  const missing = Object.entries({ H_SAFE, H_SHUTTER, H_PARAMS_ON, H_PARAMS_OFF, H_SS_OFF, H_SS_ON, H_FILTER_ON, H_EV_SIMPLE, H_FOCAL, H_FOCAL_OFF, H_FOCAL_SIMPLE, H_STATUS, H_TOPBAR })
+  const missing = Object.entries({ H_SAFE, H_SHUTTER, H_PARAMS_ON, H_PARAMS_OFF, H_SS_OFF, H_SS_ON, H_FILTER_ON, H_EV_SIMPLE, H_FOCAL, H_FOCAL_OFF, H_FOCAL_SIMPLE, H_SHUTTER_ZOOM, H_SS_ZOOM, H_STATUS, H_TOPBAR })
     .filter(([, v]) => v === null).map(([k]) => k);
   if (missing.length) {
     bad('CSS 里读不到这些高度：' + missing.join(', '));
   } else {
-    ok('各浮层高度可读：安全区 ' + H_SAFE + ' / 快门 ' + H_SHUTTER
+    ok('各浮层高度可读：安全区 ' + H_SAFE + ' / 快门 ' + H_SHUTTER + '→' + H_SHUTTER_ZOOM + '(放大)'
       + ' / 参数 ' + H_PARAMS_ON + '→' + H_PARAMS_OFF
       + ' / 场景风格 ' + H_SS_OFF + '→' + H_SS_ON
       + ' / 滤镜 ' + H_FILTER_ON + ' / 简易EV ' + H_EV_SIMPLE
@@ -242,7 +244,8 @@ if (styleMatch) {
       ['场景风格展开（焦段收起）', H_SAFE + H_SHUTTER + H_PARAMS_OFF + H_SS_ON + H_FOCAL_OFF],
       ['滤镜条展开（焦段收起）',   H_SAFE + H_SHUTTER + H_PARAMS_OFF + H_SS_OFF + H_FILTER_ON + H_FOCAL_OFF],
       ['参数收起（含焦段）',       H_SAFE + H_SHUTTER + H_PARAMS_OFF + H_SS_OFF + H_FOCAL],
-      ['简易模式（含 EV 横滑）',   H_SAFE + H_SHUTTER + H_EV_SIMPLE + H_SS_OFF + H_FOCAL_SIMPLE]
+      ['简易模式（含 EV 横滑）',   H_SAFE + H_SHUTTER + H_EV_SIMPLE + H_SS_OFF + H_FOCAL_SIMPLE],
+      ['放大态（⤢，v2 卡片化）',  H_SAFE + H_SHUTTER_ZOOM + H_SS_ZOOM + H_FOCAL]
     ];
 
     let worst = 100;
@@ -327,7 +330,9 @@ if (styleMatch) {
       //   图标行 = N 项等分 + 左右各 padding 6px → 第 2 项（index 1）中心 = pad + 项宽 × 1.5
       const padM = css.match(/\.params-closed-bar\s*\{[^}]*?padding:\s*0\s+(\d+)px/);
       const barPad = padM ? parseInt(padM[1], 10) : null;
-      const iconCount = (html.match(/class="icon-item/g) || []).length;
+      // 精确匹配 class="icon-item"（闭合引号）—— ⤢ 放大态的镜像按钮是 class="icon-item mirror"，
+      // 不在图标行里，不能计进"7 项等分"
+      const iconCount = (html.match(/class="icon-item(?! mirror")/g) || []).length;
       if (barPad === null) {
         bad('从 CSS 读不到 .params-closed-bar 的左右 padding，无法校验圆心对齐');
       } else if (iconCount !== 7) {
@@ -442,7 +447,8 @@ if (scriptMatch) {
   const code = scriptMatch[1];
 
   // 底部图标行七项：前置 / 对焦 / 白平衡 / 感光 / 快门速度 / 曝光补偿 / 设置
-  const iconItems = (html.match(/class="icon-item/g) || []).length;
+  // （精确闭合引号：⤢ 放大态的镜像按钮是 class="icon-item mirror"，不在本行内）
+  const iconItems = (html.match(/class="icon-item(?! mirror")/g) || []).length;
   if (iconItems === 7) ok('底部图标行 = 7 项');
   else bad('底部图标行应为 7 项，实际 ' + iconItems);
 
@@ -504,6 +510,49 @@ if (scriptMatch) {
       + (brVals.length ? '（读到 ' + brVals.length + ' 个值）' : ''));
   } else {
     ok('格式芯片齐备：视频/Log 显芯片、选择器 3+4 档、码率表 12 值全为正（剩余可录时长用它估算）');
+  }
+
+  // 滤镜卡（对标参考 f055「标准影调」面板）：卡 = 实时取景缩略图（当前画面 + 该滤镜）+ 名字在卡下。
+  // 关键是 paintPreviewInto(sw, f.id) 这根线 —— 少了它，卡片就退化成没有预览意义的色块。
+  // （面板展开态的净可见 ≥50% 由上面"滤镜条展开"那条用 CSS 真读的行高自动复核，不在这里重复。）
+  const liveThumb = /paintPreviewInto\(sw, f\.id\)/.test(code);
+  const hasFName  = /className = 'filter-name'/.test(code);
+  const swatchCss = /\.filter-swatch\{[^}]*isolation:isolate/.test(html);
+  if (!liveThumb || !hasFName || !swatchCss) {
+    bad('滤镜卡不完整：实时缩略图接线=' + liveThumb + '，名字元素=' + hasFName
+      + '，缩略图容器隔离（isolation）=' + swatchCss);
+  } else {
+    ok('滤镜卡 = 实时取景缩略图（当前画面 + 该滤镜，复用渲染管线）+ 名字在卡下');
+  }
+
+  // ⤢ 放大态（v2 完全对齐飓风相机）：按钮 + 两个镜像按钮 + 隐藏/卡片化/焦段浮动规则必须都在；
+  // 高度读取与放大态净可见 ≥50% 已由第 7 组的 H_SHUTTER_ZOOM / H_SS_ZOOM / states 自动复核。
+  const zoomBtn    = /id="btnZoom"/.test(html);
+  const zoomMirror = /id="btnFrontMirror"/.test(html) && /id="btnSettingsMirror"/.test(html);
+  const zoomHide   = /\.screen\.zoom-on \.row-params\{height:0/.test(html)
+                  && /\.screen\.zoom-on \.row-scenestyle\{height:0/.test(html)
+                  && /\.screen\.zoom-on \.row-filter\{height:0/.test(html);
+  const zoomCard   = /\.screen\.zoom-on \.viewport\{[^}]*border-radius:18px/.test(html);
+  const zoomFloat  = /\.screen\.zoom-on \.row-focal\{[^}]*bottom:136px/.test(html);
+  const zoomShutOk = /\.screen\.zoom-on \.row-shutter\{height:\d+px/.test(html);
+  if (!zoomBtn || !zoomMirror || !zoomHide || !zoomCard || !zoomFloat || !zoomShutOk) {
+    bad('放大态不完整：⤢按钮=' + zoomBtn + '，前置/设置镜像=' + zoomMirror
+      + '，场景条/图标行/滤镜条隐藏=' + zoomHide + '，取景器卡片化=' + zoomCard
+      + '，焦段条浮动=' + zoomFloat + '，快门排规则=' + zoomShutOk);
+  } else {
+    ok('放大态齐备（v2）：取景器卡片化 + 焦段条浮进卡内底边 + 场景条/图标行隐藏'
+      + ' + 快门排两行结构（前置|大快门⤢|设置）');
+  }
+
+  // 圆盘「自动对焦」开关行：任何规则都不许隐藏它。
+  // （2026-09-17 用户报告圆盘打开时开关行消失 —— 实测当前代码无任何规则隐藏它，
+  //   此条设防：以后谁在 .dial-on/.zoom-on 等状态里误伤 .fd-auto，这里直接报。）
+  const fdAutoHidden = /[^{}]*\.fd-auto[^{]*\{[^}]*(display:\s*none|visibility:\s*hidden|height:\s*0|opacity:\s*0)/.test(html);
+  const fdAutoBase   = /\.fd-auto\{[^}]*height:var\(--fd-auto-h\)/.test(html);
+  if (fdAutoHidden || !fdAutoBase) {
+    bad('圆盘「自动对焦」开关行被隐藏：存在隐藏规则=' + fdAutoHidden + '，基础规则在=' + fdAutoBase);
+  } else {
+    ok('圆盘「自动对焦」开关行无任何隐藏规则（基础高度 var(--fd-auto-h) 正常）');
   }
 }
 
