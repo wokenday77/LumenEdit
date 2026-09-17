@@ -151,7 +151,7 @@ const FUTURE = [
   'RecordingIndicator', 'SessionControlsCoordinator',
   'PhotoExporter', 'LivePhotoExporter', 'VideoExporter', 'ImageLoader',
   'LibraryView', 'LibraryViewModel', 'ImportCoordinator', 'AssetResourceResolver',
-  'EditRecipe', 'AdjustmentPipeline', 'AdjustmentKind', 'FilterCatalog', 'FilterRenderer',
+  'EditRecipe', 'AdjustmentPipeline', 'AdjustmentKind', 'FilterRenderer',
   'EditorView', 'EditorViewModel', 'PreviewCanvas', 'AdjustmentPanel', 'FilterStrip',
   'LivePhotoEditService', 'LivePhotoPreviewView', 'VideoEditService',
   'CIFilterVideoCompositor', 'VideoEditorView'
