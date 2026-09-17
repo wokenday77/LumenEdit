@@ -172,6 +172,19 @@ struct CameraView: View {
                 }
             )
 
+            // 底部图标行：七项（前置/对焦/白平衡/感光/快门速度/曝光补偿/设置），
+            // 全部有反馈 —— 未实现的给 toast 说明，设置真开设置页。
+            // 原型里它排在参数排与焦段条之间（"参数排收起态"那 44px 由它顶上）。
+            ToolIconRow(
+                onFrontCamera: { viewModel.frontCameraTapped() },
+                onFocusHint: { viewModel.focusHintTapped() },
+                onWhiteBalance: { viewModel.whiteBalanceTapped() },
+                onISO: { viewModel.isoTapped() },
+                onShutterSpeed: { viewModel.shutterSpeedTapped() },
+                onExposureCompensation: { viewModel.exposureCompensationTapped() },
+                onSettings: { env.showSettings = true }
+            )
+
             // 焦段条：原型里它排在参数排与快门排之间（快门按钮中心 Y 的推导式里
             // 「焦段条 44」就是这一段）。⤢ 放大态时它会浮进取景器卡片内底边（2-5b）。
             FocalStripView(selection: viewModel.focal) { preset in

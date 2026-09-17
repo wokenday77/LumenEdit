@@ -41,6 +41,10 @@ enum Theme {
         /// 浅色面上的深色文字（原型 `#15181c`）。
         /// 焦段药丸选中态是**白底**，文字必须转深色 —— 和 accent 黄底上用纯黑是同一类处理。
         static let textOnLight = Color(red: 0.082, green: 0.094, blue: 0.110)
+
+        /// 底部图标行：图标字形色 / 标签色（原型 `rgba(255,255,255,.9)` / `.6`）
+        static let toolRowText = Color.white.opacity(0.9)
+        static let toolRowLabel = Color.white.opacity(0.6)
     }
 
     // MARK: - 间距
@@ -151,6 +155,24 @@ enum Theme {
         /// **再往上调字号之前必须先加宽药丸** —— 11.5pt 时「120 mm」≈ 43.8pt 就贴边了。
         /// 实测表见 `Camera/UI/FocalStripView.swift` 的类型注释。
         static let focalLabelSize: CGFloat = 10.5
+
+        // MARK: 底部图标行（原型 `.params-closed-bar` 44px + `.icon-item`）
+
+        /// 图标行整条高度（原型 `.params-closed-bar{ height:44px }`）
+        static let toolRowHeight: CGFloat = 44
+        /// 图标字形尺寸（原型 `.icon-item svg{ width:17px }`）
+        static let toolRowGlyphSize: CGFloat = 17
+        /// 「感光」档的文字字形尺寸（原型 `.icon-item .glyph{ font-size:11px; font-weight:700 }`）
+        static let toolRowGlyphTextSize: CGFloat = 11
+        /// 图标与文字的间距（原型 `.icon-item{ gap:3px }`）
+        static let toolRowInnerSpacing: CGFloat = 3
+
+        /// 图标行标签字号。
+        ///
+        /// ⚠️ **刻意偏离原型**（8.5 → 10.5），理由与焦段条标签相同。
+        /// 单元宽 = (370 − 2×6) / 7 ≈ 51.1pt，最长的四字标签「快门速度」「曝光补偿」
+        /// 在 10.5pt 下约 42pt —— 放得下，且单元宽本身已 ≥ HIG 的 44pt 下限。
+        static let toolRowLabelSize: CGFloat = 10.5
 
         // MARK: 顶栏（两行）
         //

@@ -392,6 +392,41 @@ final class CameraViewModel: ObservableObject {
         showToast("焦段 \(preset.displayName)mm · 镜头切换与变焦将在 P2 接硬件")
     }
 
+    // MARK: - 底部图标行
+
+    /// 第 1 项「前置」：前后切换要**重建会话输入**（换 `AVCaptureDeviceInput`），P2 硬件批次
+    func frontCameraTapped() {
+        showToast("前后镜头切换要重建会话输入，在 P2 硬件批次交付，当前固定后置")
+    }
+
+    /// 第 2 项「对焦」：**对焦本身已可用**（点取景器任意位置），手动对焦圆盘是模块 #8。
+    /// 原型里这个图标开的是圆盘（title 写成提示语是它的历史遗留），这里把两件事都说清。
+    func focusHintTapped() {
+        showToast("对焦：点按取景器任意位置即可 · 手动对焦圆盘在模块 #8 交付")
+    }
+
+    /// 第 3 项「白平衡」：刻度条是模块 #9（参数排展开态，一次一条）
+    func whiteBalanceTapped() {
+        showToast("白平衡刻度条在 P2 参数批次交付（走 setWhiteBalanceModeLocked）")
+    }
+
+    /// 第 4 项「感光」
+    func isoTapped() {
+        showToast("感光度 ISO 刻度条在 P2 参数批次交付（走 setExposureModeCustom）")
+    }
+
+    /// 第 5 项「快门速度」
+    func shutterSpeedTapped() {
+        showToast("快门速度刻度条在 P2 参数批次交付（同一套 setExposureModeCustom）")
+    }
+
+    /// 第 6 项「曝光补偿」：**EV 已经可用**（上方参数排常驻），所以这一项不是"未实现"，
+    /// 而是告知入口在哪 + 当前值。原型里它开的是 EV 圆盘（模块 #8，与对焦圆盘同规则互斥）。
+    func exposureCompensationTapped() {
+        let value = FormatText.exposureBias(Float(exposureBias))
+        showToast("曝光补偿在上方参数排调节（当前 \(value) EV）· 圆盘在模块 #8 交付")
+    }
+
     // MARK: - 相册
 
     func openSystemPhotos() {
