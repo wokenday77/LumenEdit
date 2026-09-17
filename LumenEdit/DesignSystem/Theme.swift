@@ -99,6 +99,22 @@ enum Theme {
         static let shutterRecordingCoreSize: CGFloat = 26
         /// 录制态内芯圆角：约边长的 23%（仍一眼是方块，不是球角）
         static let shutterRecordingCoreRadius: CGFloat = 6
+
+        // MARK: ⤢ 放大态（原型 `.screen.zoom-on`，2026-09-17 v2 定稿）
+
+        /// 放大态的快门排高度（80 → **106**）
+        static let shutterRowZoomHeight: CGFloat = 106
+        /// 放大态的快门缩放（1 → **1.3**；原型 `--shutter-scale`）
+        static let shutterZoomScale: CGFloat = 1.3
+        /// 放大态取景器卡片的圆角（原型 `viewport{ border-radius:18px }`）
+        static let previewCardRadius: CGFloat = 18
+        /// 焦段条浮进卡片内底边后，与卡片底边的间隙
+        /// （原型 `bottom:136px` = 卡底偏移 124 + 12）
+        static let focalStripZoomGap: CGFloat = 12
+        /// 放大态的「前置 / 设置」镜像按钮（原型 `.icon-item.mirror{ 50×44 }`，图标 19px）
+        static let mirrorButtonWidth: CGFloat = 50
+        static let mirrorButtonHeight: CGFloat = 44
+        static let mirrorGlyphSize: CGFloat = 19
         /// 快门排整条高度（原型 `.shutter-row{ height:80px }`）
         static let shutterRowHeight: CGFloat = 80
         /// 快门排左右内边距（原型 `padding: 0 18px`）

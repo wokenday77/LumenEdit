@@ -44,7 +44,14 @@ struct CameraView: View {
 
     // MARK: - 取景器
 
-    private var cameraContent: some View {
+    /// 预览层：预览 + 三分线 + 对焦框，**三者同一坐标系**。
+    ///
+    /// ⤢ 放大态时整层"卡片化"：上下收（顶到顶栏下沿、底到快门排上沿）、圆角 18，
+    /// **左右不内缩**（用户反馈过"卡片比常态窄"）。原型 `.zoom-on .viewport` 规则。
+    ///
+    /// ⚠️ 三分线与对焦框在同一个被裁剪的容器里，坐标系随之收缩 ——
+    /// 所以**不要**单独给它们加 inset（那会让对焦框整体偏）。
+    private var previewLayer: some View {
         ZStack {
             PreviewView(
                 session: env.session.session,
@@ -67,6 +74,57 @@ struct CameraView: View {
 
             // 与预览同一坐标系，直接用视图坐标绘制
             FocusIndicatorView(point: viewModel.focusPoint, token: viewModel.focusToken)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: previewCornerRadius, style: .continuous))
+        .padding(.top, previewTopInset)
+        .padding(.bottom, previewBottomInset)
+        // 用弹簧动画而不是 .transition(.move)：后者会在动画期间挤压预览（docs/03 §7.3）
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: viewModel.isZoomOn)
+    }
+
+    private var previewCornerRadius: CGFloat {
+        viewModel.isZoomOn ? Theme.Size.previewCardRadius : 0
+    }
+
+    /// 卡片顶 = 顶栏下沿（内容距安全区 10 + 顶栏 56）
+    private var previewTopInset: CGFloat {
+        viewModel.isZoomOn ? Theme.Spacing.sm + Theme.Size.topBarHeight : 0
+    }
+
+    /// 卡片底 = 快门排上沿（放大态快门排 106 + 底栏下内边距 10）
+    private var previewBottomInset: CGFloat {
+        viewModel.isZoomOn ? Theme.Size.shutterRowZoomHeight + Theme.Spacing.sm : 0
+    }
+
+    /// 焦段条：**常态贴在快门排上方；放大态脱离底栈、浮进卡片内底边**
+    /// （原型 `.zoom-on .row-focal{ position:absolute; bottom:136px }` = 卡底偏移 + 12）
+    ///
+    /// 两种状态都用"绝对定位到底部"表达，避免"放大态既要从 VStack 里消失、
+    /// 又要出现在卡片里"这种跨容器的切换。
+    private var floatingFocalStrip: some View {
+        FocalStripView(selection: viewModel.focal) { preset in
+            viewModel.focalTapped(preset)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(.bottom, focalStripBottomOffset)
+        .padding(.horizontal, Theme.Spacing.md)
+    }
+
+    private var focalStripBottomOffset: CGFloat {
+        if viewModel.isZoomOn {
+            // 卡底（106 + 10）+ 与卡底的间隙 12
+            return Theme.Size.shutterRowZoomHeight + Theme.Spacing.sm + Theme.Size.focalStripZoomGap
+        }
+        // 常态：快门排 80 + 底栏下内边距 10 + 与快门排的行距 16
+        return Theme.Size.shutterRowHeight + Theme.Spacing.sm + Theme.Spacing.md
+    }
+
+    private var cameraContent: some View {
+        ZStack {
+            previewLayer
+
+            // 焦段条（浮层，不参与底栏布局）
+            floatingFocalStrip
 
             VStack(spacing: Theme.Spacing.sm) {
                 TopBarView(
@@ -172,32 +230,29 @@ struct CameraView: View {
 
     private var bottomArea: some View {
         VStack(spacing: Theme.Spacing.md) {
-            ExposurePanel(
-                exposureBias: $viewModel.exposureBias,
-                range: env.session.exposureBiasRange,
-                isEnabled: env.session.state == .running && !viewModel.isSaving,
-                onEditingChanged: { isEditing in
-                    viewModel.exposureEditingChanged(isEditing)
-                }
-            )
+            // ⤢ 放大态：参数排与图标行**整行让位**（原型 `.zoom-on` 把三条归零）。
+            // 前置 / 设置的入口由快门排的镜像按钮顶上，不会丢功能。
+            if !viewModel.isZoomOn {
+                ExposurePanel(
+                    exposureBias: $viewModel.exposureBias,
+                    range: env.session.exposureBiasRange,
+                    isEnabled: env.session.state == .running && !viewModel.isSaving,
+                    onEditingChanged: { isEditing in
+                        viewModel.exposureEditingChanged(isEditing)
+                    }
+                )
 
-            // 底部图标行：七项（前置/对焦/白平衡/感光/快门速度/曝光补偿/设置），
-            // 全部有反馈 —— 未实现的给 toast 说明，设置真开设置页。
-            // 原型里它排在参数排与焦段条之间（"参数排收起态"那 44px 由它顶上）。
-            ToolIconRow(
-                onFrontCamera: { viewModel.frontCameraTapped() },
-                onFocusHint: { viewModel.focusHintTapped() },
-                onWhiteBalance: { viewModel.whiteBalanceTapped() },
-                onISO: { viewModel.isoTapped() },
-                onShutterSpeed: { viewModel.shutterSpeedTapped() },
-                onExposureCompensation: { viewModel.exposureCompensationTapped() },
-                onSettings: { env.showSettings = true }
-            )
-
-            // 焦段条：原型里它排在参数排与快门排之间（快门按钮中心 Y 的推导式里
-            // 「焦段条 44」就是这一段）。⤢ 放大态时它会浮进取景器卡片内底边（2-5b）。
-            FocalStripView(selection: viewModel.focal) { preset in
-                viewModel.focalTapped(preset)
+                // 底部图标行：七项（前置/对焦/白平衡/感光/快门速度/曝光补偿/设置），
+                // 全部有反馈 —— 未实现的给 toast 说明，设置真开设置页。
+                ToolIconRow(
+                    onFrontCamera: { viewModel.frontCameraTapped() },
+                    onFocusHint: { viewModel.focusHintTapped() },
+                    onWhiteBalance: { viewModel.whiteBalanceTapped() },
+                    onISO: { viewModel.isoTapped() },
+                    onShutterSpeed: { viewModel.shutterSpeedTapped() },
+                    onExposureCompensation: { viewModel.exposureCompensationTapped() },
+                    onSettings: { env.showSettings = true }
+                )
             }
 
             // 快门排四件套：缩略图 · 快门（绝对居中）· ⤢ · 风格方块（docs/09）。
@@ -213,8 +268,12 @@ struct CameraView: View {
                 isShutterEnabled: viewModel.isRecording
                     || (env.session.state == .running && !viewModel.isSaving),
                 onShutterTap: { viewModel.shutterTapped() },
+                isZoomOn: viewModel.isZoomOn,
                 onZoomTap: { viewModel.zoomTapped() },
-                onStyleTap: { viewModel.styleThumbTapped() }
+                onStyleTap: { viewModel.styleThumbTapped() },
+                // 放大态镜像按钮：与图标行的「前置 / 设置」同一行为
+                onFrontCamera: { viewModel.frontCameraTapped() },
+                onSettings: { env.showSettings = true }
             )
         }
         .padding(.bottom, Theme.Spacing.sm)

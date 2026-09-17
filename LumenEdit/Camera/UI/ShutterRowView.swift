@@ -37,16 +37,22 @@ struct ShutterRowView: View {
     let isShutterEnabled: Bool
     let onShutterTap: () -> Void
 
+    /// ⤢ 放大拍摄布局是否开启（2-5b）：开启后本排变高、快门放大、左右两组竖排
+    let isZoomOn: Bool
     let onZoomTap: () -> Void
     let onStyleTap: () -> Void
+    /// 放大态淡入的镜像按钮 —— 与底部图标行的「前置 / 设置」**同一行为**
+    /// （原型：图标行整行让位后由这两个按钮顶上，两者不会同时可见）
+    let onFrontCamera: () -> Void
+    let onSettings: () -> Void
 
     var body: some View {
         ZStack {
-            // 左右两组（常态：缩略图 / 风格方块；镜像按钮属 2-5b）
-            HStack {
-                CaptureThumbnail(image: thumbnailImage, onTap: onThumbnailTap)
+            // 左右两组：常态各只有一个控件；放大态转**竖排**（镜像按钮在上、控件在下）
+            HStack(alignment: .center) {
+                leftGroup
                 Spacer(minLength: 0)
-                styleThumb
+                rightGroup
             }
 
             // 快门：ZStack 天然居中
@@ -56,7 +62,72 @@ struct ShutterRowView: View {
             zoomButton
         }
         .padding(.horizontal, Theme.Size.shutterRowHorizontalPadding)
-        .frame(height: Theme.Size.shutterRowHeight)
+        .frame(
+            height: isZoomOn
+                ? Theme.Size.shutterRowZoomHeight
+                : Theme.Size.shutterRowHeight
+        )
+    }
+
+    /// 快门视觉缩放：常态 1，放大态 1.3（原型 `--shutter-scale`）
+    private var shutterScale: CGFloat {
+        isZoomOn ? Theme.Size.shutterZoomScale : 1
+    }
+
+    // MARK: - 左右两组
+
+    private var leftGroup: some View {
+        VStack(spacing: 0) {
+            if isZoomOn {
+                mirrorButton(
+                    symbol: "arrow.triangle.2.circlepath.camera",
+                    label: "前置",
+                    action: onFrontCamera
+                )
+                Spacer(minLength: 0)
+            }
+            CaptureThumbnail(image: thumbnailImage, onTap: onThumbnailTap)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private var rightGroup: some View {
+        VStack(spacing: 0) {
+            if isZoomOn {
+                mirrorButton(symbol: "gearshape", label: "设置", action: onSettings)
+                Spacer(minLength: 0)
+            }
+            styleThumb
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// 放大态的镜像按钮（50×44，图标 19px 比图标行大一号 —— 这就是"放大"）。
+    ///
+    /// ⚠️ 用**条件插入**而不是 `opacity(0)`：占位会把 ⤢ 顶进快门的命中区
+    ///（原型注释实测踩过：visibility:hidden 会占位，display:none 才不占位）。
+    private func mirrorButton(
+        symbol: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: Theme.Size.toolRowInnerSpacing) {
+                Image(systemName: symbol)
+                    .font(.system(size: Theme.Size.mirrorGlyphSize, weight: .medium))
+                    .foregroundStyle(Theme.Palette.toolRowText)
+                Text(label)
+                    .font(.system(size: Theme.Size.toolRowLabelSize))
+                    .foregroundStyle(Theme.Palette.toolRowLabel)
+            }
+            .frame(
+                width: Theme.Size.mirrorButtonWidth,
+                height: Theme.Size.mirrorButtonHeight
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     // MARK: - 快门
@@ -68,28 +139,38 @@ struct ShutterRowView: View {
             isEnabled: isShutterEnabled,
             action: onShutterTap
         )
+        // 整体缩放（原型 `transform: scale(var(--shutter-scale))`）——
+        // 环与内芯一起放大，⤢ 的偏移也乘同一个 scale，三者同步
+        .scaleEffect(shutterScale)
     }
 
     // MARK: - ⤢
 
     private var zoomButton: some View {
         Button(action: onZoomTap) {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
+            Image(systemName: isZoomOn
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: Theme.Size.zoomGlyphSize, weight: .semibold))
-                .foregroundStyle(Theme.Palette.secondaryText)
+                .foregroundStyle(isZoomOn ? Theme.Palette.ok : Theme.Palette.secondaryText)
                 .frame(width: Theme.Size.zoomButtonSide, height: Theme.Size.zoomButtonSide)
-                .background(Circle().fill(Color.white.opacity(0.09)))
+                .background(
+                    Circle().fill(
+                        isZoomOn ? Theme.Palette.ok.opacity(0.16) : Color.white.opacity(0.09)
+                    )
+                )
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         // 原型 left: calc(50% + 直径/2 × scale + gap)；ZStack 已把它放在中线上，
-        // 所以这里只需要"快门半径 + 间距 + 自身半径"。scale 在 2-5b 接入。
+        // 所以这里只需要"快门**视觉**半径 + 间距 + 自身半径"—— 快门放大时 ⤢ 自动右移。
         .offset(
-            x: Theme.Size.shutterDiameter / 2
+            x: Theme.Size.shutterDiameter / 2 * shutterScale
                 + Theme.Size.zoomGap
                 + Theme.Size.zoomButtonSide / 2
         )
-        .accessibilityLabel("放大拍摄布局")
+        .accessibilityLabel(isZoomOn ? "退出放大拍摄布局" : "放大拍摄布局")
+        .accessibilityAddTraits(isZoomOn ? [.isSelected] : [])
     }
 
     // MARK: - 风格方块

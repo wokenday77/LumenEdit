@@ -21,9 +21,12 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var mode: CaptureSessionMode = .photo
     @Published private(set) var isSaving = false
 
-    /// 当前选中的焦段档位。
-    /// **不落盘**：原型的「保留设置」只管 场景 / 风格 / 滤镜 / EV 四项，焦段不在其中。
-    @Published private(set) var focal: FocalPreset = FocalCatalog.defaultFocal
+    /// ⤢ 放大拍摄布局是否开启（2-5b）。
+    ///
+    /// 开启后：取景器卡片化、焦段条浮进卡片内底边、参数排与图标行让位、
+    /// 快门放大 1.3 倍、左右两组竖排并淡入「前置 / 设置」镜像按钮（见 `docs/09` 第三节）。
+    /// **不落盘**：这是拍摄时的临时手势状态，原型也没把它放进「保留设置」。
+    @Published private(set) var isZoomOn = false
 
     /// 是否正在录制视频（P1b-2）
     @Published private(set) var isRecording = false
@@ -430,13 +433,14 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - 快门排
 
-    /// ⤢ 放大拍摄布局。
+    /// ⤢ 放大拍摄布局（2-5b）：切换放大态。
     ///
-    /// 按钮在 2-5a 已就位（位置由令牌推出），**放大态本体是 2-5b**
-    /// （快门 scale 1→1.3 + 取景器卡片化 + 焦段条浮入，见 `docs/09` 第三节）。
-    /// 在那之前点击只说明边界 —— 不给一个"按了没动静"的按钮。
+    /// 放大态本体（取景器卡片化 / 焦段条浮入 / 快门放大 / 镜像按钮）由
+    /// `CameraView` 与 `ShutterRowView` 按 `isZoomOn` 渲染，这里只管状态。
     func zoomTapped() {
-        showToast("放大拍摄布局在 2-5b 交付（快门放大 1.3 倍 + 取景器卡片化）")
+        isZoomOn.toggle()
+        Haptics.tick()
+        DebugLog.shared.debug("ui", "放大拍摄布局 \(isZoomOn ? "开" : "关")")
     }
 
     /// 风格预览方块。
