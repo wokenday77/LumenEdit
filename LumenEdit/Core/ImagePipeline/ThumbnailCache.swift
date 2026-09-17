@@ -1,3 +1,4 @@
+import AVFoundation
 import ImageIO
 import Photos
 import UIKit
@@ -40,13 +41,42 @@ final class ThumbnailCache: ObservableObject {
         DebugLog.shared.debug("thumb", "缩略图已更新（照片），\(Int(image.size.width))x\(Int(image.size.height))")
     }
 
-    /// 用本地文件（视频等）生成缩略图
-    func rememberCapturedFile(at url: URL, maxPixelSize: CGFloat = 240) {
-        guard let image = Self.downsample(url: url, maxPixelSize: maxPixelSize) else {
-            DebugLog.shared.debug("thumb", "缩略图生成失败（非图片文件），跳过：\(url.lastPathComponent)")
+    /// 用本地文件生成缩略图：静态图走 ImageIO 降采样；**视频走 `AVAssetImageGenerator` 抽首帧**。
+    ///
+    /// ⚠️ 这是决策 #2（`docs/08` 三.3）的修复：此前对 MOV 也用 `CGImageSource` 读，
+    /// 它只认静态图 → 必然返回 nil → 表现为"录完视频左下角缩略图不变"。
+    ///
+    /// - 抽帧参数：`appliesPreferredTrackTransform` **必设**（工程竖屏锁定是 90°，
+    ///   不设会抽出一张横躺的帧）；`maximumSize` 必给（4K 帧整张解码没必要，缩略图只要 240px）
+    /// - 抽不到就保持原缩略图、只记日志 —— **入库已经成功**，缩略图失败不该影响保存结果
+    func rememberCapturedFile(at url: URL, maxPixelSize: CGFloat = 240) async {
+        // 先按静态图走：Live Photo 的静态半边、以及未来可能出现的其它图片文件
+        if let image = Self.downsample(url: url, maxPixelSize: maxPixelSize) {
+            lastThumbnail = image
+            DebugLog.shared.debug("thumb", "缩略图已更新（图片文件）")
             return
         }
-        lastThumbnail = image
+
+        // 视频：抽首帧（.zero = 第一帧）
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: maxPixelSize, height: maxPixelSize)
+
+        do {
+            let frame = try await generator.image(at: .zero).image
+            let image = UIImage(cgImage: frame)
+            lastThumbnail = image
+            DebugLog.shared.debug(
+                "thumb",
+                "视频首帧缩略图已生成 \(Int(image.size.width))x\(Int(image.size.height))"
+            )
+        } catch {
+            DebugLog.shared.debug(
+                "thumb",
+                "视频首帧缩略图生成失败，保持原缩略图：\(error.localizedDescription)"
+            )
+        }
     }
 
     func rememberSavedIdentifier(_ identifier: String?) {

@@ -115,9 +115,17 @@ struct CameraView: View {
             .padding(.vertical, Theme.Spacing.sm)
             .animation(.easeInOut(duration: 0.18), value: viewModel.toast)
         }
-        // 实况角标：居中浮在模式条正下方，不参与布局（不挤压下方 HUD），也不接收触摸
+        // 顶部浮层槽位（模式条正下方）：**录制计时** 与 **实况角标** 共用，二者互斥 ——
+        // 录制只发生在视频 / Log 实况模式，实况角标只在实况模式。
+        // 录制徽标从快门上方挪到这里（2026-09-17：2-3 加焦段条后，原位置会盖住药丸）。
+        // 两者都不参与布局（不挤压下方 HUD），也不接收触摸。
         .overlay(alignment: .top) {
-            if viewModel.mode == .livePhoto {
+            if viewModel.isRecording {
+                RecordingBadge(seconds: viewModel.recordingSeconds)
+                    .offset(y: Theme.Spacing.sm + Theme.Size.topBarHeight + 8)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            } else if viewModel.mode == .livePhoto {
                 liveBadge
                     .offset(y: Theme.Spacing.sm + Theme.Size.topBarHeight + 8)
                     .allowsHitTesting(false)
@@ -125,6 +133,7 @@ struct CameraView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: viewModel.mode)
+        .animation(.easeInOut(duration: 0.18), value: viewModel.isRecording)
     }
 
     // MARK: - 顶栏
@@ -191,36 +200,22 @@ struct CameraView: View {
                 viewModel.focalTapped(preset)
             }
 
-            HStack(spacing: 0) {
-                CaptureThumbnail(image: env.thumbnails.lastThumbnail) {
-                    viewModel.openSystemPhotos()
-                }
-
-                Spacer(minLength: 0)
-
-                ShutterButton(
-                    isBusy: viewModel.isSaving,
-                    isRecording: viewModel.isRecording,
-                    // ⚠️ 录制中快门**必须保持可用** —— 那是唯一的"停止录制"入口，
-                    // 禁用掉就会出现"录上了停不下来"。
-                    isEnabled: viewModel.isRecording
-                        || (env.session.state == .running && !viewModel.isSaving)
-                ) {
-                    viewModel.shutterTapped()
-                }
-                .overlay(alignment: .top) {
-                    if viewModel.isRecording {
-                        RecordingBadge(seconds: viewModel.recordingSeconds)
-                            .offset(y: -38)
-                    }
-                }
-
-                Spacer(minLength: 0)
-
-                // 与缩略图等宽的透明占位，保证快门在屏幕正中而不是被挤偏
-                Color.clear
-                    .frame(width: Theme.Size.thumbnailSide, height: Theme.Size.thumbnailSide)
-            }
+            // 快门排四件套：缩略图 · 快门（绝对居中）· ⤢ · 风格方块（docs/09）。
+            // ⚠️ 录制计时徽标**不在这里** —— 它原来的位置（快门上方上浮）自 2-3 起被
+            // 焦段条占了，徽标已挪到取景器顶部居中（见上方 overlay，Apple 相机的做法）。
+            ShutterRowView(
+                thumbnailImage: env.thumbnails.lastThumbnail,
+                onThumbnailTap: { viewModel.openSystemPhotos() },
+                isShutterBusy: viewModel.isSaving,
+                isRecording: viewModel.isRecording,
+                // ⚠️ 录制中快门**必须保持可用** —— 那是唯一的"停止录制"入口，
+                // 禁用掉就会出现"录上了停不下来"。
+                isShutterEnabled: viewModel.isRecording
+                    || (env.session.state == .running && !viewModel.isSaving),
+                onShutterTap: { viewModel.shutterTapped() },
+                onZoomTap: { viewModel.zoomTapped() },
+                onStyleTap: { viewModel.styleThumbTapped() }
+            )
         }
         .padding(.bottom, Theme.Spacing.sm)
     }
@@ -242,62 +237,15 @@ struct CameraView: View {
     }
 }
 
-// MARK: - 快门按钮
-
-private struct ShutterButton: View {
-
-    let isBusy: Bool
-    /// 是否正在录制视频 —— 录制中内圈变成红色方块（"停止录制"的行业标准形态）
-    let isRecording: Bool
-    let isEnabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .stroke(Color.white, lineWidth: Theme.Size.shutterRingWidth)
-                    .frame(width: Theme.Size.shutterDiameter, height: Theme.Size.shutterDiameter)
-
-                if isRecording {
-                    // 录制中：红色圆角方块 = 点它停止录制
-                    RoundedRectangle(cornerRadius: Theme.Size.shutterDiameter * 0.15, style: .continuous)
-                        .fill(Theme.Palette.recording)
-                        .frame(
-                            width: Theme.Size.shutterDiameter * 0.42,
-                            height: Theme.Size.shutterDiameter * 0.42
-                        )
-                } else {
-                    Circle()
-                        .fill(Color.white)
-                        .frame(
-                            width: Theme.Size.shutterDiameter - 14,
-                            height: Theme.Size.shutterDiameter - 14
-                        )
-                        // 拍摄/保存时内圈收缩，和系统相机的反馈一致
-                        .scaleEffect(isBusy ? 0.68 : 1.0)
-                        .animation(.easeInOut(duration: 0.15), value: isBusy)
-
-                    if isBusy {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .tint(.black)
-                    }
-                }
-            }
-            .contentShape(Circle())
-            .animation(.easeInOut(duration: 0.18), value: isRecording)
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1.0 : 0.45)
-        .accessibilityLabel(isRecording ? "停止录制" : "快门")
-    }
-}
-
 // MARK: - 录制计时徽标
 
-/// 录制中显示的红点 + 计时，浮在快门上方（不参与布局，避免顶动快门）。
+/// 录制中显示的红点 + 计时。
+///
+/// **2026-09-17 挪了位置**：原来浮在快门上方，但 2-3 把焦段条加进底栈之后，
+/// 那个位置被焦段条的药丸占了（录制徽标会盖住药丸的下半截）。
+/// 现在挪到**取景器顶部居中**（Apple 相机的做法，见 `body` 上方的 overlay）——
+/// 那个槽位与实况角标互斥（录制只发生在视频 / Log 实况模式，实况角标只在实况模式），
+/// 不会打架。徽标不参与布局，避免顶动任何控件。
 private struct RecordingBadge: View {
 
     let seconds: Double

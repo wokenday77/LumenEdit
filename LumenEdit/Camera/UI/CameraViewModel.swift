@@ -258,7 +258,8 @@ final class CameraViewModel: ObservableObject {
                 temporaryFileURL = url
                 let identifier = try await PhotoLibraryWriter.saveVideoFile(at: url)
                 environment.thumbnails.rememberSavedIdentifier(identifier)
-                environment.thumbnails.rememberCapturedFile(at: url)
+                // 视频要抽首帧（异步）：决策 #2 的修复，见 ThumbnailCache.rememberCapturedFile
+                await environment.thumbnails.rememberCapturedFile(at: url)
                 // 提示语按拍摄模式区分：Log 实况当前的产物就是一段普通视频，
                 // 谎称"实况照片已保存"会让人去相册里长按却发现播不动。
                 showToast(mode == .logLive
@@ -425,6 +426,25 @@ final class CameraViewModel: ObservableObject {
     func exposureCompensationTapped() {
         let value = FormatText.exposureBias(Float(exposureBias))
         showToast("曝光补偿在上方参数排调节（当前 \(value) EV）· 圆盘在模块 #8 交付")
+    }
+
+    // MARK: - 快门排
+
+    /// ⤢ 放大拍摄布局。
+    ///
+    /// 按钮在 2-5a 已就位（位置由令牌推出），**放大态本体是 2-5b**
+    /// （快门 scale 1→1.3 + 取景器卡片化 + 焦段条浮入，见 `docs/09` 第三节）。
+    /// 在那之前点击只说明边界 —— 不给一个"按了没动静"的按钮。
+    func zoomTapped() {
+        showToast("放大拍摄布局在 2-5b 交付（快门放大 1.3 倍 + 取景器卡片化）")
+    }
+
+    /// 风格预览方块。
+    ///
+    /// 内层现在是深色占位：「当前风格」的选择状态要等模块 #6（场景/风格条），
+    /// 实时渲染要等 P4（`docs/09` 第六节未决项）。点击说明交付节点。
+    func styleThumbTapped() {
+        showToast("场景与风格条在模块 #6 交付 · 实时预览在 P4")
     }
 
     // MARK: - 相册

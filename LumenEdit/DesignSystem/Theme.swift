@@ -45,6 +45,9 @@ enum Theme {
         /// 底部图标行：图标字形色 / 标签色（原型 `rgba(255,255,255,.9)` / `.6`）
         static let toolRowText = Color.white.opacity(0.9)
         static let toolRowLabel = Color.white.opacity(0.6)
+
+        /// 风格预览方块的内层底色（原型 `.style-thumb .inner{ background:#1a1d21 }`）
+        static let styleThumbInner = Color(red: 0.102, green: 0.114, blue: 0.129)
     }
 
     // MARK: - 间距
@@ -70,9 +73,41 @@ enum Theme {
     // MARK: - 尺寸
 
     enum Size {
-        static let shutterDiameter: CGFloat = 74
-        static let shutterRingWidth: CGFloat = 5
-        static let thumbnailSide: CGFloat = 52
+        // MARK: 快门排（原型 `.shutter-row` 80px + `.shutter` 60）—— 2026-09-17 按 docs/09 修正
+
+        /// 快门直径。⚠️ 原来是 74，`docs/09` 尺寸修正表定为 **60**（原型 `.shutter-d: 60px`）
+        static let shutterDiameter: CGFloat = 60
+        /// 快门环宽。⚠️ 原来是 5，修正为 **3.5**（原型 `border: 3.5px`）
+        static let shutterRingWidth: CGFloat = 3.5
+        /// 快门内芯（白圆 / 录制态红方块）。
+        /// 原型 `.shutter .core{ width:46px }` —— **固定值**，不再用"直径 − 14"推
+        /// （那次是巧合等于 46；直径改成 60 后再推就错了）。
+        static let shutterCoreSize: CGFloat = 46
+        /// 快门排整条高度（原型 `.shutter-row{ height:80px }`）
+        static let shutterRowHeight: CGFloat = 80
+        /// 快门排左右内边距（原型 `padding: 0 18px`）
+        static let shutterRowHorizontalPadding: CGFloat = 18
+
+        /// 相册缩略图边长。⚠️ 原来是 52，修正为 **50**（原型 `.thumb{ 50px }`）
+        static let thumbnailSide: CGFloat = 50
+
+        /// ⤢ 放大布局按钮：36×36 圆（原型 `.zoom-btn{ width:36px }`），字形 15px
+        static let zoomButtonSide: CGFloat = 36
+        static let zoomGlyphSize: CGFloat = 15
+        /// ⤢ 与快门视觉边缘的间距（原型 `--zoom-gap: 12px`）。
+        /// 位置公式：`屏幕中线 + 快门视觉半径 + 本值 + 自身半径` —— 全用令牌表达，
+        /// 2-5b 把快门放大 1.3 倍时把半径乘上 scale，⤢ 自动右移（与快门同曲线）。
+        static let zoomGap: CGFloat = 12
+
+        /// 风格预览方块：50×50、外圈圆角 10、渐变描边内衬 2、内层圆角 8
+        /// （原型 `.style-thumb{ 50px; radius:10px; padding:2px }` + `.inner{ radius:11px }`；
+        ///  内层圆角按几何应为 10 − 2 = 8，原型的 11 视觉上与 8 无差，取几何正确值）
+        static let styleThumbSide: CGFloat = 50
+        static let styleThumbCornerRadius: CGFloat = 10
+        static let styleThumbInnerCornerRadius: CGFloat = 8
+        static let styleThumbBorderPadding: CGFloat = 2
+
+        // MARK: 模式条（原型 `.mode-tab` 26px）—— 2026-09-17 第九轮定稿
 
         /// 模式条单档的**视觉**高度（原型 `.mode-tab{ height:26px }`，此前用的是 34）
         static let modeSelectorHeight: CGFloat = 26
