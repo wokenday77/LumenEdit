@@ -283,6 +283,25 @@ if (!themeFile || !modeSelFile || !topBarFile) {
     } else {
       ok('ModeSelector 保留了 ViewThatFits 降档路径（窄屏不会静默压缩）');
     }
+
+    // 底部图标行：七项等宽，命中单元要 ≥ 44pt。
+    // 2026-09-17 的教训：布局账按原型 370pt 算出 51.1pt/格，真机 402pt 实际是 55.7pt
+    // —— **同一行布局要在每种真机屏宽下各算一遍**，不能只记 CSS 稿的那一行。
+    const xs = readCGFloat(themeSrc, 'xs');
+    if (xs === null) {
+      bad('读不到 Theme.Spacing.xs（顶栏/图标行左右内边距）');
+    } else {
+      const TOOL_CELL_COUNT = 7;   // ToolIconRow 的七项（前置/对焦/白平衡/感光/快门速度/曝光补偿/设置）
+      for (const d of devices) {
+        const cell = (d.screen - 2 * xs) / TOOL_CELL_COUNT;
+        const label = d.name + ' 图标行单元格 ' + cell.toFixed(1) + 'pt（7 等分）';
+        if (cell < T.minHitWidth) {
+          bad(label + '（低于 HIG ' + T.minHitWidth + 'pt，需要减项或改布局）');
+        } else {
+          ok(label);
+        }
+      }
+    }
   }
 }
 

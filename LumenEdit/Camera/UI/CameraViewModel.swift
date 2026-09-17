@@ -441,6 +441,10 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 提示条
 
     private func showToast(_ message: String) {
+        // ⚠️ toast 必须落日志：本项目日志双写（OSLog + 沙盒文件）就是为了留**验收证据链**，
+        // 而 toast 是行为验收的核心载体 —— "六个 toast 是否都出"这类验收要靠它对账。
+        // 不落日志，证据链就断在最后一环（2026-09-17 2-4 验收时实际发生过：只能人工点验）。
+        DebugLog.shared.debug("ui", "toast: \(message)")
         toast = message
         toastTask?.cancel()
         toastTask = Task { [weak self] in

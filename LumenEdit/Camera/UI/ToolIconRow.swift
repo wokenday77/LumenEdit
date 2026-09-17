@@ -5,6 +5,13 @@ import SwiftUI
 /// 版式对齐网页原型 `.params-closed-bar`（44px 高）+ `.icon-item`
 /// （**纵向**：图标在上、中文小字在下；七项**等宽**均分一行）。
 ///
+/// ⚠️ **「快门速度」用的是 `camera.aperture`（光圈叶片）** —— 语义上是有意借用，不是用错：
+/// 符号库里**没有**独立的"快门"图形（`aperture` 不存在，Mac 侧 2026-09-17 实测确认）。
+/// 快门与光圈同为"叶片开合"机构，参考图与原型用的就是这张图形；
+/// 大众语境里它读作"快门/拍摄"，专业用户才可能读成"光圈" —— 而这一格**有"快门速度"
+/// 文字标签兜底**，歧义无害。若将来要零歧义，备选方案是照「感光」的做法改文字字形
+/// （如「1/125」，单元宽 51pt 装得下）。
+///
 /// ## 七项的行为边界（2026-09-17 · 全部有反馈，不允许"点了没反应"）
 ///
 /// | 项 | 本件的行为 | 备注 |
@@ -45,7 +52,7 @@ struct ToolIconRow: View {
                  label: "白平衡", action: onWhiteBalance)
             cell(glyphText: "ISO",
                  label: "感光", action: onISO)
-            cell(symbol: "aperture",
+            cell(symbol: "camera.aperture",
                  label: "快门速度", action: onShutterSpeed)
             cell(symbol: "plus.circle",
                  label: "曝光补偿", isAccent: true, action: onExposureCompensation)
