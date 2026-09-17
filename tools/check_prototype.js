@@ -256,6 +256,49 @@ if (styleMatch) {
     if (worst < 50) bad('最差状态的净可见取景面积只有 ' + worst + '%，低于 50% 底线');
     else ok('所有合法状态净可见 ≥ 50%（最差 ' + worst + '%）');
 
+    /* ---- 展开态内容不得溢出其行高 ----
+       这条规则是冲着"场景·风格展开后内容压在图标行上"那个 bug 来的：
+       行高 144px 自身完全合格，但内容实高 147px，多出的 39px 直接盖到下面的 7 图标行上 ——
+       只校验行高根本拦不住。所以这里按 CSS 里各部件的实际高度把内容实高算出来对比。
+       数值全部从 CSS 读，不硬编码；读完算不出就报错，避免"悄悄不检查"。 */
+    const num = (re) => { const m = css.match(re); return m ? parseFloat(m[1]) : null; };
+    const SS = {
+      SS_TITLE_H:  num(/\.ss-block-title\s*\{[^}]*?height:\s*([\d.]+)px/),
+      SS_BLOCK_PT: num(/\.ss-block\s*\{[^}]*?padding-top:\s*([\d.]+)px/),
+      SS_BLOCK_BT: num(/\.ss-block\s*\{[^}]*?border-top:\s*([\d.]+)px/),
+      SS_CHIP_H:   num(/\.scene-chip\s*\{[^}]*?height:\s*([\d.]+)px/),
+      SS_THUMB_H:  num(/\.style-thumb\s*\{[^}]*?height:\s*([\d.]+)px/),
+      SS_BADGE_H:  num(/\.style-badge\s*\{[^}]*?height:\s*([\d.]+)px/),
+      SS_NAME_FS:  num(/\.style-name\s*\{[^}]*?font-size:\s*([\d.]+)px/),
+      SS_NAME_LH:  num(/\.style-name\s*\{[^}]*?line-height:\s*([\d.]+)/),
+      SS_CARD_GAP: num(/\.style-card\s*\{[^}]*?gap:\s*([\d.]+)px/)
+    };
+    const ssMiss = Object.entries(SS).filter(([, v]) => v === null).map(([k]) => k);
+    const r1 = (v) => Math.round(v * 100) / 100;
+    if (ssMiss.length) {
+      bad('场景·风格展开态的内容高度算不出来（CSS 里读不到）：' + ssMiss.join(', '));
+    } else {
+      // 风格卡 = 缩略图 + 间距 + 名称(字号×行高) + 间距 + 参数徽标
+      const styleCardH = SS.SS_THUMB_H + SS.SS_CARD_GAP + SS.SS_NAME_FS * SS.SS_NAME_LH
+                       + SS.SS_CARD_GAP + SS.SS_BADGE_H;
+      // 展开区 = 两个块，每块 = 上边框 + 上内边距 + 块标题；块1 装场景胶囊，块2 装风格卡
+      const ssContentH = 2 * (SS.SS_BLOCK_BT + SS.SS_BLOCK_PT + SS.SS_TITLE_H)
+                       + SS.SS_CHIP_H + styleCardH;
+      // 展开时 CSS 会把折叠胶囊隐藏（.screen.ss-on .ss-collapsed{display:none}），
+      // 那时整行高度都归展开内容；若哪天不再隐藏，就得扣掉折叠条那 36px。
+      const ssCapHidden = /\.screen\.ss-on\s*\.ss-collapsed\s*\{[^}]*?display:\s*none/.test(css);
+      const ssAvailH = ssCapHidden ? H_SS_ON : H_SS_ON - H_SS_OFF;
+      if (ssContentH > ssAvailH + 0.5) {
+        bad('场景·风格展开态内容溢出 ' + r1(ssContentH - ssAvailH) + 'px：内容实高 '
+          + r1(ssContentH) + 'px > 可用 ' + r1(ssAvailH) + 'px（= 行高 ' + H_SS_ON
+          + (ssCapHidden ? '' : ' − 折叠条 ' + H_SS_OFF) + '），多出的部分会压在下面的图标行上');
+      } else {
+        ok('场景·风格展开态内容不溢出：内容实高 ' + r1(ssContentH) + 'px ≤ 可用 '
+          + r1(ssAvailH) + 'px（余量 ' + r1(ssAvailH - ssContentH) + 'px）· '
+          + (ssCapHidden ? '展开时折叠胶囊已隐藏，整行归内容' : '折叠条仍占 ' + H_SS_OFF + 'px'));
+      }
+    }
+
     /* ---- 圆盘态（.screen.dial-on）：模态操作，规则与常驻浮层不同 ----
        打开圆盘时底部浮层整条收起；**圆心 X + Y 一起钉在底部图标行「对焦」按钮的中心上**，
        以该点为心向四周对称展开 —— 不是"贴屏幕底往上排"。

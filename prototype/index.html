@@ -98,6 +98,26 @@
 
   .grid{position:absolute;inset:0;pointer-events:none;opacity:.14;}
   .screen.grid-off .grid{opacity:0;}
+
+  /* ---------- 水平指示器（设置页「水平指示器」开关 → 真功能） ----------
+     取景器中央一条水平线，两端各一道短竖标。原型读不到陀螺仪，恒为水平态（绿）；
+     真机由 CoreMotion 驱动：倾斜时线随倾角旋转、超过阈值转成琥珀色。 */
+  .level-line{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:52%;height:1.5px;border-radius:1px;background:var(--ok);
+    box-shadow:0 0 8px rgba(52,208,88,.55);
+    opacity:0;transition:opacity .22s;pointer-events:none;z-index:4;
+  }
+  .level-line::before,.level-line::after{
+    content:'';position:absolute;top:-4px;width:1.5px;height:9px;
+    border-radius:1px;background:inherit;
+  }
+  .level-line::before{left:0;}
+  .level-line::after{right:0;}
+  .screen.level-on .level-line{opacity:.92;}
+
+  /* ---------- 设置页「存储空间提示」关掉 → 顶栏副行的剩余存储胶囊一并隐藏 ---------- */
+  .screen.no-storage .chip-storage{display:none;}
   .grid i{position:absolute;background:#fff;}
   .grid i.v{top:0;bottom:0;width:1px;}
   .grid i.h{left:0;right:0;height:1px;}
@@ -251,9 +271,16 @@
   .row-filter{height:0;opacity:0;pointer-events:none;}
   .screen.filter-on .row-filter{height:68px;opacity:1;pointer-events:auto;}
 
-  /* 场景 · 风格行：折叠 36 / 展开 144 */
+  /* 场景 · 风格行：折叠 36 / 展开 147
+     展开时**收起折叠胶囊**：块标题右侧本来就显示当前选项（#scenePicked / #stylePicked），
+     胶囊是重复信息；而它占的 36px 会把展开态的净可见取景从 54.6% 压到 50.2%（只剩 2px 余量）。
+     收起胶囊后的三条退路：下划 / 点取景器任意处 / 再点底部右侧的「风格」方块。
+     147 的来历：2×(块边框 .5 + 块上内边距 2 + 块标题 14) + 场景胶囊 28 + 风格卡 84.55 = 145.55。
+     —— 2026-09-17 修正：原值 144 只够 108px 内容，溢出 39px 压在下面图标行上。
+     自检规则「展开态内容不得溢出其行高」守着这条，改坏会自动报出来。 */
   .row-scenestyle{height:36px;}
-  .screen.ss-on .row-scenestyle{height:144px;}
+  .screen.ss-on .row-scenestyle{height:147px;}
+  .screen.ss-on .ss-collapsed{display:none;}
   .ss-inner{padding:0 0 0;}
 
   /* 参数排：平铺 104 / 收起 44 */
@@ -787,6 +814,10 @@
         <i class="v" style="left:33.33%"></i><i class="v" style="left:66.66%"></i>
         <i class="h" style="top:33.33%"></i><i class="h" style="top:66.66%"></i>
       </div>
+
+      <!-- 水平指示器（设置页「水平指示器」开关驱动）。
+           原型读不到陀螺仪，所以恒为水平态（绿色）；真机由 CoreMotion 驱动偏转与变色。 -->
+      <div class="level-line" id="levelLine"></div>
       <div class="corners"><span></span><span></span><span></span><span></span></div>
 
       <div class="flash" id="flash"></div>
@@ -835,7 +866,7 @@
           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20V2Z"/></svg>影调预览
         </button>
         <div class="spacer"></div>
-        <button class="chip" id="chipStorage" type="button" title="剩余可用存储">
+        <button class="chip chip-storage" id="chipStorage" type="button" title="剩余可用存储">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.6" y="7" width="16" height="10" rx="2.4"/><path d="M21 10.4v3.2"/><rect x="5" y="9.6" width="6.4" height="4.8" rx="1" fill="currentColor" stroke="none"/></svg>
           <span id="storageText">31 GB</span>
         </button>
@@ -1277,6 +1308,9 @@
     paramsOpen:false,
     hud:false,
     gridOn:true,
+    // 与设置页开关一一对应：这两个开关背后是**真功能**，不是只存状态
+    storageChip:true,     // 设置页「存储空间提示」→ 顶栏副行的 31 GB 胶囊显隐
+    levelOn:false,        // 设置页「水平指示器」→ 取景器中央的水平线
     moreOpen:false,
     hints:false
   };
@@ -1439,6 +1473,8 @@
     s.classList.toggle('stage-on', layout.stageMark);
     s.classList.toggle('dial-on', layout.dialOpen);
     s.classList.toggle('grid-off', !layout.gridOn);
+    s.classList.toggle('no-storage', !layout.storageChip);
+    s.classList.toggle('level-on', layout.levelOn);
 
     var stS = $('stSimple');
     if (stS){ stS.textContent = layout.simple ? '开' : '关'; stS.classList.toggle('on', layout.simple); }
@@ -1789,6 +1825,12 @@
    * 只在**屏幕下半部分**起手才算手势，并且排除参数滑块与横滑条 ——
    * 竖向拖 EV 滑块时也会冒泡到 screen，不排除的话松手就会被误判成上划。
    */
+  /* 「这条手势刚刚成立」的时间戳。
+     浏览器在拖拽的 pointerup 之后还会补发一个 click，那个 click 会命中取景器的
+     「点按对焦 + 收起浮层」处理器，把刚上划呼出的浮层立刻收掉 ——
+     表现就是"滤镜条在鼠标下完全打不开"。取景器那边用这个时间戳把滑动尾巴挡掉。 */
+  var lastSwipeAt = 0;
+
   function bindSwipe(){
     var screenEl = $('screen');
     var startY = null, startX = 0, startT = 0;
@@ -1812,6 +1854,7 @@
       if (dt > 800) return;
       if (Math.abs(dy) < 34) return;
       if (dx > Math.abs(dy)) return;            // 横向为主 → 是在横滑条上滑动
+      lastSwipeAt = Date.now();                 // 先记账，再执行呼出/收起
       if (dy < 0) swipeUp(); else swipeDown();
     });
   }
@@ -1949,6 +1992,18 @@
         { k:'b1', ic:'burn', label:'保留可调色原片', sw:1, sub:'拍摄时仅预览当前影调，保存后仍可在媒体库里切换影调并重新导出，更适合后续继续调色。' },
         { k:'b2', ic:'burn', label:'直接输出成片', sw:0, sub:'拍摄时会把当前影调直接烧录到结果中，导出更快，但后续不能再切换为其他影调。' }
       ]}]
+    },
+    keep: {
+      title: '保留设置',
+      intro: '选择下次打开时仍然沿用哪些拍摄设置。关掉的项会在每次启动时回到默认值。',
+      groups: [{ name:'', rows: [
+        { k:'k1', ic:'cam',   label:'简易模式',    sw:0, sub:'开启后下次进入直接是简易界面。' },
+        { k:'k2', ic:'expo',  label:'场景与曝光',  sw:1, sub:'记住上次选择的场景，及其带出的建议曝光。' },
+        { k:'k3', ic:'stab',  label:'风格',        sw:1, sub:'记住上次选择的风格配方。' },
+        { k:'k4', ic:'burn',  label:'滤镜',        sw:0, sub:'记住上次叠加的滤镜。' },
+        { k:'k5', ic:'level', label:'曝光补偿 EV', sw:0, sub:'记住上次手动调整的曝光补偿。' },
+        { k:'k6', ic:'grid',  label:'预览网格',    sw:1, sub:'记住网格线的开关状态。' }
+      ]}]
     }
   };
 
@@ -1983,6 +2038,12 @@
   function openSettings(){
     layout.moreOpen = false;   // 先收起「更多」菜单，避免两层浮层叠加
     applyLayout();
+    // 与拍摄页的真实状态对齐。这几个开关背后是**真功能**，不这么做就会出现
+    // "设置里显示关、拍摄页其实开着"（预览网格默认就是开的）。
+    stState.simple  = layout.simple      ? 1 : 0;
+    stState.grid    = layout.gridOn      ? 1 : 0;
+    stState.storage = layout.storageChip ? 1 : 0;
+    stState.level   = layout.levelOn     ? 1 : 0;
     stStack = ['main'];
     renderSettings('main');
     $('settings').classList.add('on');
@@ -2003,7 +2064,23 @@
       var now = !sw.classList.contains('on');
       sw.classList.toggle('on', now);
       stState[k] = now ? 1 : 0;
-      if (k === 'simple'){ layout.simple = !!now; applyLayout(); }
+
+      /* ① 真功能开关：直接驱动拍摄页。
+         预览网格与顶栏那个网格图标共用 layout.gridOn —— 改一处两边都变。 */
+      if (k === 'simple'){ layout.simple = !!now; applyLayout();
+        toast(now ? '简易模式：只留取景器 / 快门 / 缩略图 / 场景条 / 一条 EV 横滑' : '已回到完整界面'); return; }
+      if (k === 'grid'){ layout.gridOn = !!now; applyLayout();
+        toast(now ? '预览网格已开' : '预览网格已关'); return; }
+      if (k === 'storage'){ layout.storageChip = !!now; applyLayout();
+        toast(now ? '已显示剩余存储提示' : '已隐藏剩余存储提示'); return; }
+      if (k === 'level'){ layout.levelOn = !!now; applyLayout();
+        toast(now ? '水平指示器已开（原型读不到陀螺仪，真机由 CoreMotion 驱动）' : '水平指示器已关'); return; }
+
+      /* ② 只存状态：这些要么是 P2 硬件、要么超出原型范围。
+         原型上硬做出可见效果反而误导，所以只记开关 + 说明原因。 */
+      var rowEl = sw.closest('.st-row');
+      var lab = rowEl ? rowEl.querySelector('.st-label').textContent : k;
+      toast('「' + lab + '」' + (now ? '已开启' : '已关闭') + ' · 真机才生效，原型只记录开关状态');
       return;
     }
 
@@ -2023,6 +2100,7 @@
       if (key === 'perf'){ stStack.push('perf'); renderSettings('perf'); return; }
       if (key === 'burn'){ stStack.push('burn'); renderSettings('burn'); return; }
       if (key === 'stab'){ openSheet(['关闭','标准','电影级','极致'], 'stab'); return; }
+      if (key === 'keep'){ stStack.push('keep'); renderSettings('keep'); return; }
       toast('「' + row.querySelector('.st-label').textContent + '」的二级页面还在排期');
       return;
     }
@@ -2339,14 +2417,20 @@
     setParams(true);
     toast('参数排已展开，点 EV 数值可归零');
   });
+  // 底部图标行第 7 项「设置」→ 与顶栏「更多 → 设置」进的是**同一个**设置页。
+  // （此前这里只弹一句"将在 P2 补齐"，和顶栏那个能真打开设置的入口行为不一致。）
   $('iconSettings').addEventListener('click', function(){
-    toast('设置页（简易模式持久化 / 毛玻璃开关 / 网格开关）将在 P2 补齐');
+    openSettings();
   });
 
   // 「镜头切换」的绑定已随按钮一并移除（该入口与 7 图标行「前置」重复）
 
   // 点取景器 = 对焦（黄框 1 秒淡出）+ 收起所有展开的浮层
   $('viewport').addEventListener('click', function(e){
+    // 拖拽结束后浏览器补发的那个 click 不算"点按"：否则刚上划呼出的浮层会被立刻收起
+    // （滤镜条因此完全打不开），并且会误弹对焦黄框与「对焦锁定」小标。
+    if (Date.now() - lastSwipeAt < 350) return;
+
     var rect = this.getBoundingClientRect();
     var x = e.clientX - rect.left;
     var y = e.clientY - rect.top;

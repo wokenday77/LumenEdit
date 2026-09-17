@@ -12,3 +12,12 @@
 *.heic binary
 *.mov binary
 *.zip binary
+
+# 批处理脚本例外：必须保持 CRLF。
+# cmd 对 LF 结尾的 .cmd 支持不可靠（goto / 标签 / 括号块容易出错），
+# 而上面那条 `* text=auto eol=lf` 会让 clone 下来的 .cmd 变成 LF。
+# 下面这条要放在文件最后 —— .gitattributes 里后面的规则覆盖前面的。
+#
+# 另注：start-preview.cmd 还要求**以 GBK(936) 保存并首行 chcp 936**，
+# 那是为了中文 Windows 的 cmd 码页；换行符由本文件管，编码由文件自身管，两者互不影响。
+*.cmd text eol=crlf
