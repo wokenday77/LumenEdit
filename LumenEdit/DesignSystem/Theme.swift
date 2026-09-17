@@ -57,6 +57,18 @@ enum Theme {
         static let thumbnailSide: CGFloat = 52
         static let modeSelectorHeight: CGFloat = 34
         static let topBarHeight: CGFloat = 46
+
+        /// 顶栏两侧的占位宽度。
+        ///
+        /// **左右必须等宽**，模式条的盒中心才等于屏幕中心 —— 这是网页原型
+        /// `--tb-side-w` 的做法（原型注释：「把两侧块钉成同宽，盒中心回到屏中心」）。
+        /// 取值 = 右侧齿轮按钮宽度（38）。
+        ///
+        /// 真机实测（iPhone 16 Pro / iOS 26.6，截图像素测量）：模式条四档宽 267.4pt，
+        /// 顶栏可用宽 370pt。左右各留 38pt 后总宽 343pt，仍有 27pt 余量。
+        /// 改造前是 ZStack 覆盖式布局，模式条居中后右端落在 334.7pt，
+        /// 与右侧图标组起点 306.7pt 重叠 28pt，把「视频」二字盖掉了一半。
+        static let topBarSideWidth: CGFloat = 38
     }
 
     // MARK: - 字体

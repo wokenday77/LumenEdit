@@ -96,50 +96,81 @@ struct CameraView: View {
             .padding(.vertical, Theme.Spacing.sm)
             .animation(.easeInOut(duration: 0.18), value: viewModel.toast)
         }
+        // 实况角标：居中浮在模式条正下方，不参与布局（不挤压下方 HUD），也不接收触摸
+        .overlay(alignment: .top) {
+            if viewModel.mode == .livePhoto {
+                liveBadge
+                    .offset(y: Theme.Spacing.sm + Theme.Size.topBarHeight + 8)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: viewModel.mode)
     }
 
     // MARK: - 顶栏
 
     private var topBar: some View {
-        ZStack {
+        // 左右两侧各留一块**等宽**占位，模式条的盒中心才等于屏幕中心。
+        // 照搬网页原型的 `--tb-side-w` 做法（原型注释：「把两侧块钉成同宽，
+        // 盒中心回到屏中心，模式条再 justify-content:center 即真正居中」）。
+        //
+        // 改造前是 ZStack 覆盖式（模式条居中 + 图标组浮在上层），真机实测
+        // （iPhone 16 Pro / iOS 26.6，截图像素测量）：模式条右端落在 334.7pt，
+        // 与右侧图标组起点 306.7pt 重叠 28pt，把「视频」二字盖掉了一半。
+        // 现在 38 + 267 + 38 = 343pt ≤ 可用宽 370pt，模式条真正居中且零重叠。
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: Theme.Size.topBarSideWidth)
+
             ModeSelector(selection: viewModel.mode) { mode in
                 viewModel.modeTapped(mode)
             }
+            // 中段吃掉全部余量（370 − 38×2 = 294pt），对应原型的 `flex:1 1 auto`。
+            // 少了这一步，HStack 会整体收缩到 343pt 再被居中，齿轮就会内缩 13.5pt
+            // （真机实测：齿轮右端 372.3pt，应为 386pt）。加上后齿轮贴住右内边距，
+            // 而模式条仍在两侧等宽块之间居中 = 真正的屏中心。
+            .frame(maxWidth: .infinity)
 
-            HStack(spacing: Theme.Spacing.xs) {
-                Spacer(minLength: 0)
-
-                // Live Photo 生效时的明确信号。
-                // 模式条虽然也高亮了，但拍摄当下需要一个"正在拍 Live"的一眼可辨标记。
-                if viewModel.mode == .livePhoto {
-                    Text("LIVE")
-                        .font(.system(size: 10, weight: .heavy))
-                        .foregroundStyle(Color.black)
-                        .padding(.horizontal, 7)
-                        .frame(height: 20)
-                        .background(Capsule().fill(Theme.Palette.accent))
-                        .accessibilityLabel("Live Photo 已开启")
-                }
-
-                Button {
-                    env.showSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.Palette.primaryText)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            Circle().fill(Theme.Palette.panel.opacity(0.78))
-                        )
-                        .overlay(
-                            Circle().stroke(Theme.Palette.stroke, lineWidth: 0.5)
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("设置")
+            Button {
+                env.showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.Palette.primaryText)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Circle().fill(Theme.Palette.panel.opacity(0.78))
+                    )
+                    .overlay(
+                        Circle().stroke(Theme.Palette.stroke, lineWidth: 0.5)
+                    )
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("设置")
+            .frame(width: Theme.Size.topBarSideWidth, alignment: .trailing)
         }
         .frame(height: Theme.Size.topBarHeight)
+    }
+
+    /// Live Photo 生效时的明确信号。
+    ///
+    /// **为什么居中浮在模式条下方，而不是塞在顶栏右侧**：
+    /// 模式条四档宽 267.4pt、顶栏可用宽 370pt，右侧再放一个角标必然与模式条重叠
+    /// （真机实测重叠 28pt，把「视频」盖掉一半）。网页原型同样把角标居中放在
+    /// 模式条下方（`.live-badge{ position:absolute; left:50%; top:90px; }`）。
+    ///
+    /// ⚠️ 原型已把角标改成 22×22 的 Live Photo 同心圆图标（原型注释：「已按拍板
+    /// 改为 Live Photo 同心圆图标…不再用「实况」文字」）。这里**只修正位置，
+    /// 暂时保留文字药丸的观感**，图标化留给 UI 批次统一处理，避免与本批改动混在一起。
+    private var liveBadge: some View {
+        Text("LIVE")
+            .font(.system(size: 10, weight: .heavy))
+            .foregroundStyle(Color.black)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(Capsule().fill(Theme.Palette.accent))
+            .accessibilityLabel("Live Photo 已开启")
     }
 
     // MARK: - 底部控制区
