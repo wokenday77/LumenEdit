@@ -601,6 +601,33 @@ async page => {
   report.快门条 = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#spScale .sp-num')).map((n) => n.textContent));
 
+  // ---- 19 顶栏模式条居中（三态）：内容中心必须 = 屏中心 ----
+  // 口径：照片 / 视频 ≤1px（两侧块等宽 --tb-side-w，内容 justify-content:center）；
+  //       Log 实况放宽到 ≤10px —— 它的格式芯片「Log · 4K · 60」自然宽 91 > 73，
+  //       把模式条盒推左约 9px，是为 Logo 芯片宽度做的取舍，不是 bug（用户已确认接受）。
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const tbCenter = () => page.evaluate(() => {
+    const scr = document.getElementById('screen').getBoundingClientRect();
+    const items = Array.from(document.querySelectorAll('#modeTabs .mode-tab'));
+    const f = items[0].getBoundingClientRect();
+    const l = items[items.length - 1].getBoundingClientRect();
+    const c = ((f.left + l.right) / 2) - scr.left;
+    return { 中心X: +c.toFixed(1), 屏中心: +(scr.width / 2).toFixed(1), 偏: +(c - scr.width / 2).toFixed(1) };
+  });
+  const tbPhoto = await tbCenter();
+  await page.locator('#modeTabs .mode-tab', { hasText: '视频' }).click();
+  await page.waitForTimeout(350);
+  const tbVideo = await tbCenter();
+  await page.locator('#modeTabs .mode-tab', { hasText: 'Log 实况' }).click();
+  await page.waitForTimeout(350);
+  const tbLog = await tbCenter();
+  report.模式条居中 = {
+    照片: tbPhoto, 视频: tbVideo, Log实况: tbLog,
+    通过: Math.abs(tbPhoto.偏) <= 1 && Math.abs(tbVideo.偏) <= 1 && Math.abs(tbLog.偏) <= 10
+  };
+
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
                  '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
                  '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu',

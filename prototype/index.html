@@ -43,6 +43,13 @@
     --fd-gap:12px;        /* 圆盘下沿 → 开关行的间距 */
     --fd-pad:18px;        /* 圆盘组尾部留白（钉圆心后不再参与定位，只保证布局盒不外溢） */
     --fd-auto-h:29px;     /* 「自动对焦」开关行高（= .sw 开关的高度） */
+
+    /* ---- 顶栏第一行：两侧块等宽（2026-09-17）----
+       模式条的定位盒 = 行内剩余空间。左块（电平表 50）与右块（三图标 73 / 格式芯片）不等宽时，
+       盒中心就被推偏 —— 实测内容中心 149.8，偏屏中心 36.2px（其中盒偏 11.5、盒内左对齐 24.7）。
+       把两侧块钉成同宽，盒中心回到屏中心 186，模式条再 justify-content:center 即真正居中。
+       73 = 右上三图标自然宽（3×17 + 2×11）；改图标数量/尺寸时同步改这里，自检盯着。 */
+    --tb-side-w:73px;
   }
 
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -184,7 +191,12 @@
   .tb-row2{height:26px;display:flex;align-items:center;gap:8px;padding:0 14px;}
 
   /* L / R 音频电平表：静态示意，录音时由 AVAudioRecorder 驱动（P1b） */
-  .levels{display:flex;flex-direction:column;gap:2.5px;flex:0 0 auto;}
+  .levels{
+    display:flex;flex-direction:column;gap:2.5px;flex:0 0 auto;
+    /* 与右侧图标组同宽（--tb-side-w）→ 模式条盒中心 = 屏中心。
+       点是左对齐的，多出来的宽度是空白，视觉零变化。 */
+    min-width:var(--tb-side-w);
+  }
   .levels .lv{display:flex;align-items:center;gap:3px;height:5px;}
   .levels .ch{font-size:8px;font-weight:700;color:rgba(255,255,255,.55);width:5px;}
   .levels .dots{display:flex;gap:2px;}
@@ -280,6 +292,9 @@
   .screen.mode-video .tb-icons,.screen.mode-log .tb-icons{display:none;}
   .fmt-chip{
     align-items:center;margin-left:auto;padding:0 10px;height:24px;border-radius:12px;
+    /* 视频 / Log 模式下它顶替三图标的位置 —— 也钉成 --tb-side-w 宽，模式条盒中心才不会跟着漂。
+       （「4K · 60」自然宽 60.4 → 73：胶囊略宽 12.6px；「Log · 4K · 60」本来就 91 > 73，不受影响。） */
+    min-width:var(--tb-side-w);
     background:rgba(255,255,255,.10);border:.5px solid rgba(255,255,255,.16);
     font-size:12px;font-weight:700;color:var(--txt);white-space:nowrap;
     font-family:inherit;cursor:pointer;transition:background .18s,border-color .18s;
@@ -312,6 +327,11 @@
      滚动条隐藏，保持顶栏干净 */
   .mode-tabs{
     display:flex;align-items:center;gap:10px;
+    /* 内容居中：两侧块已等宽（--tb-side-w），盒中心 = 屏中心 186，所以这里一居中，
+       四项内容就落在 116.2..255.8 —— 实测中心 186 ✓（此前左对齐 → 149.8，偏左 36.2）。
+       ⚠️ 内容一旦溢出（现在 139.6 vs 行长 344，余量很足），居中会让两端不可滚达，
+       到那时改成"内层包裹层 + margin:auto"的写法。 */
+    justify-content:center;
     flex:1 1 auto;min-width:0;margin:0 8px;
     overflow-x:auto;overflow-y:hidden;
     -webkit-overflow-scrolling:touch;

@@ -575,6 +575,21 @@ if (scriptMatch) {
     ok('参数导入齐备：设置页入口 + 编辑器（示例/导入/还原）+ 别名表 ' + prAlias + ' 键 + ISO/快门档位表');
   }
 
+  /* 顶栏模式条居中（2026-09-17 定稿）：两侧块等宽 → 模式条盒中心 = 屏中心 186。
+     三件套缺一不可：① :root 的 --tb-side-w（= 三图标自然宽 73）；② 左块（电平表）与
+     右块（格式芯片；三图标组本身就是它的定义来源）都吃这个宽度；③ 模式条内容居中。
+     运行时口径在 tools/shot.js「模式条居中」：照片 / 视频 偏≤1px、Log 实况 ≤10px（芯片 91 > 73 的取舍）。 */
+  const tbVar    = /--tb-side-w:\s*73px/.test(html);
+  const tbSides  = /\.levels\{[^}]*min-width:var\(--tb-side-w\)/.test(html)
+                && /\.fmt-chip\{[^}]*min-width:var\(--tb-side-w\)/.test(html);
+  const tbCenter = /\.mode-tabs\{[^}]*justify-content:center/.test(html);
+  if (!tbVar || !tbSides || !tbCenter) {
+    bad('模式条居中三件套不齐：--tb-side-w=' + tbVar + '，两侧块吃它=' + tbSides
+      + '，内容居中=' + tbCenter);
+  } else {
+    ok('模式条居中三件套齐备：--tb-side-w 73px（= 三图标自然宽）+ 电平表/格式芯片同宽 + 内容居中');
+  }
+
   // 参数排改版（2026-09-17 · 对标飓风相机）：三条刻度条 + EV 圆盘；
   // 旧四列 .pcol 必须彻底删除（不留死代码 —— 这是用户明确要求的）。
   const spDom    = /id="spScale"/.test(html) && /id="spClip"/.test(html)
