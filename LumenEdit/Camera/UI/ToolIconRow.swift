@@ -52,6 +52,9 @@ struct ToolIconRow: View {
                  label: "白平衡", action: onWhiteBalance)
             cell(glyphText: "ISO",
                  label: "感光", action: onISO)
+            // ⚠️ 这里不能用 "aperture"：符号库里没有这个名字（只有 camera.aperture，2020）。
+            // SwiftUI 对无效 symbol 名**不报错、只留白**——编译器和 CI 都拦不住，
+            // 只能靠真机肉眼或符号库索引核对（2026-09-17 真机实测第 5 格空白）。
             cell(symbol: "camera.aperture",
                  label: "快门速度", action: onShutterSpeed)
             cell(symbol: "plus.circle",
