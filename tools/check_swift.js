@@ -10,6 +10,10 @@
  *   2. 全仓顶层类型声明是否有重名（Swift 同名类型会编译失败）
  *   3. 残留占位符（TODO / FIXME / 待补充 / ...）
  *   4. 引用了声明中不存在的项目类型（只查已知的"未来阶段"类型名清单，避免误报）
+ *   5. 顶栏模式条宽度预算（2026-09-17 新增）
+ *      —— 按 Theme.swift 的令牌复算条宽，对 402/393/390/375 四种屏宽验余量。
+ *      存在的意义：ModeSelector 里 ViewThatFits 的降档是**静默**的，
+ *      装不下只会悄悄换小字号，编译器和真机截图都看不出来。
  *
  * 用法： node tools/check_swift.js <源码根目录> [报告输出路径]
  */
@@ -172,6 +176,110 @@ for (const file of files) {
   });
 }
 if (futureRefs === 0) ok('未引用任何未来阶段的类型，当前阶段可以独立编译');
+
+/* ---------- 5. 顶栏模式条宽度预算 ---------- */
+// 为什么要这条：模式条的宽度是**算出来的**，而 ModeSelector 里 ViewThatFits 的降档是**静默**的
+// —— 装不下就悄悄换小字号，不报错、不影响编译。加第 5 个模式、接 Dynamic Type、
+// 文案变长、字号被调大，都会悄悄逼近临界。
+// 这里按 Theme.swift 的令牌把宽度复算一遍：超预算就 FAIL，让它在 CI 里就暴露，
+// 而不是等到真机上"字变小了但没人知道"。
+console.log('\n[5] 顶栏模式条宽度预算');
+
+const themeFile = files.find(f => f.endsWith(path.join('DesignSystem', 'Theme.swift')));
+const modeSelFile = files.find(f => f.endsWith(path.join('Components', 'ModeSelector.swift')));
+const topBarFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'TopBarView.swift')));
+
+if (!themeFile || !modeSelFile || !topBarFile) {
+  bad('找不到 Theme.swift / ModeSelector.swift / TopBarView.swift（文件被改名或挪位置了？）');
+} else {
+  const themeSrc = fs.readFileSync(themeFile, 'utf8');
+  const modeSelSrc = fs.readFileSync(modeSelFile, 'utf8');
+  const topBarSrc = fs.readFileSync(topBarFile, 'utf8');
+
+  /** 从 Theme.swift 读一个 `name: CGFloat = 数字` 形式的令牌 */
+  const readCGFloat = (src, name) => {
+    const m = new RegExp('\\b' + name + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(src);
+    return m ? parseFloat(m[1]) : null;
+  };
+
+  const T = {
+    regularFont: readCGFloat(themeSrc, 'modeTitleSize'),
+    compactFont: readCGFloat(themeSrc, 'modeTitleCompactSize'),
+    regularSpacing: readCGFloat(themeSrc, 'modeSelectorSpacing'),
+    compactSpacing: readCGFloat(themeSrc, 'modeSelectorCompactSpacing'),
+    minHitWidth: readCGFloat(themeSrc, 'modeTabMinHitWidth'),
+    glyph: readCGFloat(themeSrc, 'modeSelectorGlyphSize'),
+    sideWidth: readCGFloat(themeSrc, 'topBarSideWidth'),
+    rowSpacing: readCGFloat(themeSrc, 'topBarMainRowSpacing'),
+    sidePadding: readCGFloat(themeSrc, 'md')   // Theme.Spacing.md → 顶栏内容左右内边距
+  };
+
+  const missing = Object.keys(T).filter(k => T[k] === null);
+  if (missing.length) {
+    bad('读不到令牌：' + missing.join(' / ') + '（改名了？自检需要同步）');
+  } else {
+    // 宽度模型（标定过程见 docs/08 三.2）：
+    //   中文字宽 ≈ 1.0 × 字号；「Log 」≈ 1.97 × 字号（SF Rounded semibold）
+    //   每档单元宽 = max(内容宽 + 档间距, 命中下限)
+    const LATIN_LOG = 1.97;
+    const cell = (content, spacing) => Math.max(T.minHitWidth, content + spacing);
+    const barWidth = (font, spacing) =>
+      cell(2 * font, spacing) +            // 照片
+      cell(T.glyph, spacing) +             // 实况（图标）
+      cell(LATIN_LOG * font + 2 * font, spacing) +   // Log 实况
+      cell(2 * font, spacing);             // 视频
+
+    const regular = barWidth(T.regularFont, T.regularSpacing);
+    const compact = barWidth(T.compactFont, T.compactSpacing);
+
+    // 中段可用宽 = 屏宽 − 两侧内边距 − 两侧块宽 − 两侧行间距
+    const middle = screen => screen - 2 * T.sidePadding - 2 * T.sideWidth - 2 * T.rowSpacing;
+
+    console.log(
+      '  模式条宽（' + T.regularFont + 'pt 版）' + regular.toFixed(1) + 'pt'
+      + ' · （' + T.compactFont + 'pt 版）' + compact.toFixed(1) + 'pt'
+      + ' · 命中下限 ' + T.minHitWidth + 'pt'
+    );
+
+    // 主行 spacing 必须是 0 —— 非 0 会直接从中段里扣掉两倍它（2026-09-17 真实踩过：
+    // 给了 8，中段从 224 掉到 208，393/390 机型当场溢出）
+    if (T.rowSpacing !== 0) {
+      bad('顶栏主行 spacing = ' + T.rowSpacing + '（必须为 0，否则中段少掉 ' + (2 * T.rowSpacing) + 'pt）');
+    } else {
+      ok('顶栏主行 spacing = 0（中段可用宽度不被行间距侵蚀）');
+    }
+
+    // 各机型：screen ≥390 用 13pt 版，需留 ≥8pt 余量；375（SE / mini）允许 12pt 版小幅溢出
+    // —— 溢出的部分由两侧块内部各约 23pt 的空白吸收，见 Theme.Size.modeTabHitHeight 注释
+    const devices = [
+      { name: 'iPhone 16 Pro（402pt）', screen: 402, font: T.regularFont, bar: regular, slack: 8 },
+      { name: 'iPhone 16 / 15（393pt）', screen: 393, font: T.regularFont, bar: regular, slack: 8 },
+      { name: 'iPhone 14（390pt）', screen: 390, font: T.regularFont, bar: regular, slack: 8 },
+      { name: 'iPhone SE / mini（375pt）', screen: 375, font: T.compactFont, bar: compact, slack: -6 }
+    ];
+
+    for (const d of devices) {
+      const m = middle(d.screen);
+      const left = m - d.bar;
+      const label = d.name + ' 中段 ' + m.toFixed(1) + 'pt，实际' + d.font + 'pt 版用 '
+        + d.bar.toFixed(1) + 'pt，余 ' + left.toFixed(1) + 'pt';
+      if (left < d.slack) {
+        bad(label + '（需 ≥ ' + d.slack + 'pt）');
+      } else {
+        ok(label);
+      }
+    }
+
+    // 降档路径本身必须存在，否则窄屏会靠"压缩"而不是"降档"糊过去（静默）
+    if (!/ViewThatFits/.test(modeSelSrc)
+      || !/modeSelectorSpacing/.test(modeSelSrc)
+      || !/modeSelectorCompactSpacing/.test(modeSelSrc)) {
+      bad('ModeSelector 里的 ViewThatFits 降档路径不完整（两套度量必须都在）');
+    } else {
+      ok('ModeSelector 保留了 ViewThatFits 降档路径（窄屏不会静默压缩）');
+    }
+  }
+}
 
 /* ---------- 结论 ---------- */
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));

@@ -54,6 +54,12 @@ struct TopBarView: View {
             secondaryRow
         }
         .frame(height: Theme.Size.topBarHeight)
+        // ⚠️ **两行的绘制顺序是有语义的，不要调换。**
+        // 模式条热区为了凑满 44pt，向下溢出了 7pt，与副行的「剩余存储」胶囊有
+        // 12×6pt 的几何重叠（实测值见 `Theme.Size.modeTabHitHeight` 的注释）。
+        // 现在没出事，正是因为副行画在主行**之后**、重叠区归胶囊 —— 用户点到的和看到的一致。
+        // 一旦调换顺序 / 加 `.zIndex` / 把两行拆进不同容器，重叠区就会变成
+        // 「点存储胶囊却切了拍摄模式」。改这些之前必须重测。
         // 底对齐 + 超高：让渐隐从顶栏上缘再往上 60pt 开始，到顶栏下缘刚好淡到全透明。
         // 它只保证白色文字在明亮天空下可读，所以是"背景"而不是"面板"
         // ——看得见的画面没有被遮住，不算挤压取景器。
@@ -71,7 +77,8 @@ struct TopBarView: View {
         //   - 电平表块 73pt 宽、点是**左对齐**的 → 右边约 23pt 是空白
         //   - 三图标块 73pt 宽、图标是**右对齐**的 → 左边约 23pt 是空白
         // 于是模式条两侧实际各有 23 + 11 ≈ 34pt 的呼吸空间，与原型（≈39pt）基本一致。
-        HStack(spacing: 0) {
+        // 用令牌而不是字面量 0：自检要按这个值复算中段可用宽度（见 tools/check_swift.js 第 5 组）。
+        HStack(spacing: Theme.Size.topBarMainRowSpacing) {
             AudioLevelMeterView()
 
             // 中段吃满余量（224pt），模式条在它内部居中 → 模式条的盒中心 = 屏中心。
@@ -166,9 +173,7 @@ struct TopBarView: View {
             HStack(spacing: Theme.Size.chipIconSpacing) {
                 Image(systemName: "battery.100")
                     .font(.system(size: Theme.Size.chipGlyphSize))
-                Text(freeSpaceText)
-                    .font(Theme.Typography.chip)
-                    .monospacedDigit()
+                storageValue
             }
             .foregroundStyle(Theme.Palette.primaryText)
             .padding(.horizontal, Theme.Size.chipHorizontalPadding)
@@ -181,6 +186,35 @@ struct TopBarView: View {
         .accessibilityLabel("剩余可用存储 \(freeSpaceText)")
         .accessibilityHint("点按查看存储详情")
     }
+
+    /// 存储数值区：**按"最宽可能文本"预留宽度，首屏即定宽**。
+    ///
+    /// 为什么要预留：容量是节流查询的（约 10 秒一次），启动后前几秒只能显示占位「—」。
+    /// 不预留的话，真实数值到达时胶囊会**突然变宽、位置左移**（实测 73pt → 95pt）。
+    ///
+    /// 这不只是观感问题 —— 2026-09-17 Mac 侧就是拿"加载中的胶囊"量了几何，
+    /// 结果**漏掉了模式条热区与胶囊那 12×6pt 的重叠**。定宽之后，同一处几何任何时刻量都一样。
+    ///
+    /// 用"隐形同宽兄弟"而不是硬编码 `minWidth`：字号一变预留宽度自动跟着变，
+    /// 不会留下一个需要人工同步的魔法数字；如果将来真出现更长的文本，ZStack 会自动撑开、不裁字。
+    private var storageValue: some View {
+        ZStack(alignment: .trailing) {
+            Text(Self.storageWidthReservation)
+                .font(Theme.Typography.chip)
+                .monospacedDigit()
+                .opacity(0)
+                .accessibilityHidden(true)
+            Text(freeSpaceText)
+                .font(Theme.Typography.chip)
+                .monospacedDigit()
+        }
+    }
+
+    /// 宽度预留文本：取"最宽可能值"的量级。
+    ///
+    /// `FormatText.fileSize` 用的是 `ByteCountFormatter` 且 `allowedUnits` 只有 MB / GB
+    /// （没有 TB，也不会出现 4 位整数），所以上界就是「999.99 GB」这一档 —— 9 个字符留足。
+    private static let storageWidthReservation = "999.99 GB"
 
     // MARK: - 上缘渐隐
 
