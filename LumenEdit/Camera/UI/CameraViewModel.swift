@@ -334,6 +334,43 @@ final class CameraViewModel: ObservableObject {
         Haptics.modeChanged()
     }
 
+    // MARK: - 顶栏交互
+
+    /// 顶栏「闪光灯」图标。
+    ///
+    /// 硬件侧要改 `AVCaptureDevice.torchMode` 与 `AVCapturePhotoSettings.flashMode`
+    /// （后者现在被 `PhotoCaptureService.capture()` 固定成 `.off`），属于 P2 参数批次。
+    /// 在那之前**不假装切换**：不记住任何"闪光灯已开"的状态，只把边界说清楚
+    /// ——记住一个不生效的状态，比不记住更容易让人误判。
+    func flashTapped() {
+        DebugLog.shared.debug("ui", "闪光灯图标点击（硬件未接入）")
+        showToast("闪光灯：切换与常亮在 P2 参数批次接入（AVCaptureDevice.torchMode），当前固定关闭")
+    }
+
+    /// 顶栏「网格」图标：**真开关**，与设置页共用 `AppEnvironment.showGrid`
+    func gridTapped() {
+        guard let environment else { return }
+        environment.showGrid.toggle()
+        Haptics.tick()
+        showToast(environment.showGrid ? "网格线已开" : "网格线已关")
+    }
+
+    /// 顶栏副行「影调预览」：真开关，但**当前不改变画面**，必须说明
+    func tonePreviewTapped() {
+        guard let environment else { return }
+        environment.showTonePreview.toggle()
+        Haptics.tick()
+        showToast(environment.showTonePreview
+            ? "影调预览已开：P4 之后取景器会实时叠上风格与滤镜（现在画面还不会变）"
+            : "影调预览已关：成片仍按所选风格与滤镜保存")
+    }
+
+    /// 顶栏副行「剩余存储」：真数据（约 10 秒刷新一次）
+    func storageTapped() {
+        guard let environment else { return }
+        showToast("剩余可用存储 \(environment.session.freeSpaceText)")
+    }
+
     // MARK: - 相册
 
     func openSystemPhotos() {

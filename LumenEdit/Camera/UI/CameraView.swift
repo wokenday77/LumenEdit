@@ -59,11 +59,30 @@ struct CameraView: View {
             .accessibilityLabel("取景器")
             .accessibilityHint("点按画面任意位置对焦")
 
+            // 三分构图线：顶栏「网格」图标控制。与预览同一坐标系、不接收触摸，
+            // 所以"点按画面任意位置对焦"照样穿透过去。
+            if env.showGrid {
+                GridOverlayView()
+            }
+
             // 与预览同一坐标系，直接用视图坐标绘制
             FocusIndicatorView(point: viewModel.focusPoint, token: viewModel.focusToken)
 
             VStack(spacing: Theme.Spacing.sm) {
-                topBar
+                TopBarView(
+                    mode: viewModel.mode,
+                    freeSpaceText: env.session.freeSpaceText,
+                    isTonePreviewOn: env.showTonePreview,
+                    isGridOn: env.showGrid,
+                    onModeTap: { tapped in
+                        viewModel.modeTapped(tapped)
+                    },
+                    onFlashTap: { viewModel.flashTapped() },
+                    onGridTap: { viewModel.gridTapped() },
+                    onTonePreviewTap: { viewModel.tonePreviewTapped() },
+                    onStorageTap: { viewModel.storageTapped() },
+                    onSettingsTap: { env.showSettings = true }
+                )
 
                 if env.showDebugHUD {
                     HStack(alignment: .top) {
@@ -109,49 +128,12 @@ struct CameraView: View {
     }
 
     // MARK: - 顶栏
-
-    private var topBar: some View {
-        // 左右两侧各留一块**等宽**占位，模式条的盒中心才等于屏幕中心。
-        // 照搬网页原型的 `--tb-side-w` 做法（原型注释：「把两侧块钉成同宽，
-        // 盒中心回到屏中心，模式条再 justify-content:center 即真正居中」）。
-        //
-        // 改造前是 ZStack 覆盖式（模式条居中 + 图标组浮在上层），真机实测
-        // （iPhone 16 Pro / iOS 26.6，截图像素测量）：模式条右端落在 334.7pt，
-        // 与右侧图标组起点 306.7pt 重叠 28pt，把「视频」二字盖掉了一半。
-        // 现在 38 + 267 + 38 = 343pt ≤ 可用宽 370pt，模式条真正居中且零重叠。
-        HStack(spacing: 0) {
-            Color.clear
-                .frame(width: Theme.Size.topBarSideWidth)
-
-            ModeSelector(selection: viewModel.mode) { mode in
-                viewModel.modeTapped(mode)
-            }
-            // 中段吃掉全部余量（370 − 38×2 = 294pt），对应原型的 `flex:1 1 auto`。
-            // 少了这一步，HStack 会整体收缩到 343pt 再被居中，齿轮就会内缩 13.5pt
-            // （真机实测：齿轮右端 372.3pt，应为 386pt）。加上后齿轮贴住右内边距，
-            // 而模式条仍在两侧等宽块之间居中 = 真正的屏中心。
-            .frame(maxWidth: .infinity)
-
-            Button {
-                env.showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.Palette.primaryText)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle().fill(Theme.Palette.panel.opacity(0.78))
-                    )
-                    .overlay(
-                        Circle().stroke(Theme.Palette.stroke, lineWidth: 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("设置")
-            .frame(width: Theme.Size.topBarSideWidth, alignment: .trailing)
-        }
-        .frame(height: Theme.Size.topBarHeight)
-    }
+    //
+    // 顶栏（两行：电平表 + 模式条 + 三图标 / 影调预览 + 剩余存储）已抽成
+    // `TopBarView`（`Camera/UI/TopBarView.swift`）。
+    // 抽出去的原因：它自己是"两侧等宽 + 中段吃满"的一套版式，还有上缘渐隐，
+    // 混在本文件的取景器 + 底栏里看不清楚；而 2-2 之后的模块 #10（⠿ 面板）、
+    // 模块 #11（格式芯片顶替三图标）都要动它。
 
     /// Live Photo 生效时的明确信号。
     ///
@@ -163,8 +145,8 @@ struct CameraView: View {
     /// **为什么是同心圆图标而不是「LIVE」文字**：原型已按拍板统一成
     /// Live Photo 同心圆（与系统相机的 LIVE 标、模式条「实况」档同一套图标语言），
     /// 保留黄底 + 深色图标，保证在明亮取景画面上依然醒目。
-    /// 图形本身复用 `LivePhotoCircleIcon`（模块 #2 把模式条「实况」档文字换成图标时
-    /// 用的是同一个组件，不重复维护第二份画法）。
+    /// 图形本身复用 `LivePhotoCircleIcon`（模式条「实况」档用的是同一个组件，
+    /// 不重复维护第二份画法）。
     private var liveBadge: some View {
         LivePhotoCircleIcon(size: Theme.Size.liveBadgeIconSize)
             // 深色图标压在 accent 黄底上。原型这里写的是 `#111`（纯黑偏灰一档），

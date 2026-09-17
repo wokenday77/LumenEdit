@@ -82,6 +82,14 @@ final class CaptureSessionController: ObservableObject {
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var debugSnapshot = CameraDebugSnapshot()
 
+    /// 剩余可用存储的可读文本（如 "31 GB"）。顶栏副行的「剩余存储」胶囊直接读它。
+    ///
+    /// 为什么单独拎成 `@Published`，而不是让 UI 去读 `debugSnapshot.freeSpaceText`：
+    /// 存储是**拍摄关键信息**，不该挂在"调试图层"的数据上 —— 调试浮层以后可能被删掉，
+    /// 而这颗胶囊要一直在。刷新沿用快照那套节流（约 10 秒一次，见 `buildSnapshot`），
+    /// 不为它单开一个定时器。
+    @Published private(set) var freeSpaceText = "—"
+
     // MARK: - 会话与设备
 
     let session = AVCaptureSession()
@@ -105,7 +113,6 @@ final class CaptureSessionController: ObservableObject {
     private var isVisible = false
     private var snapshotTimer: Timer?
     private var snapshotTick = 0
-    private var lastFreeSpaceText = "—"
 
     // MARK: - 生命周期
 
@@ -183,10 +190,29 @@ final class CaptureSessionController: ObservableObject {
             self.reconfigureOutputsLocked(for: newMode)
             self.session.commitConfiguration()
 
-            self.photoService.prepareTemplate()
+            self.preparePhotoTemplateIfNeeded(for: newMode)
             self.publish { self.mode = newMode }
             self.refreshSnapshot()
         }
+    }
+
+    /// 准备照片设置模板 —— **只在照片类模式下有意义**。
+    ///
+    /// 录制类模式（视频 / Log 实况）的 session 里挂的是 `movieService.output`，
+    /// 根本没挂 `photoService.output`。此时 `AVCapturePhotoOutput.availablePhotoCodecTypes`
+    /// 是空的，硬跑一遍 `prepareTemplate()` 必然打出
+    /// 「声明的编码格式不可用，回退到默认设置」——**那是假告警**：
+    /// 编码格式没有任何问题，只是这个模式下用不到照片输出。
+    ///
+    /// 为什么必须掐掉它：真机侧载没有 Xcode 控制台，调试浮层里的告警是主要排障手段
+    /// （见 `docs/04` 第八节与 `AppEnvironment.showDebugHUD` 的说明）。
+    /// 一条"每次进 Log 实况都必然出现"的假告警，会把真正有价值的告警淹没掉。
+    private func preparePhotoTemplateIfNeeded(for targetMode: CaptureSessionMode) {
+        guard !targetMode.isRecordingBased else {
+            DebugLog.shared.debug("photo", "\(targetMode.displayName)：录制链路不挂照片输出，跳过照片模板准备")
+            return
+        }
+        photoService.prepareTemplate()
     }
 
     // MARK: - 参数
@@ -361,9 +387,9 @@ final class CaptureSessionController: ObservableObject {
 
         // 磁盘空间查询相对昂贵，每 10 次刷新才真正查一次
         if snapshotTick % 10 == 1 {
-            lastFreeSpaceText = DeviceStorage.freeSpaceText()
+            freeSpaceText = DeviceStorage.freeSpaceText()
         }
-        snapshot.freeSpaceText = lastFreeSpaceText
+        snapshot.freeSpaceText = freeSpaceText
 
         debugSnapshot = snapshot
     }
@@ -400,7 +426,7 @@ final class CaptureSessionController: ObservableObject {
                 photoService.configure(for: mode)
                 session.commitConfiguration()
 
-                photoService.prepareTemplate()
+                preparePhotoTemplateIfNeeded(for: mode)
 
                 let livePhotoSupported = photoService.output.isLivePhotoCaptureSupported
                 let rangeLower = device.minExposureTargetBias

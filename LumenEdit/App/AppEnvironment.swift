@@ -13,6 +13,8 @@ final class AppEnvironment: ObservableObject {
 
     private enum StorageKey {
         static let showDebugHUD = "lumen.debug.hud"
+        static let showGrid = "lumen.camera.grid"
+        static let showTonePreview = "lumen.camera.tonePreview"
     }
 
     // MARK: - 服务
@@ -27,6 +29,27 @@ final class AppEnvironment: ObservableObject {
 
     @Published var showSettings = false
 
+    /// 取景器三分构图线开关（顶栏「网格」图标与设置页共用这一份状态）。
+    /// 默认**开** —— 对齐原型：网格图标一开始就是点亮态。
+    @Published var showGrid: Bool {
+        didSet {
+            UserDefaults.standard.set(showGrid, forKey: StorageKey.showGrid)
+        }
+    }
+
+    /// 「影调预览」：取景器是否实时叠上风格与滤镜（顶栏副行胶囊与设置页共用）。
+    /// 默认**开** —— 对齐原型 `tonePreview: true`。
+    ///
+    /// ⚠️ P4（修图引擎）之前取景器还没有调色链路，所以这个开关**当前不改变画面**。
+    /// 状态照常记、也照常持久化 —— 因为它是"成片会怎么显示"的真实设置项，
+    /// P4 接上就生效；但 UI 上必须把"现在还不生效"讲清楚
+    /// （见 `CameraViewModel.tonePreviewTapped`），不能装作已经生效。
+    @Published var showTonePreview: Bool {
+        didSet {
+            UserDefaults.standard.set(showTonePreview, forKey: StorageKey.showTonePreview)
+        }
+    }
+
     /// 屏幕调试图层开关。默认开启——真机侧载时没有 Xcode 控制台，这个浮层是主要排障手段。
     @Published var showDebugHUD: Bool {
         didSet {
@@ -37,8 +60,14 @@ final class AppEnvironment: ObservableObject {
     // MARK: - 生命周期
 
     init() {
-        self.showDebugHUD = UserDefaults.standard.object(forKey: StorageKey.showDebugHUD) as? Bool ?? true
-        log.info("app", "AppEnvironment 初始化完成，hud=\(showDebugHUD)")
+        let defaults = UserDefaults.standard
+        self.showDebugHUD = defaults.object(forKey: StorageKey.showDebugHUD) as? Bool ?? true
+        self.showGrid = defaults.object(forKey: StorageKey.showGrid) as? Bool ?? true
+        self.showTonePreview = defaults.object(forKey: StorageKey.showTonePreview) as? Bool ?? true
+        log.info(
+            "app",
+            "AppEnvironment 初始化完成，hud=\(showDebugHUD) grid=\(showGrid) tone=\(showTonePreview)"
+        )
     }
 
     /// 供设置页导出日志用
