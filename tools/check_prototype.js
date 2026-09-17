@@ -460,7 +460,7 @@ if (scriptMatch) {
     ['id="dotsR"',           'R 声道电平表'],
     ['id="btnFlash"',        '闪光灯'],
     ['id="btnGrid"',         '网格'],
-    ['id="btnMore"',         '更多'],
+    ['id="btnMore"',         '功能面板入口（⠿）'],
     ['id="btnTone"',         '影调预览'],
     ['id="chipStorage"',     '剩余存储'],
     // 镜头切换入口在 7 图标行的「前置」上；快门排那颗圆钮 2026-09-16 按用户要求移除
@@ -472,7 +472,39 @@ if (scriptMatch) {
   ];
   const miss = need.filter(([k]) => html.indexOf(k) < 0).map(([, n]) => n);
   if (miss.length) bad('缺少元素：' + miss.join('、'));
-  else ok('参考图元素齐备（电平表 / 闪光灯·网格·更多 / 影调预览 / 存储 / 镜头切换·前置 / 风格方块 / 焦段药丸）');
+  else ok('参考图元素齐备（电平表 / 闪光灯·网格·⠿面板 / 影调预览 / 存储 / 镜头切换·前置 / 风格方块 / 焦段药丸）');
+
+  // 功能面板（对标飓风相机 ⠿）：两行 8 按钮 + 底部「简易模式」链接；
+  // 旧「更多」下拉菜单必须已移除（同一个 ⠿ 不能有两个行为）。
+  const fnBtns    = (html.match(/class="fn-btn/g) || []).length;
+  const hasPanel  = /id="fnPanel"/.test(html);
+  const hasSimple = /id="fnSimple"/.test(html);
+  const moreGone  = !/class="more-menu"/.test(html) && !/id="moreMenu"/.test(html);
+  const needFnIds = ['fnLive','fnRatio','fnFlash','fnTimer','fnHdr','fnSettings','fnHud','fnStage'];
+  const missFn = needFnIds.filter((id) => html.indexOf('id="' + id + '"') < 0);
+  if (!hasPanel || fnBtns !== 8 || !hasSimple || !moreGone || missFn.length) {
+    bad('功能面板不完整：面板=' + hasPanel + '，fn-btn=' + fnBtns + '/8，简易模式链接=' + hasSimple
+      + '，旧 more-menu 已移除=' + moreGone + (missFn.length ? '，缺按钮 ' + missFn.join('/') : ''));
+  } else {
+    ok('功能面板齐备：8 按钮（实况/画幅比/闪光灯/倒计时/高亮增益/设置/HUD/阶段标记）'
+      + ' + 底部简易模式链接，旧「更多」菜单已移除');
+  }
+
+  // 格式芯片 + 选择器（视频 / Log 实况）：分辨率 3 档 + 帧率 4 档；
+  // 码率表 12 个值必须都是正数 —— 剩余可录时长就是拿它算的，写错会直接算出 0 或负数。
+  const fmtOpts = (html.match(/class="fmt-opt/g) || []).length;
+  const hasChip = /id="fmtChip"/.test(html);
+  const hasMenu = /id="fmtMenu"/.test(html);
+  const br = html.match(/var FMT_BITRATE = \{([\s\S]*?)\n  \};/);
+  const brVals = br ? Array.from(br[1].matchAll(/:\s*(\d+)/g), (m) => parseInt(m[1], 10)) : [];
+  const brOk = !!br && brVals.length === 12 && brVals.every((v) => v > 0);
+  if (!hasChip || !hasMenu || fmtOpts !== 7 || !brOk) {
+    bad('格式芯片/选择器不完整：芯片=' + hasChip + '，菜单=' + hasMenu
+      + '，选项=' + fmtOpts + '/7（分辨率 3 + 帧率 4），码率表=' + brOk
+      + (brVals.length ? '（读到 ' + brVals.length + ' 个值）' : ''));
+  } else {
+    ok('格式芯片齐备：视频/Log 显芯片、选择器 3+4 档、码率表 12 值全为正（剩余可录时长用它估算）');
+  }
 }
 
 /* ---------- 结论 ---------- */

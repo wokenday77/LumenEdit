@@ -118,6 +118,9 @@
 
   /* ---------- 设置页「存储空间提示」关掉 → 顶栏副行的剩余存储胶囊一并隐藏 ---------- */
   .screen.no-storage .chip-storage{display:none;}
+  /* 例外：视频 / Log 实况模式下，剩余可录时长**必须常显**（它是拍摄关键信息，不是"提示"）。
+     本条要写在这条规则后面 —— 同为三类选择器，靠源码顺序取胜。 */
+  .screen.mode-video .chip-storage,.screen.mode-log .chip-storage{display:inline-flex;}
   .grid i{position:absolute;background:#fff;}
   .grid i.v{top:0;bottom:0;width:1px;}
   .grid i.h{left:0;right:0;height:1px;}
@@ -202,22 +205,97 @@
   .chip.accent{color:var(--accent);border-color:rgba(242,175,60,.45);background:var(--accent-dim);}
   .spacer{flex:1 1 auto;}
 
-  /* 「更多」下拉菜单（简易模式 / HUD / 设置 收进来，避免顶栏堆胶囊） */
-  .more-menu{
-    position:absolute;right:14px;top:90px;z-index:12;width:168px;
-    background:var(--panel-solid);border:.5px solid var(--stroke-2);border-radius:12px;
-    padding:5px;display:none;flex-direction:column;gap:2px;
+  /* ---------- 功能面板（对标飓风相机：⠿ 弹出的底部卡片）----------
+     两行结构：第一行 实况/画幅比/闪光灯/倒计时（拍摄高频），
+     第二行 高亮增益/设置/HUD/阶段标记（低频 + 调试）；底部一条「简易模式」小字链接。
+     原「更多」下拉菜单已被本面板取代（一个入口，4 项全并入）。
+     简易模式下也必须能打开它 —— 底部那条链接是退出简易模式的唯一出口。 */
+  .fn-panel{
+    position:absolute;left:8px;right:8px;bottom:8px;z-index:20;
+    background:var(--panel-solid);border:.5px solid var(--stroke-2);border-radius:22px;
+    padding:16px 10px 6px;
+    transform:translateY(112%);opacity:.3;pointer-events:none;
+    transition:transform .3s cubic-bezier(.22,.9,.3,1),opacity .26s ease;
+    box-shadow:0 18px 44px rgba(0,0,0,.6);
+  }
+  .screen.fn-on .fn-panel{transform:translateY(0);opacity:1;pointer-events:auto;}
+  .fn-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 4px;justify-items:center;}
+  .fn-btn{
+    display:flex;flex-direction:column;align-items:center;gap:7px;
+    width:64px;background:none;border:0;padding:0;cursor:pointer;font-family:inherit;
+    opacity:0;transform:translateY(10px);
+    transition:opacity .24s ease,transform .24s ease;
+  }
+  .screen.fn-on .fn-btn{opacity:1;transform:none;}
+  /* 入场依次浮入（每个错 40ms）；收起时一起退（基态无延迟），不拖沓 */
+  .screen.fn-on .fn-btn:nth-child(2){transition-delay:.04s}
+  .screen.fn-on .fn-btn:nth-child(3){transition-delay:.08s}
+  .screen.fn-on .fn-btn:nth-child(4){transition-delay:.12s}
+  .screen.fn-on .fn-btn:nth-child(5){transition-delay:.16s}
+  .screen.fn-on .fn-btn:nth-child(6){transition-delay:.2s}
+  .screen.fn-on .fn-btn:nth-child(7){transition-delay:.24s}
+  .screen.fn-on .fn-btn:nth-child(8){transition-delay:.28s}
+  .fn-ic{
+    width:54px;height:54px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.12);
+    color:var(--txt);font-size:12px;font-weight:700;letter-spacing:.02em;
+    transition:background .18s,border-color .18s,color .18s;
+  }
+  .fn-ic svg{display:block;}
+  .fn-ic.fn-ic-text{font-size:11.5px;}
+  .fn-btn:active .fn-ic{background:rgba(255,255,255,.16);}
+  .fn-btn.on .fn-ic{background:rgba(52,208,88,.16);border-color:rgba(52,208,88,.6);color:var(--ok);}
+  .fn-t{font-size:10.5px;color:var(--txt-2);white-space:nowrap;}
+  .fn-btn.on .fn-t{color:var(--ok);}
+  .fn-foot{margin-top:14px;padding:2px 6px 8px;border-top:.5px solid rgba(255,255,255,.09);}
+  .fn-link{
+    width:100%;display:flex;align-items:center;justify-content:space-between;
+    background:none;border:0;padding:9px 6px;cursor:pointer;font-family:inherit;
+    font-size:12.5px;color:var(--txt-2);
+  }
+  .fn-link .fn-arr{color:var(--txt-3);font-size:14px;}
+  .fn-link.on{color:var(--ok);}
+
+  /* ---------- 画幅比遮幅：切 4:3 / 16:9 / 1:1 时上下压黑边（居中）----------
+     只在取景器内部（z 低于顶栏与底部浮层），所以顶栏 / 底部控件不会被盖住。
+     黑边高度由 JS 算好写进 --rm-h，过渡 260ms 让黑边"长出来"。 */
+  .ratio-mask{position:absolute;inset:0;pointer-events:none;display:none;z-index:3;}
+  .ratio-mask.show{display:block;}
+  .ratio-mask i{position:absolute;left:0;right:0;height:var(--rm-h,0px);background:#000;transition:height .26s ease;}
+  .ratio-mask i:first-child{top:0;}
+  .ratio-mask i:last-child{bottom:0;}
+
+  /* ---------- 格式芯片（视频 / Log 实况模式的右上角指示，对标参考图 Log · 4K · 60）---------- */
+  .fmt-chip{display:none;}
+  .screen.mode-video .fmt-chip,.screen.mode-log .fmt-chip{display:inline-flex;}
+  .screen.mode-video .tb-icons,.screen.mode-log .tb-icons{display:none;}
+  .fmt-chip{
+    align-items:center;margin-left:auto;padding:0 10px;height:24px;border-radius:12px;
+    background:rgba(255,255,255,.10);border:.5px solid rgba(255,255,255,.16);
+    font-size:12px;font-weight:700;color:var(--txt);white-space:nowrap;
+    font-family:inherit;cursor:pointer;transition:background .18s,border-color .18s;
+  }
+  .fmt-chip.on{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3);}
+  .fmt-menu{
+    position:absolute;right:14px;top:92px;z-index:21;width:196px;
+    background:var(--panel-solid);border:.5px solid var(--stroke-2);border-radius:14px;
+    padding:10px 10px 8px;display:none;flex-direction:column;gap:10px;
     box-shadow:0 14px 34px rgba(0,0,0,.55);
+    transform-origin:top right;
+    opacity:0;transform:scale(.94) translateY(-6px);
+    transition:opacity .18s ease,transform .18s ease;
   }
-  .screen.more-on .more-menu{display:flex;}
-  .more-menu button{
-    height:30px;border:0;background:none;border-radius:8px;cursor:pointer;
-    display:flex;align-items:center;gap:8px;padding:0 10px;
-    font-family:inherit;font-size:12px;color:var(--txt);text-align:left;
+  .screen.fmt-on .fmt-menu{display:flex;opacity:1;transform:none;}
+  .fm-label{font-size:10px;color:var(--txt-3);padding:0 2px 4px;}
+  .fm-opts{display:flex;gap:5px;}
+  .fmt-opt{
+    flex:1 1 0;height:28px;border-radius:9px;cursor:pointer;font-family:inherit;
+    border:.5px solid var(--stroke);background:rgba(255,255,255,.05);
+    color:var(--txt-2);font-size:11.5px;font-weight:600;
   }
-  .more-menu button:active{background:rgba(255,255,255,.10);}
-  .more-menu .st{margin-left:auto;font-size:10px;color:var(--txt-3);}
-  .more-menu .st.on{color:var(--accent);}
+  .fmt-opt.on{background:var(--accent);border-color:var(--accent);color:#111;}
+  .fm-note{font-size:9.5px;color:var(--txt-3);padding:2px 2px 0;border-top:.5px solid rgba(255,255,255,.07);padding-top:7px;}
 
   /* ---------- 模式条：纯文字标签（对标系统相机的顶部标签页） ----------
      选中 = 白色加粗，未选中 = 半透明灰，置灰入口带挂锁。
@@ -535,12 +613,8 @@
   .screen.simple.no-sm-thumb .thumb{display:none;}
   .screen.simple.no-sm-ss .row-scenestyle{height:0px;}
   .screen.simple.no-sm-ev .row-ev{height:0px;}
-  /* ⚠️ 简易模式下**必须**还能打开「更多」菜单 —— 那是退出简易模式的唯一出口。
-     原先这里写的是 `.screen.simple .more-menu{display:none}`，它与
-     `.screen.more-on .more-menu{display:flex}` 优先级相同（都是两个类），
-     而这条写在文件更靠后 → 后者被覆盖 → 进了简易模式就再也点不出菜单。
-     改用三重选择器，保证显示优先级更高。 */
-  .screen.simple.more-on .more-menu{display:flex;}
+  /* ⚠️ 简易模式下**必须**还能打开 ⠿ 功能面板 —— 底部那条「简易模式」链接是退出简易模式的唯一出口。
+     功能面板不依赖任何 simple 相关的显隐规则，天然可用（此处留注释说明，防止后人"顺手"加隐藏）。 */
 
   /* =========================================================
      设置页（全屏覆盖）—— 对标参考截图：
@@ -822,6 +896,9 @@
       <!-- 水平指示器（设置页「水平指示器」开关驱动）。
            原型读不到陀螺仪，所以恒为水平态（绿色）；真机由 CoreMotion 驱动偏转与变色。 -->
       <div class="level-line" id="levelLine"></div>
+
+      <!-- 画幅比遮幅：切 4:3 / 16:9 / 1:1 时上下压黑边（居中），黑边高度过渡 260ms -->
+      <div class="ratio-mask" id="ratioMask"><i></i><i></i></div>
       <div class="corners"><span></span><span></span><span></span><span></span></div>
 
       <div class="flash" id="flash"></div>
@@ -860,10 +937,12 @@
           <button class="tb-icon on" id="btnGrid" type="button" title="网格线">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="2.4"/><path d="M9.2 3.6v16.8M14.8 3.6v16.8M3.6 9.2h16.8M3.6 14.8h16.8"/></svg>
           </button>
-          <button class="tb-icon" id="btnMore" type="button" title="更多">
+          <button class="tb-icon" id="btnMore" type="button" title="功能面板">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="1.9"/><circle cx="12" cy="6" r="1.9"/><circle cx="18" cy="6" r="1.9"/><circle cx="6" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18" cy="12" r="1.9"/><circle cx="6" cy="18" r="1.9"/><circle cx="12" cy="18" r="1.9"/><circle cx="18" cy="18" r="1.9"/></svg>
           </button>
         </div>
+        <!-- 格式芯片：视频 / Log 实况模式下取代右上角三图标（对标参考图 Log · 4K · 60） -->
+        <button class="fmt-chip" id="fmtChip" type="button" title="分辨率与帧率">4K · 60</button>
       </div>
       <div class="tb-row2">
         <button class="chip" id="btnTone" type="button" title="影调预览">
@@ -877,12 +956,45 @@
       </div>
     </div>
 
-    <!-- 更多菜单：简易模式 / 调试浮层 / 设置 收在这里 -->
-    <div class="more-menu" id="moreMenu">
-      <button type="button" data-act="simple">简易模式<span class="st" id="stSimple">关</span></button>
-      <button type="button" data-act="stage">阶段标记<span class="st" id="stStage">关</span></button>
-      <button type="button" data-act="hud">调试浮层 HUD<span class="st" id="stHud">关</span></button>
-      <button type="button" data-act="settings">设置<span class="st" id="stSettings">›</span></button>
+    <!-- 功能面板：⠿ 弹出的底部卡片（对标飓风相机）。
+         第一行 = 拍摄高频（实况/画幅比/闪光灯/倒计时），第二行 = 低频+调试（高亮增益/设置/HUD/阶段标记），
+         底部小字链接 = 简易模式（简易模式下的唯一退出出口）。原「更多」下拉菜单已并入此处。 -->
+    <div class="fn-panel" id="fnPanel">
+      <div class="fn-grid">
+        <button class="fn-btn" id="fnLive" type="button"><span class="fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="6.6" stroke-width="1.7"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg></span><span class="fn-t">实况</span></button>
+        <button class="fn-btn" id="fnRatio" type="button"><span class="fn-ic fn-ic-text">4:3</span><span class="fn-t">画幅比</span></button>
+        <button class="fn-btn" id="fnFlash" type="button"><span class="fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2 4.6 13.4h6.1l-1.1 8.6 8.9-11.6h-6.2l1-8.4Z"/></svg></span><span class="fn-t">闪光灯</span></button>
+        <button class="fn-btn" id="fnTimer" type="button"><span class="fn-ic fn-ic-text">关</span><span class="fn-t">倒计时</span></button>
+        <button class="fn-btn" id="fnHdr" type="button"><span class="fn-ic fn-ic-text">HDR</span><span class="fn-t">高亮增益</span></button>
+        <button class="fn-btn" id="fnSettings" type="button"><span class="fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm8.4-1.2c.1-.5.1-1.1 0-1.6l2-1.5-2-3.4-2.3 1a7.6 7.6 0 0 0-1.4-.8L16.3 4H11l-.4 2.5c-.5.2-1 .5-1.4.8l-2.3-1-2 3.4 2 1.5c-.1.5-.1 1.1 0 1.6l-2 1.5 2 3.4 2.3-1c.4.3.9.6 1.4.8l.4 2.5h5.3l.4-2.5c.5-.2 1-.5 1.4-.8l2.3 1 2-3.4-2-1.5Z"/></svg></span><span class="fn-t">设置<span class="fn-arr">›</span></span></button>
+        <button class="fn-btn" id="fnHud" type="button"><span class="fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="2.4"/><path d="M9.2 3.6v16.8M14.8 3.6v16.8M3.6 9.2h16.8M3.6 14.8h16.8"/></svg></span><span class="fn-t">HUD</span></button>
+        <button class="fn-btn" id="fnStage" type="button"><span class="fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="8.4" stroke-width="1.7"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8Z" fill="currentColor" stroke="none"/></svg></span><span class="fn-t">阶段标记</span></button>
+      </div>
+      <div class="fn-foot">
+        <button class="fn-link" id="fnSimple" type="button"><span>简易模式</span><span class="fn-arr">›</span></button>
+      </div>
+    </div>
+
+    <!-- 格式选择器：点格式芯片弹出（右上角下拉） -->
+    <div class="fmt-menu" id="fmtMenu">
+      <div class="fm-group">
+        <div class="fm-label">分辨率</div>
+        <div class="fm-opts">
+          <button class="fmt-opt" data-g="res" data-v="720p" type="button">720p</button>
+          <button class="fmt-opt" data-g="res" data-v="1080p" type="button">1080p</button>
+          <button class="fmt-opt" data-g="res" data-v="4K" type="button">4K</button>
+        </div>
+      </div>
+      <div class="fm-group">
+        <div class="fm-label">帧率</div>
+        <div class="fm-opts">
+          <button class="fmt-opt" data-g="fps" data-v="24" type="button">24</button>
+          <button class="fmt-opt" data-g="fps" data-v="30" type="button">30</button>
+          <button class="fmt-opt" data-g="fps" data-v="60" type="button">60</button>
+          <button class="fmt-opt" data-g="fps" data-v="120" type="button">120</button>
+        </div>
+      </div>
+      <div class="fm-note">剩余可录时长按码率估算（占位表，真机读自 AVCaptureDevice）</div>
     </div>
 
     <!-- 阶段标记图例（仅「阶段标记」开启时显示） -->
@@ -1257,16 +1369,14 @@
 
   /* 模式条四个入口。UI 文案用「实况」与系统叫法对齐；代码 id 保持 live 不动。
      「实况」这一档按用户要求改用 Live Photo 同心圆图标（icon:'live'），其余仍是文字。
-     Log 实况 = 拍 Log 视频套 LUT 后导出为实况照片，后续阶段交付，先只留界面入口。
-     置灰的入口必须给出原因，绝不做"点了没反应"。 */
+     2026-09-17：视频 / Log 实况解锁为「可进入」—— 仅界面占位（右上角格式芯片 + 选择器 +
+     剩余可录时长），录制本体仍是 P1b-2。Log 实况的格式芯片带 Log 前缀（对标参考图 Log · 4K · 60）。
+     本产品全部功能免费开放，不设任何锁定 —— 参考视频里的 🔒 是对方 App 的付费墙。 */
   var MODES = [
     { id:'photo', name:'照片',     enabled:true },
     { id:'live',  name:'实况',     enabled:true, icon:'live' },
-    // 本产品全部功能免费开放，不设任何锁定 ——
-    // 参考视频里出现的 🔒 是对方 App 的付费墙，不是功能本身需要权限。
     { id:'log',   name:'Log 实况', enabled:true },
-    { id:'video', name:'视频',     enabled:true,
-      reason:'视频录制将在 P1b 交付' }
+    { id:'video', name:'视频',     enabled:true }
   ];
 
   /* 焦段条档位（毫米）：对应超广角 / 主摄 / 长焦 / 5 倍长焦。
@@ -1295,6 +1405,11 @@
     scene:'portrait',
     styleId:'portra160',
     filterId:null,   // null = 原片
+    /* 功能面板的拍摄开关（⠿ 面板）。画幅比在 4:3 / 16:9 / 1:1 三个值里循环，
+       切换时取景器真实加遮幅；闪光灯 / 倒计时 / 高亮增益只记状态（P2 接硬件）。 */
+    fn:  { live:false, ratio:'4:3', flash:false, timer:'关', hdr:false },
+    /* 视频格式（视频 / Log 实况模式的右上角芯片）。码率表见 FMT_BITRATE。 */
+    fmt: { res:'4K', fps:60 },
     ev:0.33
   };
 
@@ -1319,7 +1434,8 @@
     // 关掉后取景器显示原片，但**保留 EV**（EV 是拍摄曝光，不是后期调色），
     // 左下缩略图仍旧显示成片 —— 它代表"会被保存成什么"，与预览开关无关。
     tonePreview:true,
-    moreOpen:false,
+    fnOpen:false,         // ⠿ 功能面板开合
+    fmtOpen:false,        // 格式选择器开合（与功能面板互斥）
     hints:false
   };
 
@@ -1473,6 +1589,80 @@
         同一时刻只允许一个扩展浮层展开（场景风格条 / 滤镜条），
         且任一展开时参数排自动收起 —— 保证净可见取景面积不低于 50%
      ========================================================= */
+  /* ---------- 功能面板 / 格式芯片的渲染 ----------
+     集中放在这里，applyLayout 每次调用 —— 保证任何入口改了状态，面板按钮、
+     画幅比遮幅、实况角标、格式芯片、剩余可录时长全部同步，不会出现"改了一半"。 */
+  var FN_RATIOS = ['4:3', '16:9', '1:1'];   // 画幅比循环顺序（竖拍 w:h）
+  var STORAGE_GB = 31;                       // 占位：真机读 DeviceStorage
+  /* 码率占位表（Mbps）。真机从 AVCaptureDevice 的推荐录制设置拿。 */
+  var FMT_BITRATE = {
+    '720p':  { 24:9,  30:11, 60:18, 120:28 },
+    '1080p': { 24:14, 30:18, 60:28, 120:42 },
+    '4K':    { 24:38, 30:48, 60:50, 120:96 }
+  };
+  function fmtMinutes(){
+    var br = (FMT_BITRATE[state.fmt.res] || {})[state.fmt.fps] || 50;
+    return Math.round(STORAGE_GB * 8 * 1024 / br / 60);
+  }
+
+  function renderFn(){
+    var on = function(id, v){ var b = $(id); if (b) b.classList.toggle('on', !!v); };
+    on('fnLive', state.fn.live);
+    on('fnFlash', state.fn.flash);
+    on('fnHdr', state.fn.hdr);
+    on('fnHud', layout.hud);
+    on('fnStage', layout.stageMark);
+    on('fnSimple', layout.simple);          // 简易模式开着 → 底部链接转绿
+    var rb = $('fnRatio');
+    if (rb){
+      rb.classList.toggle('on', !!state.fn.ratio);
+      var ric = rb.querySelector('.fn-ic');
+      if (ric) ric.textContent = state.fn.ratio;
+    }
+    var tb = $('fnTimer');
+    if (tb){
+      tb.classList.toggle('on', state.fn.timer !== '关');
+      var tic = tb.querySelector('.fn-ic');
+      if (tic) tic.textContent = state.fn.timer;
+    }
+    // 画幅比遮幅：取景器宽 ÷ 比例 = 画面高，上下各压 (屏高 − 画面高)/2 的黑边
+    var mask = $('ratioMask');
+    if (mask){
+      if (state.fn.ratio){
+        var k  = { '4:3':4/3, '16:9':16/9, '1:1':1 }[state.fn.ratio] || 0;
+        var vp = document.getElementById('viewport');
+        var vw = vp ? vp.clientWidth : 372;
+        var vh = vp ? vp.clientHeight : 826;
+        mask.style.setProperty('--rm-h', Math.max(0, Math.round((vh - vw * k) / 2)) + 'px');
+        mask.classList.add('show');
+      } else {
+        mask.classList.remove('show');
+      }
+    }
+    // 实况角标：实况模式常显；照片模式下由面板开关驱动
+    var lb = $('liveBadge');
+    if (lb) lb.classList.toggle('show', state.mode === 'live' || (state.mode === 'photo' && !!state.fn.live));
+  }
+
+  function renderFmt(){
+    var chip = $('fmtChip');
+    if (!chip) return;
+    var isV = (state.mode === 'video'), isL = (state.mode === 'log');
+    chip.textContent = (isL ? 'Log · ' : '') + state.fmt.res + ' · ' + state.fmt.fps;
+    chip.classList.toggle('on', layout.fmtOpen);
+    var st = $('storageText');
+    if (st) st.textContent = (isV || isL)
+      ? ('≈ ' + fmtMinutes() + ' min · ' + STORAGE_GB + ' GB')
+      : (STORAGE_GB + ' GB');
+    var opts = document.querySelectorAll('#fmtMenu .fmt-opt');
+    for (var i = 0; i < opts.length; i++){
+      var o = opts[i];
+      o.classList.toggle('on', String(state.fmt[o.getAttribute('data-g')]) === o.getAttribute('data-v'));
+    }
+    var menu = $('fmtMenu');
+    if (menu) menu.classList.toggle('show', layout.fmtOpen);
+  }
+
   function applyLayout(){
     var s = $('screen');
     s.classList.toggle('simple', layout.simple);
@@ -1480,19 +1670,21 @@
     s.classList.toggle('filter-on', !layout.simple && layout.filterExpanded);
     s.classList.toggle('params-closed', !layout.simple && !layout.paramsOpen);
     s.classList.toggle('hud-on', layout.hud);
-    s.classList.toggle('more-on', layout.moreOpen);
     s.classList.toggle('stage-on', layout.stageMark);
     s.classList.toggle('dial-on', layout.dialOpen);
     s.classList.toggle('grid-off', !layout.gridOn);
     s.classList.toggle('no-storage', !layout.storageChip);
     s.classList.toggle('level-on', layout.levelOn);
+    /* 模式 class：格式芯片 / 右上角图标组按它显隐（视频 / Log 实况显示芯片） */
+    s.classList.toggle('mode-video', state.mode === 'video');
+    s.classList.toggle('mode-log', state.mode === 'log');
+    /* 功能面板 / 格式选择器 */
+    s.classList.toggle('fn-on', layout.fnOpen);
+    s.classList.toggle('fmt-on', layout.fmtOpen);
 
-    var stS = $('stSimple');
-    if (stS){ stS.textContent = layout.simple ? '开' : '关'; stS.classList.toggle('on', layout.simple); }
-    var stH = $('stHud');
-    if (stH){ stH.textContent = layout.hud ? '开' : '关'; stH.classList.toggle('on', layout.hud); }
-    var stG = $('stStage');
-    if (stG){ stG.textContent = layout.stageMark ? '开' : '关'; stG.classList.toggle('on', layout.stageMark); }
+    renderFn();
+    renderFmt();
+
     var bg = $('btnGrid');
     if (bg) bg.classList.toggle('on', layout.gridOn);
     // 影调预览：开 = 琥珀高亮（影调叠在取景画面上），关 = 灰（看原片）
@@ -1642,6 +1834,7 @@
     if (state.mode === m.id) return;
     state.mode = m.id;
     buildModeTabs();
+    applyLayout();   // 模式 class（mode-video / mode-log）驱动格式芯片与右上角图标组显隐
     if (m.id === 'live'){
       toast('实况：原型仅示意，成对落盘（HEIC + MOV）在 P1b');
     } else {
@@ -1940,7 +2133,7 @@
     renderPreview();
     toast('曝光补偿已归零');
   });
-  // 顶栏主行右侧：闪光灯 / 网格 / 更多
+  // 顶栏主行右侧：闪光灯 / 网格（⠿ 的处理器在下方功能面板那段 —— 它现在开的是面板）
   $('btnFlash').addEventListener('click', function(){
     toast('闪光灯：真机走 AVCaptureDevice.torchMode（P2 交付）');
   });
@@ -1948,10 +2141,6 @@
     layout.gridOn = !layout.gridOn;
     applyLayout();
     toast(layout.gridOn ? '网格线已开' : '网格线已关');
-  });
-  $('btnMore').addEventListener('click', function(){
-    layout.moreOpen = !layout.moreOpen;
-    applyLayout();
   });
 
   /* =========================================================
@@ -2076,7 +2265,9 @@
       }));
       localStorage.setItem(LS_SHOOT, JSON.stringify({
         mode: state.mode,
-        scene: state.scene, style: state.styleId, filter: state.filterId, ev: state.ev
+        scene: state.scene, style: state.styleId, filter: state.filterId, ev: state.ev,
+        fmt: state.fmt,   // 视频格式（视频 / Log 实况模式右上角芯片）
+        fn: state.fn      // 功能面板的拍摄开关（实况/画幅比/闪光灯/倒计时/高亮增益）
       }));
     } catch(e){}
   }
@@ -2114,6 +2305,8 @@
       if (keep.k3 && sh.filter !== undefined) state.filterId = sh.filter;
       if (keep.k4 && sh.ev !== undefined)     state.ev = sh.ev;
       if (sh.mode !== undefined)              state.mode = sh.mode;
+      if (sh.fmt)                             state.fmt = sh.fmt;
+      if (sh.fn)                              state.fn = sh.fn;
     } catch(e){}
     // 回填 stState，设置页开关才能显示真实状态
     stState.simple  = layout.simple ? 1 : 0;
@@ -2154,7 +2347,8 @@
   }
 
   function openSettings(){
-    layout.moreOpen = false;   // 先收起「更多」菜单，避免两层浮层叠加
+    layout.fnOpen = false;     // 先收起功能面板，避免两层浮层叠加
+    layout.fmtOpen = false;
     applyLayout();
     // 与拍摄页的真实状态对齐。这几个开关背后是**真功能**，不这么做就会出现
     // "设置里显示关、拍摄页其实开着"（预览网格默认就是开的）。
@@ -2258,40 +2452,96 @@
     if (t === $('stSheet')) $('stSheet').classList.remove('on');
   });
 
-  // 「更多」菜单：简易模式 / 调试浮层 / 设置
-  $('moreMenu').addEventListener('click', function(e){
-    var btn = (e.target && e.target.closest) ? e.target.closest('button[data-act]') : null;
-    if (!btn) return;
-    var act = btn.getAttribute('data-act');
-    layout.moreOpen = false;
-    if (act === 'simple'){ toggleSimple(); return; }
-    if (act === 'stage'){
-      layout.stageMark = !layout.stageMark;
+  /* ---------- 功能面板（⠿ 弹出的底部卡片）----------
+     第一行：实况 / 画幅比 / 闪光灯 / 倒计时（拍摄高频）
+     第二行：高亮增益 / 设置 / HUD / 阶段标记（低频 + 调试）
+     底部：简易模式（简易模式下唯一的退出出口，所以简易模式也要能打开本面板）
+     真实度：画幅比真实遮幅、实况真实角标；闪光灯/倒计时/高亮增益只记状态（P2 接硬件）。 */
+  $('btnMore').addEventListener('click', function(){
+    layout.fmtOpen = false;                    // 与格式选择器互斥
+    layout.fnOpen = !layout.fnOpen;
+    if (layout.fnOpen && (layout.ssExpanded || layout.filterExpanded)) collapseAll();
+    applyLayout();
+  });
+
+  $('fnPanel').addEventListener('click', function(e){
+    var b = (e.target && e.target.closest) ? e.target.closest('.fn-btn, .fn-link') : null;
+    if (!b) return;
+    var id = b.id;
+
+    if (id === 'fnSettings'){                  // 入口类：进设置页前先收面板
+      layout.fnOpen = false;
       applyLayout();
-      toast(layout.stageMark
-        ? '阶段标记已开：绿 P1 可用 / 蓝 P1b / 黄 P2 / 橙 P4'
-        : '阶段标记已关');
+      openSettings();
       return;
     }
-    if (act === 'hud'){
-      layout.hud = !layout.hud;
-      applyLayout();
+    if (id === 'fnSimple'){ toggleSimple(); return; }
+    if (id === 'fnHud'){
+      layout.hud = !layout.hud; applyLayout();
       toast(layout.hud ? '调试浮层已开：实时显示净可见取景高度' : '调试浮层已关');
       return;
     }
-    if (act === 'settings'){
-      applyLayout();
-      openSettings();
+    if (id === 'fnStage'){
+      layout.stageMark = !layout.stageMark; applyLayout();
+      toast(layout.stageMark ? '阶段标记已开：绿 P1 可用 / 蓝 P1b / 黄 P2 / 橙 P4' : '阶段标记已关');
+      return;
+    }
+    if (id === 'fnLive'){
+      state.fn.live = !state.fn.live; applyLayout(); scheduleSave();
+      toast(state.fn.live
+        ? '实况已开：照片模式下拍摄 Live Photo（与模式条的「实况」模式是两回事）'
+        : '实况已关');
+      return;
+    }
+    if (id === 'fnRatio'){
+      var ri = FN_RATIOS.indexOf(state.fn.ratio);
+      state.fn.ratio = FN_RATIOS[(ri + 1) % FN_RATIOS.length];
+      applyLayout(); scheduleSave();
+      toast('画幅比 ' + state.fn.ratio + '：取景器遮幅示意，实拍裁切在 P2 落地');
+      return;
+    }
+    if (id === 'fnFlash'){
+      state.fn.flash = !state.fn.flash; applyLayout(); scheduleSave();
+      toast(state.fn.flash ? '闪光灯已开：真机走 AVCaptureDevice.torchMode（P2 交付）' : '闪光灯已关');
+      return;
+    }
+    if (id === 'fnTimer'){
+      state.fn.timer = (state.fn.timer === '关') ? '3s' : (state.fn.timer === '3s' ? '10s' : '关');
+      applyLayout(); scheduleSave();
+      toast(state.fn.timer === '关' ? '倒计时已关' : '倒计时 ' + state.fn.timer + '（真机在 P2 生效）');
+      return;
+    }
+    if (id === 'fnHdr'){
+      state.fn.hdr = !state.fn.hdr; applyLayout(); scheduleSave();
+      toast(state.fn.hdr ? '高亮增益已开：真机在 P2 生效' : '高亮增益已关');
+      return;
     }
   });
 
-  // 点别处自动收起「更多」菜单
-  document.addEventListener('pointerdown', function(e){
-    if (!layout.moreOpen) return;
-    var t = e.target;
-    if (t && t.closest && (t.closest('#moreMenu') || t.closest('#btnMore'))) return;
-    layout.moreOpen = false;
+  /* ---------- 格式芯片 + 选择器（视频 / Log 实况模式） ---------- */
+  $('fmtChip').addEventListener('click', function(){
+    layout.fnOpen = false;                     // 与功能面板互斥
+    layout.fmtOpen = !layout.fmtOpen;
     applyLayout();
+  });
+  $('fmtMenu').addEventListener('click', function(e){
+    var o = (e.target && e.target.closest) ? e.target.closest('.fmt-opt') : null;
+    if (!o) return;
+    var g = o.getAttribute('data-g'), v = o.getAttribute('data-v');
+    if (!g || !v) return;
+    state.fmt[g] = (g === 'fps') ? parseInt(v, 10) : v;
+    applyLayout();                             // 芯片文字 + 剩余可录时长一起刷新
+    scheduleSave();
+    toast('已选 ' + state.fmt.res + ' · ' + state.fmt.fps + '，剩余可录约 ' + fmtMinutes() + ' min');
+  });
+
+  // 点别处自动收起：功能面板 / 格式选择器
+  document.addEventListener('pointerdown', function(e){
+    var t = e.target;
+    var inPanel = t && t.closest && (t.closest('#fnPanel') || t.closest('#btnMore'));
+    var inFmt   = t && t.closest && (t.closest('#fmtMenu') || t.closest('#fmtChip'));
+    if (layout.fnOpen && !inPanel){ layout.fnOpen = false; applyLayout(); }
+    if (layout.fmtOpen && !inFmt){ layout.fmtOpen = false; applyLayout(); }
   });
 
   // 顶栏副行「影调预览」：真开关 —— 取景器是否实时叠上"影调"（风格 + 滤镜）。

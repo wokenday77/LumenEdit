@@ -130,10 +130,8 @@ async page => {
   await page.mouse.click(vp.x + vp.width * 0.5, vp.y + vp.height * 0.30);
   await page.waitForTimeout(400);
 
-  // ---- 03 设置页：顶栏「更多」→ 设置 ----
-  await page.click('#btnMore');
-  await page.waitForTimeout(250);
-  await page.click('.more-menu button[data-act="settings"]');
+  // ---- 03 设置页：底部图标行「设置」进（功能面板取代了旧的「更多」菜单）----
+  await page.click('#iconSettings');
   await page.waitForTimeout(2600);              // 等 toast（2400ms）自己消失，别挡住设置页
   await page.locator('.phone').screenshot({ path: OUT + '03-settings.png' });
   await page.click('.st-back');                 // 返回键退出设置页
@@ -322,9 +320,80 @@ async page => {
     };
   });
 
+  // ---- 11 功能面板：HDR 开 + 画幅比 16:9（遮幅真实生效）----
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  await page.click('#btnMore');
+  await page.waitForTimeout(500);              // 等滑入动画 + 按钮 stagger
+  await page.click('#fnHdr');                  // 高亮增益开 → 圆钮转绿
+  await page.click('#fnLive');                // 实况开 → 取景器角标
+  await page.click('#fnRatio');                // 4:3 → 16:9 → 遮幅出现
+  await page.waitForTimeout(500);              // 等黑边过渡（260ms）
+  await page.locator('.phone').screenshot({ path: OUT + '11-fn-panel.png' });
+  report.功能面板 = await page.evaluate(() => {
+    const on = (id) => document.getElementById(id).classList.contains('on');
+    const m = document.getElementById('ratioMask');
+    return {
+      面板开: document.getElementById('screen').classList.contains('fn-on'),
+      HDR开: on('fnHdr'),
+      实况开: on('fnLive'),
+      画幅比: document.querySelector('#fnRatio .fn-ic').textContent,
+      遮幅显示: m.classList.contains('show'),
+      遮幅黑边: m.style.getPropertyValue('--rm-h'),
+      实况角标显示: document.getElementById('liveBadge').classList.contains('show')
+    };
+  });
+
+  // ---- 11b 画幅比遮幅的直观验证：切到 1:1（黑边 227px，一眼可见）并收起面板 ----
+  await page.click('#fnRatio');                // 16:9 → 1:1
+  await page.click('#btnMore');                // 收面板，别挡住遮幅
+  await page.waitForTimeout(600);
+  await page.locator('.phone').screenshot({ path: OUT + '11b-ratio-1-1.png' });
+  report.画幅比遮幅 = await page.evaluate(() => {
+    const m = document.getElementById('ratioMask');
+    const bar = parseInt(m.style.getPropertyValue('--rm-h'), 10) || 0;
+    return {
+      当前比例: document.querySelector('#fnRatio .fn-ic').textContent,
+      黑边px: bar,
+      面板已收: !document.getElementById('screen').classList.contains('fn-on'),
+      实况角标: document.getElementById('liveBadge').classList.contains('show')
+    };
+  });
+
+  // ---- 12 视频模式：右上角格式芯片 + 剩余可录时长 ----
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  await page.locator('#modeTabs .mode-tab', { hasText: '视频' }).click();
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '12-video-fmt.png' });
+  report.视频格式 = await page.evaluate(() => {
+    const chip = document.getElementById('fmtChip');
+    return {
+      芯片文字: chip.textContent,
+      芯片可见: getComputedStyle(chip).display !== 'none',
+      右上三图标隐藏: getComputedStyle(document.querySelector('.tb-icons')).display === 'none',
+      存储文字: document.getElementById('storageText').textContent,
+      时长胶囊可见: getComputedStyle(document.querySelector('.chip-storage')).display !== 'none',
+      实况角标显示: document.getElementById('liveBadge').classList.contains('show')
+    };
+  });
+
+  // ---- 13 格式选择器：选 1080p / 30，芯片与剩余时长跟着变 ----
+  await page.click('#fmtChip');
+  await page.waitForTimeout(400);
+  await page.locator('#fmtMenu .fmt-opt[data-g="res"][data-v="1080p"]').click();
+  await page.locator('#fmtMenu .fmt-opt[data-g="fps"][data-v="30"]').click();
+  await page.waitForTimeout(300);
+  await page.locator('.phone').screenshot({ path: OUT + '13-fmt-menu.png' });
+  report.格式选择 = await page.evaluate(() => ({
+    菜单开: document.getElementById('screen').classList.contains('fmt-on'),
+    芯片文字: document.getElementById('fmtChip').textContent,
+    存储文字: document.getElementById('storageText').textContent
+  }));
+
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
                  '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
-                 '09-tone-off', '10-simple-bare'];
+                 '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu'];
   if (missing.length) report.量不到 = missing;
 
   return JSON.stringify(report, null, 2);
