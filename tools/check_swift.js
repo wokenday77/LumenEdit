@@ -334,6 +334,36 @@ if (!themeFile || !modeSelFile || !topBarFile) {
         }
       }
     }
+
+    // 场景·风格条展开态：**内容深度必须 ≤ 行高 147**。
+    // 原型第 5 轮就是在这里翻车的：折叠胶囊 + 两块内容叠在一起，溢出 39px 压到图标行，
+    // 而且**自检只校验了行高、没校验内容深度**，所以一直没报 —— 这条就是冲着那个来的。
+    const ss = {
+      expanded: readCGFloat(themeSrc, 'sceneStyleExpandedHeight'),
+      title: readCGFloat(themeSrc, 'ssBlockTitleHeight'),
+      topPad: readCGFloat(themeSrc, 'ssBlockTopPadding'),
+      chip: readCGFloat(themeSrc, 'sceneChipHeight'),
+      thumb: readCGFloat(themeSrc, 'styleCardThumbHeight'),
+      cardSpacing: readCGFloat(themeSrc, 'styleCardSpacing'),
+      nameHeight: readCGFloat(themeSrc, 'styleNameHeight'),
+      badge: readCGFloat(themeSrc, 'styleBadgeHeight')
+    };
+    const ssMissing = Object.keys(ss).filter(k => ss[k] === null);
+    if (ssMissing.length) {
+      bad('读不到场景·风格令牌：' + ssMissing.join(' / '));
+    } else {
+      const BLOCK_BORDER = 0.5;          // 块顶分隔线（SceneStyleStrip 里的字面量）
+      const styleCard = ss.thumb + ss.cardSpacing + ss.nameHeight + ss.cardSpacing + ss.badge;
+      const depth = 2 * (BLOCK_BORDER + ss.topPad + ss.title) + ss.chip + styleCard;
+      const label = '场景·风格展开态内容深度 ' + depth.toFixed(1) + 'pt vs 行高 '
+        + ss.expanded.toFixed(1) + 'pt（风格卡 ' + styleCard.toFixed(1) + 'pt）';
+      // 名字行高已钉死，深度是确定值 —— 允许恰好贴合，超出即 FAIL
+      if (depth > ss.expanded + 0.01) {
+        bad(label + ' —— 内容会溢出压到下面的行');
+      } else {
+        ok(label + '，余 ' + (ss.expanded - depth).toFixed(1) + 'pt');
+      }
+    }
   }
 }
 

@@ -41,6 +41,7 @@
 | **P2 数据层** | ✅ **已完成** —— `LumenEdit/Presets/` 6 个文件 + `tools/check_presets.js`，与原型逐条一致 |
 | P2 硬件层 | 🔶 部分 —— 手动对焦、参数能力模型已做；平滑变焦（`Ramp`）待做 |
 | **P2 UI 骨架** | ✅ **已完成** —— 2-1 / 2-1b / 2-2（含模式条改版）/ 模式条可用性修正 / 2-3（焦段条）/ 2-4（底部图标行）/ **2-5a（快门排常态 + 视频缩略图）/ 2-5b（⤢ 放大态）** 全部交付（2-3、2-4 已过 Mac 验证；2-5a / 2-5b 等截图） |
+| **A 组 #6 场景/风格条** | 🔶 已交付（等 Mac 截图）；A 组剩 #7 滤镜条 / #10 ⠿ 功能面板 / #11 视频格式芯片 |
 
 ---
 
@@ -55,7 +56,7 @@
 | 3 | 焦段条 | `Camera/UI/FocalStripView.swift` | **新增** |
 | 4 | 底部图标行 7 项 | `Camera/UI/ToolIconRow.swift` | **新增** |
 | 5 | 快门排四件套 + ⤢ 放大 | `Camera/UI/ShutterRowView.swift` | **新增**（`ShutterButton` 从 `CameraView` 迁入） |
-| 6 | 场景/风格条 | `Camera/UI/SceneStyleStrip.swift` | **新增**（数据已就绪：`StyleCatalog` / `SceneCatalog`） |
+| 6 | 场景/风格条 | `Camera/UI/SceneStyleStrip.swift` | ✅ **已交付**（折叠 36 / 展开 147；块标题 11、徽标 10；共享缩略图 `StyleThumbnailView`；状态 scene/style/filter 落盘；互斥与联动见三.6） |
 | 7 | 滤镜条 | `Camera/UI/FilterStripView.swift` | **新增**（数据已就绪：`FilterCatalog`） |
 | 10 | 功能面板 ⠿ | `Camera/UI/FunctionPanelView.swift` | **新增** |
 | 11 | 视频格式芯片 | `Camera/UI/FormatChipView.swift` | **新增** |
@@ -263,6 +264,30 @@ Mac 侧用真机像素测量发现并修掉了一个我预判方向不对的问�
 ⚠️ **`Theme.Size.topBarSideWidth` 注释里的 267.4 / 370 / 28 是「档位为纯文字 + 内边距 16pt」
 这个形态下的实测值，不是常量。** 两件事会让它失效，改完必须重新测量并更新注释：
 模块 #2 把「实况」档换成 18pt 图标（该档变窄）、真机换窄屏机型（如 SE 375pt 宽，可用仅 343pt）。
+**（2026-09-17 晚已按确认更新：字号 13、命中 44×44、条宽 202，见三.4；375 机型中段 197 装得下）**
+
+---
+
+## 三.6 2-5a/2-5b 验收期修复 + #6 场景/风格条交付（2026-09-17 深夜）
+
+### 两个真机 bug（提交 `15a435c`）
+
+| bug | 根因 | 修法 |
+|---|---|---|
+| 录制态内芯的红方块**四角插进白色环带** | 录制态与拍照态**共用** `shutterCoreSize = 46`：方块的角到中心 ≈29.7pt，而环带从 28.25pt 开始 | 新令牌 `shutterRecordingCoreSize = 26`（= 直径 43%，沿用迁移前 0.42 比例）/ 圆角 6；自检加断言「半对角线 ≤ 环内沿 −2」 |
+| **冷启动快门死区**（禁用外观，点取景器后才恢复） | `AppEnvironment.session` 是**嵌套 ObservableObject**，SwiftUI 不自动向上传播 → `env.session.state` 永远停在 `.idle` → `isShutterEnabled` 恒 false | init 里 `session.objectWillChange.sink { self?.objectWillChange.send() }`。已知代价：快照定时器 ~1s 一次 → 依赖 env 的视图每秒重算；先保证正确，掉帧再优化 |
+
+### #6 场景/风格条（提交随本笔，等 Mac 截图）
+
+- 位置：底栏最上方（参数排之上）；折叠 36 / 展开 147；展开时收起折叠胶囊与焦段条
+- **风格卡缩略图与快门排风格方块共用 `StyleThumbnailView`**（swatches 三色渐变，纯参数风格中性兜底）
+  —— `docs/09` 第六节那个未决项就此落地
+- 状态 `sceneId / styleId / filterId` 放 ViewModel 并**落盘**（原型 LS_SHOOT 同款；
+  「保留设置」开关属 #12）；**选场景不推硬件 EV**（用户拍板：守 A 组边界，B 组统一接）
+- 选风格 = 滤镜重置为「无」（原型注释：两层胶片叠加出脏色）
+- 自检新增：**展开态内容深度 ≤ 147**（147.0 = 147.0，恰好贴合；风格名字高已钉死 13pt，
+  不交给字体度量浮动 —— 否则这 1pt 的账会漂）
+
 
 
 ---

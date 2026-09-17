@@ -38,6 +38,8 @@ enum Theme {
         static let focalPillFill = Color.white.opacity(0.11)
         static let focalPillStroke = Color.white.opacity(0.16)
         static let focalPillText = Color.white.opacity(0.88)
+        /// 场景·风格块之间的分隔线（原型 `border-top: .5px rgba(255,255,255,.07)`）
+        static let ssBlockBorder = Color.white.opacity(0.07)
         /// 浅色面上的深色文字（原型 `#15181c`）。
         /// 焦段药丸选中态是**白底**，文字必须转深色 —— 和 accent 黄底上用纯黑是同一类处理。
         static let textOnLight = Color(red: 0.082, green: 0.094, blue: 0.110)
@@ -100,7 +102,44 @@ enum Theme {
         /// 录制态内芯圆角：约边长的 23%（仍一眼是方块，不是球角）
         static let shutterRecordingCoreRadius: CGFloat = 6
 
-        // MARK: ⤢ 放大态（原型 `.screen.zoom-on`，2026-09-17 v2 定稿）
+        // MARK: 场景 · 风格条（原型 `.row-scenestyle`：折叠 36 / 展开 147）
+
+        /// 折叠态 / 展开态整行高度。
+        /// 展开的 147 是原型**第 5 轮修正**后的值：原 144 装不下内容（溢出 39px 压到图标行），
+        /// 收起折叠胶囊后改为 147。内容深度 145.55 ≤ 147，余量只有 1.5pt —— 别再往上加内容。
+        static let sceneStyleCollapsedHeight: CGFloat = 36
+        static let sceneStyleExpandedHeight: CGFloat = 147
+
+        /// 折叠态：胶囊（占满、高 28、圆角 14）+ 箭头按钮（28×28）
+        static let sceneStyleCapsuleHeight: CGFloat = 28
+        static let sceneStyleArrowSide: CGFloat = 28
+        static let sceneStyleHorizontalPadding: CGFloat = 14
+
+        /// 展开态：块 = 顶边框 0.5 + 上内边距 2 + 标题 14（两块）
+        static let ssBlockTitleHeight: CGFloat = 14
+        static let ssBlockTopPadding: CGFloat = 2
+        /// 横滑条：间距 8、左右内边距 14（原型 `.strip`）
+        static let stripSpacing: CGFloat = 8
+        static let stripHorizontalPadding: CGFloat = 14
+        /// 场景胶囊：高 28、左右内边距 14、圆角 14
+        static let sceneChipHeight: CGFloat = 28
+        static let sceneChipHorizontalPadding: CGFloat = 14
+        /// 风格卡：宽 74 = 缩略图 74×50 + 名字 + 徽标（高 17）
+        static let styleCardWidth: CGFloat = 74
+        static let styleCardThumbHeight: CGFloat = 50
+        static let styleCardSpacing: CGFloat = 3
+        static let styleBadgeHeight: CGFloat = 17
+
+        /// 风格名字的**钉死行高**。
+        ///
+        /// 为什么钉死：展开态 147pt 的内容深度账是
+        /// `2 × (边框 0.5 + 上内边距 2 + 标题 14) + 场景胶囊 28 + 风格卡 86 = 147` —— **恰好贴合**。
+        /// 名字的行高若交给字体度量（10.5pt 在 SwiftUI 里约 12.6pt，且随字体版本浮动），
+        /// 这 1pt 上下的误差就可能把徽标顶出行外。钉死后整行是确定值，
+        /// `tools/check_swift.js` 第 5 组按同一批令牌复算，恒等式不再漂。
+        static let styleNameHeight: CGFloat = 13
+
+        /// ⤢ 放大态的「前置 / 设置」镜像按钮（原型 `.icon-item.mirror{ 50×44 }`，图标 19px）
 
         /// 放大态的快门排高度（80 → **106**）
         static let shutterRowZoomHeight: CGFloat = 106
@@ -344,5 +383,18 @@ enum Theme {
         static let chip = Font.system(size: 11, weight: .semibold, design: .rounded)
         /// 电平表的声道字母 L / R（原型 `.levels .ch{ font-size:8px; font-weight:700 }`）
         static let levelChannel = Font.system(size: 8, weight: .bold, design: .rounded)
+
+        // MARK: 场景 · 风格条（2026-09-17 #6）
+
+        /// 折叠胶囊文字（原型 `.ss-capsule{ font-size:11.5px }`）
+        static let ssCapsule = Font.system(size: 11.5, weight: .regular, design: .rounded)
+        /// 块标题（原型 `9.5px` → **11**；9.5 在真机上看不清，这是本件唯一的字号上调之一）
+        static let ssBlockTitle = Font.system(size: 11, weight: .regular, design: .rounded)
+        /// 场景胶囊（原型 `.scene-chip{ font-size:12px }`）
+        static let sceneChip = Font.system(size: 12, weight: .regular, design: .rounded)
+        /// 风格卡名字（原型 `.style-name{ font-size:10.5px; font-weight:600 }`）
+        static let styleName = Font.system(size: 10.5, weight: .semibold, design: .rounded)
+        /// 风格卡参数徽标（原型 `8.5px` → **10**）
+        static let styleBadge = Font.system(size: 10, weight: .regular, design: .rounded)
     }
 }

@@ -2,6 +2,16 @@ import Combine
 import Foundation
 import UIKit
 
+/// 场景 / 风格 / 滤镜三项选中态的落盘键（#6）。
+///
+/// 为什么落盘：原型把它们存进 `LS_SHOOT`，冷启动会恢复 —— 相机 App 里"上次选的场景"
+/// 每次重选是明显倒退。「保留设置」开关（只保留其中几项）属模块 #12，暂未做：现在三项都存。
+private enum SceneStyleStorageKey {
+    static let scene = "lumen.camera.scene"
+    static let style = "lumen.camera.style"
+    static let filter = "lumen.camera.filter"
+}
+
 /// 相机页状态机。
 ///
 /// 职责边界：
@@ -27,6 +37,40 @@ final class CameraViewModel: ObservableObject {
     /// ⚠️ 这一行在 2-5b 的编辑里被误删过（`isZoomOn` 那次编辑本意是**新增**，却替换掉了它），
     /// 导致 `focalTapped` 与 `CameraView` 里的绑定全部失效、CI 编译报错。别再删。
     @Published private(set) var focal: FocalPreset = FocalCatalog.defaultFocal
+
+    // MARK: - 场景 · 风格（#6）
+
+    /// 场景 · 风格条的展开态。**不落盘**：拍摄时的临时手势状态（原型也没存它）。
+    @Published private(set) var isSceneStyleExpanded = false
+
+    /// 选中的场景 id（落盘）
+    @Published private(set) var sceneId: String =
+        UserDefaults.standard.string(forKey: SceneStyleStorageKey.scene)
+        ?? SceneCatalog.all[0].id {
+        didSet { UserDefaults.standard.set(sceneId, forKey: SceneStyleStorageKey.scene) }
+    }
+
+    /// 选中的风格 id（落盘）
+    @Published private(set) var styleId: String =
+        UserDefaults.standard.string(forKey: SceneStyleStorageKey.style)
+        ?? StyleCatalog.all[0].id {
+        didSet { UserDefaults.standard.set(styleId, forKey: SceneStyleStorageKey.style) }
+    }
+
+    /// 选中的滤镜 id（落盘；nil = 无滤镜）。滤镜条（#7）会共用这个状态。
+    @Published private(set) var filterId: String? =
+        UserDefaults.standard.string(forKey: SceneStyleStorageKey.filter) {
+        didSet { UserDefaults.standard.set(filterId, forKey: SceneStyleStorageKey.filter) }
+    }
+
+    /// 当前场景对象（id 解析不出来时退回第一个场景）
+    var scene: ScenePreset { SceneCatalog.scene(id: sceneId) ?? SceneCatalog.all[0] }
+    /// 当前风格对象
+    var style: StylePreset { StyleCatalog.style(id: styleId) ?? StyleCatalog.all[0] }
+    /// 当前滤镜对象
+    var filter: FilterDefinition? { FilterCatalog.all.first { $0.id == filterId } }
+    /// 当前滤镜名（给折叠胶囊 / 块标题用）
+    var filterName: String? { filter?.displayName }
 
     /// ⤢ 放大拍摄布局是否开启（2-5b）。
     ///
@@ -438,6 +482,40 @@ final class CameraViewModel: ObservableObject {
         showToast("曝光补偿在上方参数排调节（当前 \(value) EV）· 圆盘在模块 #8 交付")
     }
 
+    // MARK: - 场景 · 风格（#6）
+
+    /// 展开 / 收起场景·风格条。三个入口（胶囊 / 箭头 / 快门排风格方块）都走它。
+    func toggleSceneStyle() {
+        isSceneStyleExpanded.toggle()
+        Haptics.tick()
+    }
+
+    /// 选场景 = 连带把**推荐的风格或滤镜**一起选上（数据层保证两者不会同时有值）。
+    ///
+    /// ⚠️ **本件不推硬件**：建议的白平衡与 EV 只在提示条里给出来
+    /// —— EV / 白平衡落地属 B 组接线（用户 2026-09-17 拍板：守 A 组边界）。
+    func sceneTapped(_ preset: ScenePreset) {
+        sceneId = preset.id
+        if let recommendedStyle = preset.styleId {
+            styleId = recommendedStyle
+        }
+        filterId = preset.filterId
+        Haptics.tick()
+        let ev = FormatText.exposureBias(Float(preset.exposureBias))
+        showToast(
+            "场景 \(preset.displayName)：白平衡建议 \(Int(preset.whiteBalanceKelvin))K · EV \(ev)"
+        )
+    }
+
+    /// 选风格 = 一键成片：**把滤镜重置为「无」**（原型注释：否则两层胶片叠加会出脏色）。
+    func styleTapped(_ preset: StylePreset) {
+        guard preset.id != styleId else { return }
+        styleId = preset.id
+        filterId = nil
+        Haptics.tick()
+        showToast("风格：\(preset.displayName)（滤镜已重置为「无」，可再单独选滤镜叠加）")
+    }
+
     // MARK: - 快门排
 
     /// ⤢ 放大拍摄布局（2-5b）：切换放大态。
@@ -450,12 +528,12 @@ final class CameraViewModel: ObservableObject {
         DebugLog.shared.debug("ui", "放大拍摄布局 \(isZoomOn ? "开" : "关")")
     }
 
-    /// 风格预览方块。
+    /// 风格预览方块：点击 = 展开 / 收起「场景·风格」条（与折叠胶囊、箭头同一行为）。
     ///
-    /// 内层现在是深色占位：「当前风格」的选择状态要等模块 #6（场景/风格条），
-    /// 实时渲染要等 P4（`docs/09` 第六节未决项）。点击说明交付节点。
+    /// 内层预览与风格卡同源（`StyleThumbnailView`），不再是 2-5a 那个深色占位 ——
+    /// `docs/09` 第六节的未决项随 #6 一起落地了。
     func styleThumbTapped() {
-        showToast("场景与风格条在模块 #6 交付 · 实时预览在 P4")
+        toggleSceneStyle()
     }
 
     // MARK: - 相册

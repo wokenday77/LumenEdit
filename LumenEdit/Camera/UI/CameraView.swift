@@ -123,8 +123,12 @@ struct CameraView: View {
         ZStack {
             previewLayer
 
-            // 焦段条（浮层，不参与底栏布局）
-            floatingFocalStrip
+            // 焦段条（浮层，不参与底栏布局）。
+            // ⚠️ 场景·风格展开时**收起**（原型 `.ss-on .row-focal`）：那一行要占 147pt，
+            // 焦段条再叠上去会把底部栈撑得过高；放大态（⤢）反过来要**保留**它 —— 它浮进卡片里。
+            if !viewModel.isSceneStyleExpanded {
+                floatingFocalStrip
+            }
 
             VStack(spacing: Theme.Spacing.sm) {
                 TopBarView(
@@ -230,6 +234,18 @@ struct CameraView: View {
 
     private var bottomArea: some View {
         VStack(spacing: Theme.Spacing.md) {
+            // 场景 · 风格条（#6）：原型里它排在**参数排之上**，
+            // 是"选场景直接拍"这条主线的入口（一级视觉权重）。
+            SceneStyleStrip(
+                scene: viewModel.scene,
+                style: viewModel.style,
+                filterName: viewModel.filterName,
+                isExpanded: viewModel.isSceneStyleExpanded,
+                onToggle: { viewModel.toggleSceneStyle() },
+                onSceneTap: { viewModel.sceneTapped($0) },
+                onStyleTap: { viewModel.styleTapped($0) }
+            )
+
             // ⤢ 放大态：参数排与图标行**整行让位**（原型 `.zoom-on` 把三条归零）。
             // 前置 / 设置的入口由快门排的镜像按钮顶上，不会丢功能。
             if !viewModel.isZoomOn {
@@ -270,7 +286,9 @@ struct CameraView: View {
                 onShutterTap: { viewModel.shutterTapped() },
                 isZoomOn: viewModel.isZoomOn,
                 onZoomTap: { viewModel.zoomTapped() },
-                onStyleTap: { viewModel.styleThumbTapped() },
+                style: viewModel.style,
+                // 风格方块 = 第三个展开入口（与折叠胶囊、箭头同一行为）
+                onStyleEntryTap: { viewModel.styleThumbTapped() },
                 // 放大态镜像按钮：与图标行的「前置 / 设置」同一行为
                 onFrontCamera: { viewModel.frontCameraTapped() },
                 onSettings: { env.showSettings = true }

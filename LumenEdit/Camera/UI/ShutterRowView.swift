@@ -40,7 +40,11 @@ struct ShutterRowView: View {
     /// ⤢ 放大拍摄布局是否开启（2-5b）：开启后本排变高、快门放大、左右两组竖排
     let isZoomOn: Bool
     let onZoomTap: () -> Void
-    let onStyleTap: () -> Void
+    /// 当前选中的风格 —— 右下角方块的内层预览与风格卡**同源**（`StyleThumbnailView`）
+    let style: StylePreset
+    /// 风格方块的点击 = 展开 / 收起「场景·风格」条（原型 `btnSceneStyle → toggleSS`），
+    /// 与折叠胶囊、箭头是**同一个行为**（三入口一致）
+    let onStyleEntryTap: () -> Void
     /// 放大态淡入的镜像按钮 —— 与底部图标行的「前置 / 设置」**同一行为**
     /// （原型：图标行整行让位后由这两个按钮顶上，两者不会同时可见）
     let onFrontCamera: () -> Void
@@ -175,35 +179,50 @@ struct ShutterRowView: View {
 
     // MARK: - 风格方块
 
-    /// 风格预览方块：彩色渐变描边 + 深色内层（内层的实时预览等模块 #6 / P4）。
+    /// 风格预览方块：外层彩色渐变描边（原型固定的四段装饰色）+ **内层当前风格的缩略预览**。
+    ///
+    /// 内层与「场景·风格」条里的风格卡共用 `StyleThumbnailView`（取该风格引用滤镜的
+    /// `swatches` 三色渐变）—— 这也是 `docs/09` 第六节那个未决项的落地：
+    /// 深色占位换成真实（P4 之前是渐近似）的风格色预览。
     private var styleThumb: some View {
-        Button(action: onStyleTap) {
-            RoundedRectangle(cornerRadius: Theme.Size.styleThumbCornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: Self.styleGradient,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+        Button(action: onStyleEntryTap) {
+            ZStack {
+                // 外圈：装饰渐变（原型 `.style-thumb` 的背景，不随风格变化）
+                RoundedRectangle(
+                    cornerRadius: Theme.Size.styleThumbCornerRadius,
+                    style: .continuous
                 )
-                .frame(width: Theme.Size.styleThumbSide, height: Theme.Size.styleThumbSide)
-                .overlay(
-                    RoundedRectangle(
-                        cornerRadius: Theme.Size.styleThumbInnerCornerRadius,
-                        style: .continuous
-                    )
-                    .fill(Theme.Palette.styleThumbInner)
-                    .padding(Theme.Size.styleThumbBorderPadding)
+                .fill(frameGradient)
+
+                // 内层：当前风格的预览面
+                StyleThumbnailView(
+                    style: style,
+                    size: CGSize(
+                        width: Theme.Size.styleThumbSide - 2 * Theme.Size.styleThumbBorderPadding,
+                        height: Theme.Size.styleThumbSide - 2 * Theme.Size.styleThumbBorderPadding
+                    ),
+                    cornerRadius: Theme.Size.styleThumbInnerCornerRadius,
+                    appearance: .filled
                 )
-                .contentShape(Rectangle())
+            }
+            .frame(width: Theme.Size.styleThumbSide, height: Theme.Size.styleThumbSide)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("场景与风格")
     }
 
-    /// 渐变描边的四段色（原型 `linear-gradient(135deg,#ffd23c,#ff7a59,#8b7bff,#34d058)`），
-    /// `135deg` = 左上到右下。单用途装饰色，集中在这一个常量里。
-    private static let styleGradient: [Color] = [
+    /// 外层装饰渐变的四段色（原型 `linear-gradient(135deg,#ffd23c,#ff7a59,#8b7bff,#34d058)`），
+    /// `135deg` = 左上到右下。它是**装饰边框**，不表示当前风格（当前风格由内层表达）。
+    private var frameGradient: LinearGradient {
+        LinearGradient(
+            colors: Self.frameGradientColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private static let frameGradientColors: [Color] = [
         Self.color(0xFFD23C), Self.color(0xFF7A59), Self.color(0x8B7BFF), Self.color(0x34D058)
     ]
 
