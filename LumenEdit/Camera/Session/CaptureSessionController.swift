@@ -285,12 +285,14 @@ final class CaptureSessionController: ObservableObject {
         set { movieService.onTick = newValue }
     }
 
-    /// 开始录制。只在**视频模式且会话就绪**时有效。
+    /// 开始录制。只在**录制类模式（视频 / Log 实况）且会话就绪**时有效。
     ///
     /// 与 `capture(completion:)` 的区别：那个是"一次性快门"，
     /// 这个的开始/停止跨越一段时间，产物要等停止后的代理回调。
+    /// 是否录制类由 `CaptureSessionMode.isRecordingBased` 判定 —— 单一真相，
+    /// 避免"这里说 video、那里忘了加 logLive"导致按快门没反应。
     func startRecording(completion: @escaping (Result<CaptureResult, Error>) -> Void) {
-        guard mode == .video else {
+        guard mode.isRecordingBased else {
             let error = MovieCaptureError.notReady
             DebugLog.shared.warn("session", "非视频模式下请求开始录制（当前 \(mode.rawValue)）")
             publish { self.lastErrorMessage = error.localizedDescription }
@@ -649,9 +651,14 @@ final class CaptureSessionController: ObservableObject {
             applyRotationLocked(to: photoService.output)
             return true
 
-        case .video:
+        case .video, .logLive:
             // P1b-2 起这一支挂真正的录制输出（切换逻辑见本函数开头：先清空所有输出）。
             // 视频与照片输出互斥 —— 所以这里**只**挂 movieService.output，不挂 photoOutput。
+            //
+            // `.logLive` 复用同一条链路（P2 打开入口）：Log 实况的产物本身就是一段视频
+            // （套 LUT 导出为实况照片在 P5）。挂同一个输出保证"进去就能录"，不会出现
+            // 进了模式却无法拍摄的状态。二者若要分道（例如 Log 要设 appleLog 色彩空间），
+            // 在 MovieCaptureService 里按 mode 分派，不要在这里拆成两个 output。
             guard session.canAddOutput(movieService.output) else {
                 DebugLog.shared.error("session", "无法加入录制输出")
                 return false

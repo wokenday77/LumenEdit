@@ -122,9 +122,11 @@ final class CameraViewModel: ObservableObject {
     func shutterTapped() {
         guard let environment else { return }
 
-        // 视频模式：快门 = 开始 / 停止录制（不是一次性拍照）。
-        // 放在最前面，避免走下面那套"拍一张等保存"的逻辑。
-        if environment.session.mode == .video {
+        // 录制类模式（视频 / Log 实况）：快门 = 开始 / 停止录制（不是一次性拍照）。
+        // 放在最前面，避免走下面那套"拍一张等保存"的逻辑 —— 录制类模式下 session 里
+        // 挂的是 movieOutput、没有 photoOutput，走拍照路径会失败。
+        // 判据来自枚举（`isRecordingBased`），新增模式时只改一处。
+        if environment.session.mode.isRecordingBased {
             toggleRecording()
             return
         }
@@ -253,7 +255,11 @@ final class CameraViewModel: ObservableObject {
                 let identifier = try await PhotoLibraryWriter.saveVideoFile(at: url)
                 environment.thumbnails.rememberSavedIdentifier(identifier)
                 environment.thumbnails.rememberCapturedFile(at: url)
-                showToast("视频已保存")
+                // 提示语按拍摄模式区分：Log 实况当前的产物就是一段普通视频，
+                // 谎称"实况照片已保存"会让人去相册里长按却发现播不动。
+                showToast(mode == .logLive
+                    ? "Log 视频已保存到相册（LUT 导出实况照片在 P5）"
+                    : "视频已保存")
             }
 
             Haptics.success()
@@ -317,6 +323,13 @@ final class CameraViewModel: ObservableObject {
         // 之前那版会让 UI 停在"看着像切了、实际没切"的状态：
         // 模式条高亮 Live、顶栏亮起 LIVE 角标，拍出来却是普通静态照片，
         // 且相册里没有 Live 角标。让 session 成为模式的唯一真源。
+        //
+        // Log 实况本阶段复用录制链路（见 `CaptureSessionMode.logLive` 的说明）：
+        // 进入时先把边界讲清楚，免得用户以为拍完就能在相册里长按播放动图。
+        // 若紧接着被 session 拒绝，下面的错误提示会覆盖这条（错误信息优先级更高）。
+        if newMode == .logLive {
+            showToast("Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付")
+        }
         environment.session.switchMode(to: newMode)
         Haptics.modeChanged()
     }

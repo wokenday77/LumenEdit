@@ -49,6 +49,11 @@ final class PhotoCaptureService: NSObject {
     // MARK: - 配置（必须在 session 的 beginConfiguration 区间内调用）
 
     /// 按模式准备照片输出。
+    ///
+    /// ⚠️ 本方法当前**只对 `.photo` / `.livePhoto` 有实际作用**（这两个模式才会把
+    /// `photoService.output` 挂进 session，见 `CaptureSessionController.reconfigureOutputsLocked`）。
+    /// 另外两个模式走录制链路，走不到这里；分支仍然写全，是为了保住 switch 的穷尽性
+    /// ——新增模式时编译期就会提醒，而不是运行时静默沿用上一次的开关状态。
     func configure(for mode: CaptureSessionMode) {
         // 关闭延迟处理：见类注释第 2 条
         output.isAutoDeferredPhotoDeliveryEnabled = false
@@ -61,7 +66,11 @@ final class PhotoCaptureService: NSObject {
             let supported = output.isLivePhotoCaptureSupported
             output.isLivePhotoCaptureEnabled = supported
             DebugLog.shared.info("photo", "Live Photo 采集 \(supported ? "已开启" : "不被支持，已保持关闭")")
-        case .video:
+        case .logLive, .video:
+            // 录制链路：照片输出不参与拍摄，Live Photo 必须显式关掉。
+            // AVCapturePhotoOutput.h 明确写着 livePhotoCaptureEnabled 在配置变更后可能自己回到
+            // NO；反过来说，从 Live 切到录制链路上如果不清一次，残留的开启状态会让
+            // 之后切回照片模式时行为不符合预期。
             output.isLivePhotoCaptureEnabled = false
         }
 
