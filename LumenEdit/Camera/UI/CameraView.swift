@@ -160,17 +160,21 @@ struct CameraView: View {
     /// （真机实测重叠 28pt，把「视频」盖掉一半）。网页原型同样把角标居中放在
     /// 模式条下方（`.live-badge{ position:absolute; left:50%; top:90px; }`）。
     ///
-    /// ⚠️ 原型已把角标改成 22×22 的 Live Photo 同心圆图标（原型注释：「已按拍板
-    /// 改为 Live Photo 同心圆图标…不再用「实况」文字」）。这里**只修正位置，
-    /// 暂时保留文字药丸的观感**，图标化留给 UI 批次统一处理，避免与本批改动混在一起。
+    /// **为什么是同心圆图标而不是「LIVE」文字**：原型已按拍板统一成
+    /// Live Photo 同心圆（与系统相机的 LIVE 标、模式条「实况」档同一套图标语言），
+    /// 保留黄底 + 深色图标，保证在明亮取景画面上依然醒目。
+    /// 图形本身复用 `LivePhotoCircleIcon`（模块 #2 把模式条「实况」档文字换成图标时
+    /// 用的是同一个组件，不重复维护第二份画法）。
     private var liveBadge: some View {
-        Text("LIVE")
-            .font(.system(size: 10, weight: .heavy))
+        LivePhotoCircleIcon(size: Theme.Size.liveBadgeIconSize)
+            // 深色图标压在 accent 黄底上。原型这里写的是 `#111`（纯黑偏灰一档），
+            // Swift 侧沿用工程既有做法用纯黑（`GuideLayout` 的主按钮、
+            // `ModeSelector` 选中态同样如此），避免为一个肉眼不可辨的差值新增色令牌。
             .foregroundStyle(Color.black)
-            .padding(.horizontal, 7)
-            .frame(height: 20)
-            .background(Capsule().fill(Theme.Palette.accent))
-            .accessibilityLabel("Live Photo 已开启")
+            .frame(width: Theme.Size.liveBadgeSide, height: Theme.Size.liveBadgeSide)
+            .background(Circle().fill(Theme.Palette.accent))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("实况已开启")
     }
 
     // MARK: - 底部控制区
