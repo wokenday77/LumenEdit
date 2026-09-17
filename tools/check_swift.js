@@ -275,6 +275,38 @@ if (!themeFile || !modeSelFile || !topBarFile) {
       }
     }
 
+    // 快门：录制态内芯是**圆角方块**，它的四个角比圆"远"得多 ——
+    // 半对角线必须留在环内沿里面（留 2pt 呼吸），否则红方块的角会插进白色环带
+    // （2026-09-17 真机 bug：内芯与拍照态共用 46pt，四角到中心 29.7 > 环内沿 28.25）。
+    // 环用 .stroke（SwiftUI 是**居中**描边）→ 环内沿半径 = (直径 − 环宽) / 2
+    const D = readCGFloat(themeSrc, 'shutterDiameter');
+    const ring = readCGFloat(themeSrc, 'shutterRingWidth');
+    const recCore = readCGFloat(themeSrc, 'shutterRecordingCoreSize');
+    const photoCore = readCGFloat(themeSrc, 'shutterCoreSize');
+    if (D === null || ring === null || recCore === null || photoCore === null) {
+      bad('读不到快门令牌（shutterDiameter / shutterRingWidth / shutterRecordingCoreSize / shutterCoreSize）');
+    } else {
+      const ringInner = (D - ring) / 2;
+      const recHalfDiagonal = recCore * Math.SQRT2 / 2;
+      const photoHalf = photoCore / 2;
+      const limit = ringInner - 2;
+
+      const recLabel = '录制态内芯 ' + recCore + 'pt 半对角线 ' + recHalfDiagonal.toFixed(1)
+        + 'pt vs 环内沿 ' + ringInner.toFixed(1) + 'pt（限 ' + limit.toFixed(1) + '）';
+      if (recHalfDiagonal > limit) {
+        bad(recLabel + ' —— 四角会插进白色环带');
+      } else {
+        ok(recLabel);
+      }
+
+      // 拍照态是圆，用半径比即可（同时确认它没有大到顶住环）
+      if (photoHalf > limit) {
+        bad('拍照态内芯半径 ' + photoHalf.toFixed(1) + 'pt 超过环内沿 −2（' + limit.toFixed(1) + 'pt）');
+      } else {
+        ok('拍照态内芯半径 ' + photoHalf.toFixed(1) + 'pt ≤ 环内沿 −2（' + limit.toFixed(1) + 'pt）');
+      }
+    }
+
     // 降档路径本身必须存在，否则窄屏会靠"压缩"而不是"降档"糊过去（静默）
     if (!/ViewThatFits/.test(modeSelSrc)
       || !/modeSelectorSpacing/.test(modeSelSrc)

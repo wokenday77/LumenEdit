@@ -79,10 +79,26 @@ enum Theme {
         static let shutterDiameter: CGFloat = 60
         /// 快门环宽。⚠️ 原来是 5，修正为 **3.5**（原型 `border: 3.5px`）
         static let shutterRingWidth: CGFloat = 3.5
-        /// 快门内芯（白圆 / 录制态红方块）。
+        /// 快门内芯（白圆 / 拍照态）。
         /// 原型 `.shutter .core{ width:46px }` —— **固定值**，不再用"直径 − 14"推
         /// （那次是巧合等于 46；直径改成 60 后再推就错了）。
         static let shutterCoreSize: CGFloat = 46
+
+        /// 录制态内芯（红色圆角方块）：**26pt**，圆角 **6pt**。
+        ///
+        /// ⚠️ **必须比拍照态内芯小一圈**，而且这不是审美问题，是几何硬约束：
+        /// 圆角方块的**对角线**比圆长得多 —— 给它 46pt 时，四角到中心约 29.7pt，
+        /// 而环带从 28.25pt 就开始 → 四个角会插进白色环带里（2026-09-17 真机 bug）。
+        ///
+        /// 26pt 的依据：
+        ///   1. 沿用迁移前的比例 `直径 × 0.42`（60 × 0.42 = 25.2 → 取 26）
+        ///   2. 半对角线 18.4pt，离环内沿（28.25）还有约 10pt 余量
+        ///   3. 是拍照态内芯（46）的 57% —— 与系统相机"录制态明显小一圈"的观感一致
+        ///
+        /// 上限参考：30–32pt 仍安全；**≥40pt 必撞环**（半对角线 = 环内沿 28.25 时边长 39.95）。
+        static let shutterRecordingCoreSize: CGFloat = 26
+        /// 录制态内芯圆角：约边长的 23%（仍一眼是方块，不是球角）
+        static let shutterRecordingCoreRadius: CGFloat = 6
         /// 快门排整条高度（原型 `.shutter-row{ height:80px }`）
         static let shutterRowHeight: CGFloat = 80
         /// 快门排左右内边距（原型 `padding: 0 18px`）

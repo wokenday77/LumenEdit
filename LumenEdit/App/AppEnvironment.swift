@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -59,11 +60,28 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: - 生命周期
 
+    /// session 变更的转发订阅。
+    ///
+    /// ⚠️ **嵌套的 `ObservableObject` 不会自动向上传播**：视图里读的是
+    /// `env.session.state`，但 SwiftUI 只有在 `env` 自己的 `objectWillChange` 发信号时
+    /// 才会重算 —— 少了这条转发，`session` 里那些 `@Published` 的变化对视图是**不可见的**。
+    ///
+    /// 真机后果（2026-09-17）：冷启动后 `env.session.state` 一直停在装配时的 `.idle`
+    /// → `isShutterEnabled` 恒 false → **快门完全没反应且呈禁用外观（灰）**，
+    /// 直到点一下取景器（触发别的状态变化、顺带让视图重算）才"莫名恢复"。
+    private var cancellables = Set<AnyCancellable>()
+
     init() {
         let defaults = UserDefaults.standard
         self.showDebugHUD = defaults.object(forKey: StorageKey.showDebugHUD) as? Bool ?? true
         self.showGrid = defaults.object(forKey: StorageKey.showGrid) as? Bool ?? true
         self.showTonePreview = defaults.object(forKey: StorageKey.showTonePreview) as? Bool ?? true
+
+        // 把 session 的变更转发到自己的 objectWillChange（原因见 `cancellables` 的注释）
+        session.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
         log.info(
             "app",
             "AppEnvironment 初始化完成，hud=\(showDebugHUD) grid=\(showGrid) tone=\(showTonePreview)"

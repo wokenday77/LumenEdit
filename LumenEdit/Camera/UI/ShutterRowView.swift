@@ -154,13 +154,18 @@ private struct ShutterButton: View {
                     .frame(width: Theme.Size.shutterDiameter, height: Theme.Size.shutterDiameter)
 
                 if isRecording {
-                    // 录制中：红色圆角方块 = 点它停止录制
+                    // 录制中：红色圆角方块 = 点它停止录制。
+                    // ⚠️ 尺寸用**独立的录制态令牌**（26pt）而不是拍照态的 46pt ——
+                    // 方块的四个角到中心比圆远得多，46pt 会插进白色环带里。
                     RoundedRectangle(
-                        cornerRadius: Theme.Size.shutterCoreSize * 0.15,
+                        cornerRadius: Theme.Size.shutterRecordingCoreRadius,
                         style: .continuous
                     )
                     .fill(Theme.Palette.recording)
-                    .frame(width: Theme.Size.shutterCoreSize, height: Theme.Size.shutterCoreSize)
+                    .frame(
+                        width: Theme.Size.shutterRecordingCoreSize,
+                        height: Theme.Size.shutterRecordingCoreSize
+                    )
                 } else {
                     Circle()
                         .fill(Color.white)
