@@ -531,6 +531,10 @@
   .screen.simple .row-scenestyle{height:36px;}
   .screen.simple .ss-arrow{display:none;}
   .screen.simple .grid{opacity:0;}
+  /* 简易模式下的「保留项」开关：不保留就藏掉（由设置页「简易模式保留项」控制） */
+  .screen.simple.no-sm-thumb .thumb{display:none;}
+  .screen.simple.no-sm-ss .row-scenestyle{height:0px;}
+  .screen.simple.no-sm-ev .row-ev{height:0px;}
   /* ⚠️ 简易模式下**必须**还能打开「更多」菜单 —— 那是退出简易模式的唯一出口。
      原先这里写的是 `.screen.simple .more-menu{display:none}`，它与
      `.screen.more-on .more-menu{display:flex}` 优先级相同（都是两个类），
@@ -1308,9 +1312,13 @@
     paramsOpen:false,
     hud:false,
     gridOn:true,
-    // 与设置页开关一一对应：这两个开关背后是**真功能**，不是只存状态
+    // 与设置页开关一一对应：这几个开关背后是**真功能**，不是只存状态
     storageChip:true,     // 设置页「存储空间提示」→ 顶栏副行的 31 GB 胶囊显隐
     levelOn:false,        // 设置页「水平指示器」→ 取景器中央的水平线
+    // 影调预览：取景器是否实时叠上"影调"（风格 + 滤镜）。
+    // 关掉后取景器显示原片，但**保留 EV**（EV 是拍摄曝光，不是后期调色），
+    // 左下缩略图仍旧显示成片 —— 它代表"会被保存成什么"，与预览开关无关。
+    tonePreview:true,
     moreOpen:false,
     hints:false
   };
@@ -1366,10 +1374,13 @@
     // EV 在原型里用温和映射（真机是真实的 2^EV 曝光），避免 ±2 档过曝到没法看
     var evFactor = 1 + state.ev * 0.11;
     $('exposure').style.filter = 'brightness(' + evFactor.toFixed(3) + ')';
-    $('grade').style.filter = currentChain();
-    fillTints($('tints'), currentTints());
+    // 影调预览关掉 → 只摘掉"影调"（风格 + 滤镜这两层），曝光那层留着不动。
+    // 缩略图不跟着关：它预览的是"成片"（会被保存成什么），与取景器预览不是一回事。
+    $('grade').style.filter = layout.tonePreview ? currentChain() : 'none';
+    fillTints($('tints'), layout.tonePreview ? currentTints() : []);
     renderThumb();
     renderStatus();
+    scheduleSave();   // 场景/风格/滤镜/EV 变了也落盘
   }
 
   /** 把"当前成片效果"画进任意容器（缩略图与风格预览方块共用一套渲染） */
@@ -1484,6 +1495,16 @@
     if (stG){ stG.textContent = layout.stageMark ? '开' : '关'; stG.classList.toggle('on', layout.stageMark); }
     var bg = $('btnGrid');
     if (bg) bg.classList.toggle('on', layout.gridOn);
+    // 影调预览：开 = 琥珀高亮（影调叠在取景画面上），关 = 灰（看原片）
+    var bt = $('btnTone');
+    if (bt){
+      bt.classList.toggle('accent', layout.tonePreview);
+      bt.title = layout.tonePreview ? '影调预览：开（取景器实时叠上风格与滤镜）' : '影调预览：关（取景器显示原片）';
+    }
+    // 简易模式「保留项」开关：不保留就加对应隐藏类（仅在简易模式下由 CSS 生效）
+    s.classList.toggle('no-sm-thumb', stState['sm-thumb'] === 0);
+    s.classList.toggle('no-sm-ss',    stState['sm-ss'] === 0);
+    s.classList.toggle('no-sm-ev',    stState['sm-ev'] === 0);
 
     // 圆盘关掉时立刻停掉自动对焦动画，别让 rAF 在后台空跑
     if (!layout.dialOpen) cancelAutoFocus();
@@ -1491,6 +1512,8 @@
     renderHUD();
     // 高度有 300ms 过渡，等动画停下来再量一次才准
     setTimeout(renderHUD, 340);
+
+    scheduleSave();   // 布局/设置变了就落盘（防抖 500ms）
   }
 
   function setSS(on){
@@ -1545,6 +1568,7 @@
       ['模式', byId(MODES, state.mode).name + (layout.simple ? ' · 简易模式' : '')],
       ['风格', st ? st.name : '—'],
       ['滤镜', f ? f.name : '无'],
+      ['影调预览', layout.tonePreview ? '<span class="hl">开</span>' : '关 · 取景器显示原片'],
       ['参数排', layout.simple ? '隐藏' : (layout.paramsOpen ? '平铺 104px' : '收起 44px')],
       ['对焦', focusAuto ? '自动(' + focusVal.toFixed(2) + ')' : '手动(' + focusVal.toFixed(2) + ')'],
       ['浮层', overlay]
@@ -1957,8 +1981,10 @@
       groups: [
         { name: '拍摄', rows: [
           { k:'simple',  ic:'cam',    label:'简易模式', info:1, sw:0 },
+          { k:'simplemode', ic:'gear', label:'简易模式保留项', go:1 },
           { k:'stab',    ic:'stab',   label:'稳定器', go:1, sel:'关闭', opts:['关闭','标准','电影级','极致'] },
           { k:'grid',    ic:'grid',   label:'预览网格', sw:0 },
+          { k:'tone',    ic:'burn',   label:'影调预览', sw:1 },
           { k:'level',   ic:'level',  label:'水平指示器', sw:0 },
           { k:'storage', ic:'save',   label:'存储空间提示', sw:1 },
           { k:'expo',    ic:'expo',   label:'曝光参考', sw:0 },
@@ -1995,14 +2021,22 @@
     },
     keep: {
       title: '保留设置',
-      intro: '选择下次打开时仍然沿用哪些拍摄设置。关掉的项会在每次启动时回到默认值。',
+      intro: '选择下次打开时仍然沿用哪些拍摄设置。关掉的项会在每次启动时回到默认值。'
+        + '（设置页的开关一律会记住，这里只控制"拍摄现场"这几项。）',
       groups: [{ name:'', rows: [
-        { k:'k1', ic:'cam',   label:'简易模式',    sw:0, sub:'开启后下次进入直接是简易界面。' },
-        { k:'k2', ic:'expo',  label:'场景与曝光',  sw:1, sub:'记住上次选择的场景，及其带出的建议曝光。' },
-        { k:'k3', ic:'stab',  label:'风格',        sw:1, sub:'记住上次选择的风格配方。' },
-        { k:'k4', ic:'burn',  label:'滤镜',        sw:0, sub:'记住上次叠加的滤镜。' },
-        { k:'k5', ic:'level', label:'曝光补偿 EV', sw:0, sub:'记住上次手动调整的曝光补偿。' },
-        { k:'k6', ic:'grid',  label:'预览网格',    sw:1, sub:'记住网格线的开关状态。' }
+        { k:'k1', ic:'expo', label:'场景与曝光', sw:1, sub:'记住上次选择的场景，及其带出的建议曝光。' },
+        { k:'k2', ic:'stab', label:'风格',       sw:1, sub:'记住上次选择的风格配方。' },
+        { k:'k3', ic:'burn', label:'滤镜',       sw:0, sub:'记住上次叠加的滤镜。' },
+        { k:'k4', ic:'level',label:'曝光补偿 EV',sw:0, sub:'记住上次手动调整的曝光补偿。' }
+      ]}]
+    },
+    simplemode: {
+      title: '简易模式保留项',
+      intro: '简易模式默认只留取景器与快门。下面选择还要额外保留哪些控件。',
+      groups: [{ name:'', rows: [
+        { k:'sm-thumb', ic:'cam',  label:'相册缩略图', sw:1, sub:'左下角最近一张的预览。' },
+        { k:'sm-ss',    ic:'stab', label:'场景条',     sw:1, sub:'折叠态的场景·风格胶囊。' },
+        { k:'sm-ev',    ic:'expo', label:'EV 横滑条',  sw:1, sub:'底部一条曝光补偿横滑。' }
       ]}]
     }
   };
@@ -2010,6 +2044,90 @@
   var stStack = [];    // 页面栈，用于返回
   var stState = {};    // 开关状态（本次会话内保持）
   var stStab = '关闭'; // 稳定器当前档位
+
+  /* =========================================================
+     持久化（localStorage）—— 让设置与拍摄现场"下次打开还在"
+       - 设置开关（存储提示 / 水平指示器 / 影调预览 / 稳定器档位）始终记住
+       - 「保留设置」页的 k1..k6 决定"拍摄现场"哪些要被记住
+       - 拍摄现场快照：模式 / 简易模式 / 预览网格 / 场景 / 风格 / 滤镜 / EV
+     ========================================================= */
+  var LS_SETTINGS = 'lumenedit:settings';
+  var LS_KEEP     = 'lumenedit:keep';
+  var LS_SHOOT    = 'lumenedit:shoot';
+
+  function saveState(){
+    try {
+      // 设置页开关一律记住（简单模式 / 预览网格 / 存储提示 / 水平指示器 / 影调预览 / 稳定器 / 简易模式保留项）
+      localStorage.setItem(LS_SETTINGS, JSON.stringify({
+        simple:  layout.simple ? 1 : 0,
+        grid:    layout.gridOn ? 1 : 0,
+        storage: layout.storageChip ? 1 : 0,
+        level:   layout.levelOn ? 1 : 0,
+        tone:    layout.tonePreview ? 1 : 0,
+        stab:    stStab,
+        smThumb: stState['sm-thumb'] ? 1 : 0,
+        smSS:    stState['sm-ss'] ? 1 : 0,
+        smEV:    stState['sm-ev'] ? 1 : 0
+      }));
+      // 「保留设置」只管拍摄现场四项：场景与曝光 / 风格 / 滤镜 / 曝光补偿
+      localStorage.setItem(LS_KEEP, JSON.stringify({
+        k1: stState.k1 ? 1 : 0, k2: stState.k2 ? 1 : 0,
+        k3: stState.k3 ? 1 : 0, k4: stState.k4 ? 1 : 0
+      }));
+      localStorage.setItem(LS_SHOOT, JSON.stringify({
+        mode: state.mode,
+        scene: state.scene, style: state.styleId, filter: state.filterId, ev: state.ev
+      }));
+    } catch(e){}
+  }
+
+  // 拖动 EV 滑块会连续触发 renderPreview —— 这里做 500ms 防抖，别每次 pointermove 都写盘
+  var persistTimer = null;
+  function scheduleSave(){
+    if (persistTimer) return;
+    persistTimer = setTimeout(function(){ persistTimer = null; saveState(); }, 500);
+  }
+
+  function loadState(){
+    // 与「保留设置」页默认一致：场景与曝光 / 风格 默认保留，滤镜 / EV 默认不保留
+    var keep = { k1:1, k2:1, k3:0, k4:0 };
+    try {
+      var rawK = JSON.parse(localStorage.getItem(LS_KEEP) || '{}');
+      for (var i=1;i<=4;i++){ if (rawK['k'+i] !== undefined) keep['k'+i] = !!rawK['k'+i]; }
+      // 设置页开关一律恢复（它们永远记住，不归「保留设置」管）
+      var s = JSON.parse(localStorage.getItem(LS_SETTINGS) || '{}');
+      if (s.simple !== undefined)  layout.simple = !!s.simple;
+      if (s.grid !== undefined)    layout.gridOn = !!s.grid;
+      if (s.storage !== undefined) layout.storageChip = !!s.storage;
+      if (s.level !== undefined)   layout.levelOn = !!s.level;
+      if (s.tone !== undefined)    layout.tonePreview = !!s.tone;
+      if (s.stab !== undefined)    stStab = s.stab;
+      // 简易模式保留项默认是"保留"（=1）。缺省必须按 1 处理，
+      // 否则 undefined 会被 saveState 写成 0，下次加载就误把控件藏掉。
+      stState['sm-thumb'] = (s.smThumb !== undefined) ? (s.smThumb ? 1 : 0) : 1;
+      stState['sm-ss']    = (s.smSS !== undefined)    ? (s.smSS ? 1 : 0)    : 1;
+      stState['sm-ev']    = (s.smEV !== undefined)    ? (s.smEV ? 1 : 0)    : 1;
+      // 拍摄现场按「保留设置」的门控恢复
+      var sh = JSON.parse(localStorage.getItem(LS_SHOOT) || '{}');
+      if (keep.k1 && sh.scene !== undefined)  state.scene = sh.scene;
+      if (keep.k2 && sh.style !== undefined)  state.styleId = sh.style;
+      if (keep.k3 && sh.filter !== undefined) state.filterId = sh.filter;
+      if (keep.k4 && sh.ev !== undefined)     state.ev = sh.ev;
+      if (sh.mode !== undefined)              state.mode = sh.mode;
+    } catch(e){}
+    // 回填 stState，设置页开关才能显示真实状态
+    stState.simple  = layout.simple ? 1 : 0;
+    stState.grid    = layout.gridOn ? 1 : 0;
+    stState.storage = layout.storageChip ? 1 : 0;
+    stState.level   = layout.levelOn ? 1 : 0;
+    stState.tone    = layout.tonePreview ? 1 : 0;
+    for (var j=1;j<=4;j++){ stState['k'+j] = keep['k'+j] ? 1 : 0; }
+  }
+
+  // 注意：这里**不**挂 beforeunload —— scheduleSave 的 500ms 防抖已覆盖所有变更路径，
+  // 而挂了它之后，每次 reload 都会把"当前内存状态"写回 localStorage，
+  // 会把"想清空重来"的场景抵消掉（截图脚本就因此清不干净）。
+  // 代价是：改完设置 500ms 内直接关页会丢那一下，原型可接受。
 
   function renderSettings(page){
     var S = SETTINGS[page];
@@ -2044,6 +2162,7 @@
     stState.grid    = layout.gridOn      ? 1 : 0;
     stState.storage = layout.storageChip ? 1 : 0;
     stState.level   = layout.levelOn     ? 1 : 0;
+    stState.tone    = layout.tonePreview ? 1 : 0;
     stStack = ['main'];
     renderSettings('main');
     $('settings').classList.add('on');
@@ -2075,9 +2194,14 @@
         toast(now ? '已显示剩余存储提示' : '已隐藏剩余存储提示'); return; }
       if (k === 'level'){ layout.levelOn = !!now; applyLayout();
         toast(now ? '水平指示器已开（原型读不到陀螺仪，真机由 CoreMotion 驱动）' : '水平指示器已关'); return; }
+      if (k === 'tone'){ layout.tonePreview = !!now; applyLayout(); renderPreview();
+        toast(now ? '影调预览已开：取景器实时叠上风格与滤镜' : '影调预览已关：取景器显示原片，成片照旧'); return; }
 
       /* ② 只存状态：这些要么是 P2 硬件、要么超出原型范围。
-         原型上硬做出可见效果反而误导，所以只记开关 + 说明原因。 */
+         原型上硬做出可见效果反而误导，所以只记开关 + 说明原因。
+         「保留设置」的 k*、「简易模式保留项」的 sm-* 也走这里；
+         sm-* 会直接改拍摄页布局，所以要先 applyLayout() 让隐藏类生效（里面也会落盘）。 */
+      applyLayout();
       var rowEl = sw.closest('.st-row');
       var lab = rowEl ? rowEl.querySelector('.st-label').textContent : k;
       toast('「' + lab + '」' + (now ? '已开启' : '已关闭') + ' · 真机才生效，原型只记录开关状态');
@@ -2101,6 +2225,7 @@
       if (key === 'burn'){ stStack.push('burn'); renderSettings('burn'); return; }
       if (key === 'stab'){ openSheet(['关闭','标准','电影级','极致'], 'stab'); return; }
       if (key === 'keep'){ stStack.push('keep'); renderSettings('keep'); return; }
+      if (key === 'simplemode'){ stStack.push('simplemode'); renderSettings('simplemode'); return; }
       toast('「' + row.querySelector('.st-label').textContent + '」的二级页面还在排期');
       return;
     }
@@ -2124,7 +2249,7 @@
     var item = t.closest('[data-opt]');
     if (item && sheetCtx){
       var v = item.getAttribute('data-opt');
-      if (sheetCtx.key === 'stab'){ stStab = v; }
+      if (sheetCtx.key === 'stab'){ stStab = v; scheduleSave(); }
       toast('已选择：' + v);
       $('stSheet').classList.remove('on');
       if (stStack[stStack.length - 1] === 'main') renderSettings('main');
@@ -2169,9 +2294,16 @@
     applyLayout();
   });
 
-  // 顶栏副行：影调预览 / 剩余存储
+  // 顶栏副行「影调预览」：真开关 —— 取景器是否实时叠上"影调"（风格 + 滤镜）。
+  // 原片/成片的取景切换，不影响会保存成什么（那是「烧录模式」管的事）。
   $('btnTone').addEventListener('click', function(){
-    toast('影调预览：把风格 / 滤镜实时叠到取景画面上（就是当前这套渲染链）');
+    layout.tonePreview = !layout.tonePreview;
+    stState.tone = layout.tonePreview ? 1 : 0;
+    applyLayout();
+    renderPreview();
+    toast(layout.tonePreview
+      ? '影调预览已开：取景器实时叠上风格与滤镜'
+      : '影调预览已关：取景器显示原片 · 风格与滤镜仍生效，成片照旧');
   });
   $('chipStorage').addEventListener('click', function(){
     toast('剩余可用存储 31 GB（原型占位，真机读 DeviceStorage）');
@@ -2501,6 +2633,7 @@
     var ek = $('evKnob');
     if (ek){ ek.style.marginLeft = '-8px'; }
 
+    loadState();      // 先恢复 localStorage 里的设置与拍摄现场，再据此构建界面
     buildLevels();
     buildModeTabs();
     buildFocal();

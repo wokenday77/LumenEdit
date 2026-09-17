@@ -25,6 +25,9 @@ async page => {
   // 先重载，回到默认 layout（参数排展开、圆盘关闭）。
   // 否则上一次跑完留在"圆盘已打开"的状态，这里再点一下「对焦」反而会把它关掉。
   await page.reload({ waitUntil: 'load' });
+  // 清掉上次运行留下的 localStorage，保证本测从零开始（否则持久化检查会被旧数据干扰）
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(600);
 
   // ---- 常态 ----
@@ -263,8 +266,65 @@ async page => {
     };
   });
 
+  // ---- 09 影调预览：关掉 → 取景器显示原片（缩略图仍是成片） ----
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const toneOnGrade = await page.evaluate(() => document.getElementById('grade').style.filter);
+  await page.click('#btnTone');
+  await page.waitForTimeout(500);
+  const toneOffGrade = await page.evaluate(() => document.getElementById('grade').style.filter);
+  await page.locator('.phone').screenshot({ path: OUT + '09-tone-off.png' });
+  report.影调预览 = {
+    开时取景器grade过滤: toneOnGrade,
+    关时取景器grade过滤: toneOffGrade,
+    关时chip仍高亮: await page.evaluate(() => document.getElementById('btnTone').classList.contains('accent'))
+  };
+
+  // ---- 10 简易模式保留项：三项全关 → 只剩取景器 + 快门 ----
+  await page.click('#btnTone');                    // 影调预览开回去，免得污染持久化检查
+  await page.waitForTimeout(250);
+  await page.click('#iconSettings');
+  await page.waitForTimeout(400);
+  await page.click('[data-sw="simple"]');          // 开简易模式
+  await page.waitForTimeout(250);
+  await page.click('.st-row[data-go="simplemode"]');
+  await page.waitForTimeout(300);
+  for (const k of ['sm-thumb', 'sm-ss', 'sm-ev']) {
+    await page.click('[data-sw="' + k + '"]');
+    await page.waitForTimeout(150);
+  }
+  await page.click('.st-back');                    // 回设置主页
+  await page.waitForTimeout(200);
+  await page.click('.st-back');                    // 关设置页，回拍摄页
+  await page.waitForTimeout(600);
+  await page.locator('.phone').screenshot({ path: OUT + '10-simple-bare.png' });
+  report.简易模式保留项 = await page.evaluate(() => {
+    const vis = (el) => (el ? getComputedStyle(el).display !== 'none' : null);
+    const h = (el) => (el ? Math.round(el.getBoundingClientRect().height) : null);
+    return {
+      screen的class: document.getElementById('screen').className,
+      缩略图可见: vis(document.getElementById('thumb')),
+      场景条高px: h(document.querySelector('.row-scenestyle')),
+      EV条高px: h(document.querySelector('.row-ev'))
+    };
+  });
+
+  // ---- 11 持久化：重载后上面改的状态还在（简易模式 + 三项全关） ----
+  await page.waitForTimeout(600);                  // 等防抖落盘
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(800);
+  report.持久化 = await page.evaluate(() => {
+    return {
+      重载后screen的class: document.getElementById('screen').className,
+      settings已写入: localStorage.getItem('lumenedit:settings') !== null,
+      keep已写入: localStorage.getItem('lumenedit:keep') !== null,
+      shoot已写入: localStorage.getItem('lumenedit:shoot') !== null
+    };
+  });
+
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
-                 '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect'];
+                 '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
+                 '09-tone-off', '10-simple-bare'];
   if (missing.length) report.量不到 = missing;
 
   return JSON.stringify(report, null, 2);
