@@ -337,6 +337,50 @@ if (!themeFile || !modeSelFile || !topBarFile) {
   }
 }
 
+/* ---------- 6. 状态引用完整性 ---------- */
+// 为什么要这条：2-5b 的一次编辑本意是**新增** `isZoomOn`，却把 `focal` 那一行**替换**掉了，
+// 于是 `focalTapped` 与 `CameraView` 里的绑定全部失效 —— 括号配平、占位符检查全都看不出来，
+// 只能等 CI 编译报错（整整一轮 Mac 往返）。这类"删了状态但引用还在"的回归，
+// 用一条"引用必须在对应状态类里存在"的静态检查就能在 push 前拦住。
+console.log('\n[6] 状态引用完整性');
+
+const stateOwners = {
+  viewModel: 'CameraViewModel.swift',
+  env: 'AppEnvironment.swift'
+};
+
+for (const [prefix, ownerName] of Object.entries(stateOwners)) {
+  const owner = files.find(f => path.basename(f) === ownerName);
+  if (!owner) {
+    bad('找不到状态类 ' + ownerName + '（改名了？自检需要同步）');
+    continue;
+  }
+  const ownerSrc = fs.readFileSync(owner, 'utf8');
+  const re = new RegExp('\\b' + prefix + '\\.(\\w+)', 'g');
+  const missing = new Map();
+
+  for (const file of files) {
+    const src = fs.readFileSync(file, 'utf8');
+    let m;
+    while ((m = re.exec(src))) {
+      const member = m[1];
+      if (!new RegExp('\\b' + member + '\\b').test(ownerSrc)) {
+        if (!missing.has(member)) missing.set(member, new Set());
+        missing.get(member).add(path.relative(root, file));
+      }
+    }
+  }
+
+  if (missing.size) {
+    for (const [member, where] of missing) {
+      bad('引用了 ' + prefix + '.' + member + '，但 ' + ownerName + ' 里没有它（引用处：'
+        + [...where].join(' / ') + '）');
+    }
+  } else {
+    ok(prefix + '.* 的引用都能在 ' + ownerName + ' 里找到');
+  }
+}
+
 /* ---------- 结论 ---------- */
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));
 flush();

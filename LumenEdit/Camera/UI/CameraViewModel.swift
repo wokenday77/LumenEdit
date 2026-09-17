@@ -21,6 +21,13 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var mode: CaptureSessionMode = .photo
     @Published private(set) var isSaving = false
 
+    /// 当前选中的焦段档位（2-3 焦段条的选中态；⤢ 放大态下它浮进取景器卡片内底边）。
+    ///
+    /// **不落盘**：原型的「保留设置」只管 场景 / 风格 / 滤镜 / EV 四项，焦段不在其中。
+    /// ⚠️ 这一行在 2-5b 的编辑里被误删过（`isZoomOn` 那次编辑本意是**新增**，却替换掉了它），
+    /// 导致 `focalTapped` 与 `CameraView` 里的绑定全部失效、CI 编译报错。别再删。
+    @Published private(set) var focal: FocalPreset = FocalCatalog.defaultFocal
+
     /// ⤢ 放大拍摄布局是否开启（2-5b）。
     ///
     /// 开启后：取景器卡片化、焦段条浮进卡片内底边、参数排与图标行让位、
