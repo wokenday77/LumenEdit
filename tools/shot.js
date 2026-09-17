@@ -445,22 +445,168 @@ async page => {
       焦段选中: onFocal,
       画幅比: document.querySelector('#fnRatio .fn-ic').textContent,
       遮幅黑边: document.getElementById('ratioMask').style.getPropertyValue('--rm-h'),
-      EV: document.getElementById('valEV').textContent,
-      ISO: document.getElementById('valISO').textContent,
-      快门: document.getElementById('valShutter').textContent,
-      白平衡: document.getElementById('valWB').textContent,
+      EV: document.getElementById('evNum').textContent,
       圆盘值: document.querySelector('.fd-val') ? document.querySelector('.fd-val').textContent : '(未开)',
       闪光灯开: document.getElementById('fnFlash').classList.contains('on'),
       倒计时: document.querySelector('#fnTimer .fn-ic').textContent,
       toast: document.querySelector('.toast').textContent
     };
   });
+  // 导入 × 刻度条的整合证据：点白平衡条 —— 导入过 5600K，应自动是「手动 5600K」（auto 被切掉）
+  await page.click('#iconWB');
+  await page.waitForTimeout(400);
+  report.参数导入.白平衡条 = await page.evaluate(() => ({
+    气泡: document.getElementById('spBubble').textContent,
+    手动态: document.getElementById('screen').classList.contains('strip-manual')
+  }));
+  await page.click('#iconWB');     // 收回，免得影响后续步骤
+  await page.waitForTimeout(300);
+
+  // ---- 16 参数排改版：三条刻度条 + EV 圆盘（23/24/25/26）----
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  await page.click('#iconISO');
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '23-strip-iso.png' });
+  await page.click('#iconShutter');
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '24-strip-shutter.png' });
+  await page.click('#iconWB');
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '25-strip-wb.png' });
+  await page.click('#iconEV');
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '26-ev-dial.png' });
+
+  // ---- 17 同一条的自动/手动 + 拖动吸附实测（27a/27b）----
+  // EV 盘现在是模态（图标行整条被收起），先点取景器空白处把它收掉，再点图标行
+  await page.mouse.click(186, 300);
+  await page.waitForTimeout(400);
+  await page.click('#iconISO');                 // ISO 条打开
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '27a-auto.png' });
+  const autoBubble = await page.evaluate(() => document.getElementById('spBubble').textContent);
+  await page.click('#spSwitch');                // 切手动
+  await page.waitForTimeout(400);
+  const clip = await page.locator('#spClip').boundingBox();
+  const ccx = clip.x + clip.width / 2, ccy = clip.y + clip.height / 2;
+  await page.mouse.move(ccx, ccy);
+  await page.mouse.down();
+  await page.mouse.move(ccx - 150, ccy, { steps: 10 });   // 往左拖 = 值变大
+  const during = await page.evaluate(() => document.getElementById('spBubble').textContent);
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  await page.locator('.phone').screenshot({ path: OUT + '27b-manual.png' });
+  report.参数排 = {
+    行高: await page.evaluate(() => getComputedStyle(document.querySelector('.row-params')).height),
+    当前条: await page.evaluate(() => document.getElementById('spScale').dataset.strip || ''),
+    自动态气泡: autoBubble,
+    拖动中气泡: during,
+    松手吸附后: await page.evaluate(() => document.getElementById('spBubble').textContent),
+    ISO落盘: await page.evaluate(() => (JSON.parse(localStorage.getItem('cam_shoot_v1') || '{}').cal || {}).iso || '(键名不同，看气泡)')
+  };
+
+  // ---- 18 圆盘镜像（刻度动指针不动 + 两盘**反向镜像**）+ 快门条反转（28/29/31）----
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  await page.click('#btnFocusHint');                 // 对焦盘
+  await page.waitForTimeout(600);
+  await page.locator('.phone').screenshot({ path: OUT + '28-focus-new.png' });
+  const dialProbe = () => page.evaluate(() => {
+    const scr = document.getElementById('screen').getBoundingClientRect();
+    const box = (id) => {
+      const b = document.getElementById(id).getBoundingClientRect();
+      return [Math.round(b.left - scr.left), Math.round(b.top - scr.top), Math.round(b.width)];
+    };
+    const ctr = (id) => {                       // 圆心 X（屏内坐标，1 位小数 —— 守恒式要精确到 0.1）
+      const b = document.getElementById(id).getBoundingClientRect();
+      return Math.round((b.left + b.width / 2 - scr.left) * 10) / 10;
+    };
+    return {
+      盘: box('focusDial'), 圆心X: ctr('focusDial'),
+      数值框左缘: Math.round(document.getElementById('fdVal').getBoundingClientRect().left - scr.left),
+      环旋转: document.getElementById('fdRing').getAttribute('transform'),
+      指针: document.getElementById('fdPointerG').getAttribute('transform'),
+      值: document.getElementById('fdVal').textContent
+    };
+  });
+  const focusRect = await dialProbe();
+  // 对焦盘是模态（图标行被收起）：点取景器把它收掉，再点 EV 图标
+  await page.mouse.click(186, 300);
+  await page.waitForTimeout(400);
+  await page.click('#iconEV');                       // EV 盘（应自动关掉对焦盘那一侧）
+  await page.waitForTimeout(600);
+  await page.locator('.phone').screenshot({ path: OUT + '29-ev-mirrored.png' });
+  const evRect = await page.evaluate(() => {
+    const scr = document.getElementById('screen').getBoundingClientRect();
+    const b = document.getElementById('evDial').getBoundingClientRect();
+    const v = document.getElementById('evVal').getBoundingClientRect();
+    return {
+      盘: [Math.round(b.left - scr.left), Math.round(b.top - scr.top), Math.round(b.width)],
+      圆心X: Math.round((b.left + b.width / 2 - scr.left) * 10) / 10,
+      数值框右缘: Math.round(v.right - scr.left),
+      环旋转: document.getElementById('evRing').getAttribute('transform'),
+      指针: document.getElementById('evPointerG').getAttribute('transform'),
+      值: document.getElementById('evVal').textContent,
+      对焦盘已关: !document.getElementById('screen').classList.contains('dial-on'),
+      底部栈已收: getComputedStyle(document.getElementById('bottomStack')).display === 'none'
+    };
+  });
+  /* 镜像守恒（两条，任何一边漂了都报红）：
+       ① 两盘圆心 X 之和 = 屏宽 372（83.1 + 288.9）—— 圆心镜像；
+       ② 对焦盘数值框左缘 214.1 + EV 盘数值框右缘 157.9 = 372 —— 数值框镜像。 */
+  const cSum = Math.round((focusRect.圆心X + evRect.圆心X) * 10) / 10;
+  const bSum = focusRect.数值框左缘 + evRect.数值框右缘;
+  report.圆盘镜像 = {
+    对焦盘: focusRect, EV盘: evRect,
+    圆心守恒: focusRect.圆心X + ' + ' + evRect.圆心X + ' = ' + cSum + '（应 = 372）',
+    数值框守恒: focusRect.数值框左缘 + ' + ' + evRect.数值框右缘 + ' = ' + bSum + '（应 = 372）',
+    守恒通过: (Math.abs(cSum - 372) < 0.3) && (Math.abs(bSum - 372) <= 1)
+  };
+
+  /* EV 盘拖拽映射（镜像）现场验证：0 在正左、−3 在正下、+3 在正上 —— 三个基准点各拖一次看读数。
+     这是"角度映射反向"最直接的证据：截图只能看出版式镜像，手感对不对必须真拖。 */
+  const evC = await page.evaluate(() => {
+    const b = document.getElementById('evDial').getBoundingClientRect();
+    return { cx: b.left + b.width / 2, cy: b.top + b.height / 2, r: b.width / 2 };
+  });
+  const evAt = async (dx, dy) => {
+    await page.mouse.move(evC.cx + dx, evC.cy + dy);
+    await page.mouse.down();
+    await page.waitForTimeout(120);
+    const v = await page.evaluate(() => document.getElementById('evVal').textContent);
+    await page.mouse.up();
+    return v;
+  };
+  const r82 = evC.r * 0.82;
+  report.EV盘拖拽 = {
+    正下: await evAt(0, r82),        // 期望 −3.0 EV
+    正左: await evAt(-r82, 0),       // 期望 +0.0 EV（镜像后 0 点挪到正左）
+    正上: await evAt(0, -r82),       // 期望 +3.0 EV
+    点框归零: await (async () => {    // 收尾：点数值框归零（顺带验证归零入口 + 别把 +3EV 留给后面的截图）
+      await page.click('#evVal');
+      await page.waitForTimeout(200);
+      return page.evaluate(() => document.getElementById('evVal').textContent);
+    })()
+  };
+
+  // 同样是模态：先点取景器把 EV 盘收掉，再点图标行开快门条
+  await page.mouse.click(186, 300);
+  await page.waitForTimeout(400);
+  await page.click('#iconShutter');                  // 快门条（新顺序）
+  await page.waitForTimeout(500);
+  await page.locator('.phone').screenshot({ path: OUT + '31-shutter-reversed.png' });
+  report.快门条 = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#spScale .sp-num')).map((n) => n.textContent));
 
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
                  '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
                  '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu',
                  '18-zoom-normal', '19-zoom-on',
-                 '20-import-entry', '21-import-editor', '22-import-applied'];
+                 '20-import-entry', '21-import-editor', '22-import-applied',
+                 '28-focus-new', '29-ev-mirrored', '31-shutter-reversed'];
   if (missing.length) report.量不到 = missing;
 
   return JSON.stringify(report, null, 2);

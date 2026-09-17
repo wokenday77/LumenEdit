@@ -210,8 +210,9 @@ if (styleMatch) {
 
   const H_SAFE      = pick('.row-safe');
   const H_SHUTTER   = pick('.row-shutter');
-  const H_PARAMS_ON = pick('.row-params');
-  const H_PARAMS_OFF= pick('.screen.params-closed .row-params');
+  /* 参数排 2026-09-17 改版：常驻图标行 44px；选中参数时展开 140px（44 + 96 刻度条） */
+  const H_PARAMS_ON = pick('.screen.strip-on .row-params');
+  const H_PARAMS_OFF= pick('.row-params');
   const H_SS_OFF    = pick('.row-scenestyle');
   const H_SS_ON     = pick('.screen.ss-on .row-scenestyle');
   const H_FILTER_ON = pick('.screen.filter-on .row-filter');
@@ -410,7 +411,9 @@ if (styleMatch) {
     if (badPct >= 50) bad('违规组合竟然也 ≥50%，互斥规则的价值需要重新评估');
   }
 
-  // 互斥规则：三个 setter 必须把另外两个关掉
+  // 互斥规则：展开态 setter 必须把其他几个关掉。
+  // 2026-09-17 参数排改版后：参数排展开态是 state.paramStrip（layout.paramsOpen 与 setParams 已废弃），
+  // EV 圆盘 layout.evOpen 也是互斥的一员。
   if (scriptMatch) {
     const code = scriptMatch[1];
     const body = (name) => {
@@ -419,25 +422,28 @@ if (styleMatch) {
       const j = code.indexOf('\n  }', i);
       return code.slice(i, j);
     };
+    const OTHERS = [
+      ['ssExpanded',     'ssExpanded = false'],
+      ['filterExpanded', 'filterExpanded = false'],
+      ['paramStrip',     'state.paramStrip = null'],
+      ['evOpen',         'layout.evOpen = false']
+    ];
     const rules = [
       ['setSS',     'ssExpanded'],
-      ['setFilter', 'filterExpanded'],
-      ['setParams', 'paramsOpen']
+      ['setFilter', 'filterExpanded']
     ];
     let ruleOK = true;
     rules.forEach(([fn, own]) => {
       const b = body(fn);
       if (!b) { bad('找不到函数 ' + fn); ruleOK = false; return; }
-      ['ssExpanded', 'filterExpanded', 'paramsOpen']
-        .filter(f => f !== own)
-        .forEach(f => {
-          if (b.indexOf(f + ' = false') < 0) {
-            bad(fn + ' 没有把 ' + f + ' 关掉 —— 互斥规则不成立');
-            ruleOK = false;
-          }
-        });
+      OTHERS.filter(([k]) => k !== own).forEach(([k, needle]) => {
+        if (b.indexOf(needle) < 0) {
+          bad(fn + ' 没有把 ' + k + ' 关掉 —— 互斥规则不成立');
+          ruleOK = false;
+        }
+      });
     });
-    if (ruleOK) ok('互斥规则成立：展开任一浮层都会关掉另外两个');
+    if (ruleOK) ok('互斥规则成立：展开场景/风格或滤镜条时，其他展开态（含刻度条 / EV 圆盘）全部关掉');
   }
 }
 
@@ -561,12 +567,53 @@ if (scriptMatch) {
   const prRow    = /k:'preset'[^}]*label:'参数导入'/.test(html);
   const prEditor = /id="prText"/.test(html) && /id="prApply"/.test(html) && /id="prReset"/.test(html);
   const prAlias  = (html.match(/^\s{4}(iso|shutter|ev|wb|tint|focus|focal|ratio|flash|timer|scene|style|filter):\s+\[/gm) || []).length;
-  const prStops  = /var ISO_STOPS = \[/.test(html) && /SHUTTER_VAL/.test(html);
+  const prStops  = /var ISO_STRIP = \[/.test(html) && /SHUTTER_VAL/.test(html);
   if (!prRow || !prEditor || prAlias < 12 || !prStops) {
     bad('参数导入不完整：设置页入口=' + prRow + '，编辑器三件套=' + prEditor
       + '，别名表键数=' + prAlias + '/12，档位表=' + prStops);
   } else {
     ok('参数导入齐备：设置页入口 + 编辑器（示例/导入/还原）+ 别名表 ' + prAlias + ' 键 + ISO/快门档位表');
+  }
+
+  // 参数排改版（2026-09-17 · 对标飓风相机）：三条刻度条 + EV 圆盘；
+  // 旧四列 .pcol 必须彻底删除（不留死代码 —— 这是用户明确要求的）。
+  const spDom    = /id="spScale"/.test(html) && /id="spClip"/.test(html)
+                && /id="spSwitch"/.test(html) && /id="spBubble"/.test(html);
+  const spThree  = /iso:\s*\{[\s\S]*?shutter:\s*\{[\s\S]*?wb:\s*\{/.test(html);
+  const spShared = /auto:\s*\{[^}]*wb:true[^}]*isoShutter:true/.test(html);
+  const pcolGone = !/class="pcol/.test(html) && !/\.pcol\{/.test(html) && !/\.pcol-/.test(html);
+
+  // 两盘共用一套圆盘组件（2026-09-17 定稿）：DIALS 表 + 单份 build/render/drag；
+  // **几何反向镜像**：EV 盘圆心 = calc(屏宽 − --fd-center-x)（不许硬编码 288.9px）、
+  // 数值框换到盘左（right = 50% + 半径 + 8px）、指针 3 点↔9 点由 DIALS.mirror 分支给出；
+  // 指针 3 点 / 9 点由 DIALS.mirror 分支给出 —— "刻度动、指针不动"的结构保证。
+  const dialShared = /var DIALS = \{/.test(html)
+                  && /function dialBuild\(/.test(html) && /function dialRender\(/.test(html)
+                  && /function dialFromPoint\(/.test(html);
+  // EV 盘圆心必须是**镜像式**：calc(372px − --fd-center-x) —— 对焦盘中线以后要挪，EV 跟着走；
+  // 同时守住 288.9px 不许硬编码（镜像关系的唯一真值在两侧圆心之和 = 372，实测里也量）。
+  const evMirror   = /\.ev-wrap\{[^}]*left:calc\(372px - var\(--fd-center-x\)\)/.test(html)
+                  && /\.ev-val\{[^}]*right:calc\(50% \+ var\(--fd-size\) \/ 2 \+ 8px\)/.test(html)
+                  && !/288\.9px/.test(html);
+  // mirror 参数 + 两个分支函数：角度映射 180±180v、指针角 270/90、环旋转 = 指针角 − 角度映射
+  const dialMirror = /mirror:false/.test(html) && /mirror:true/.test(html)
+                  && /cfg\.mirror \? 180 \+ v \* 180/.test(html)
+                  && /cfg\.mirror \? 270 : 90/.test(html)
+                  && /fdPointerDeg\(cfg\) - fdAngle\(cfg, v\)/.test(html);
+  const ringFixed  = /ring:'fdRing'/.test(html) && /ring:'evRing'/.test(html);
+  const evDial     = /id="evDial"/.test(html) && /id="evVal"/.test(html);
+
+  if (!spDom || !spThree || !spShared || !evDial || !pcolGone
+      || !dialShared || !ringFixed || !evMirror || !dialMirror) {
+    bad('参数排/圆盘改版不完整：刻度条 DOM=' + spDom + '，三条数据=' + spThree
+      + '，ISO/快门共用状态=' + spShared + '，EV 盘元素=' + evDial
+      + '，旧 .pcol 已删=' + pcolGone + '，两盘共用组件=' + dialShared
+      + '，EV 镜像几何=' + evMirror + '（圆心式 / 数值框盘左 / 无 288.9 硬编码）'
+      + '，mirror 分支=' + dialMirror + '，两盘 ring id=' + ringFixed);
+  } else {
+    ok('参数排齐备：三条刻度条（固定指针 + 气泡 + 自动/手动）'
+      + ' · 两个圆盘共用一套组件、互为反向镜像（EV 圆心 = 屏宽 − --fd-center-x，'
+      + '数值框盘左、指针 9 点、弧左半圈）· 旧四列已彻底删除');
   }
 }
 

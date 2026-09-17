@@ -34,7 +34,8 @@
        提到 :root 是为了让自检脚本能"从 CSS 真读数值"，而不是在脚本里再抄一份数字。
        改这里，圆盘和自检规则会一起跟着变。 */
     --fd-size:246px;      /* 圆盘直径：246/372 = 66.1%（参考图实测 75%；246 是"开关行不被切"的上限） */
-    --fd-center-x:83.1px; /* 圆心 X = 底部图标行第 2 项「对焦」按钮中心的 X（浏览器实测） */
+    --fd-center-x:83.1px; /* 圆心 X = 底部图标行第 2 项「对焦」按钮中心的 X（浏览器实测）。
+                             EV 盘圆心 = 屏宽 372 − 本值（反向镜像，见 .ev-wrap） */
     --fd-center-y:662px;  /* 圆心 Y = 同一个按钮中心的 Y（浏览器实测，屏高 80.1%）
                              2026-09-17 定稿：圆心 X + Y 一起钉在「对焦」按钮上 —— 圆盘是
                              "以按钮为中心展开"，不是"贴屏幕底往上排"。上下只调这一个值。
@@ -380,9 +381,13 @@
   .screen.ss-on .ss-collapsed{display:none;}
   .ss-inner{padding:0 0 0;}
 
-  /* 参数排：平铺 104 / 收起 44 */
-  .row-params{height:104px;}
-  .screen.params-closed .row-params{height:44px;}
+  /* 参数排（2026-09-17 改版 · 对标飓风相机）：常驻图标行 44px；
+     选中 ISO / 快门 / 白平衡 时展开 140px（44 + 96 刻度条区）。
+     两个子块在 DOM 里是「刻度条在前、图标行在后」，用 order 把图标行摆到上面 —— 不改 DOM 顺序。 */
+  .row-params{height:44px;display:flex;flex-direction:column;}
+  .row-params .params-closed-bar{order:1;}
+  .row-params .strip-panel{order:2;}
+  .screen.strip-on .row-params{height:140px;}
 
   /* 简易模式下的 EV 单条横滑：平时高度 0 */
   .row-ev{height:0;opacity:0;pointer-events:none;}
@@ -498,46 +503,67 @@
   }
   .filter-card.on .filter-name{color:var(--txt);font-weight:600;}
 
-  /* ---------- 参数排：四列竖向滑块（形态统一，不用圆环） ---------- */
-  .params-open{height:104px;display:flex;align-items:stretch;padding:6px 10px 4px;}
-  .pcol{
-    flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;
-    min-width:0;
+  /* ---------- 刻度条区（参数排展开态 · 对标飓风相机）----------
+     三条刻度条（ISO / 快门 / 白平衡）一次只显示一条，由底部图标行切换。
+     指针固定在刻度区中央不动，刻度条左右滑动；气泡显示当前档位；右端是自动/手动开关。 */
+  .strip-panel{
+    position:relative;height:0;opacity:0;pointer-events:none;overflow:hidden;
+    transition:height .3s cubic-bezier(.22,.9,.3,1),opacity .22s ease;
   }
-  .pcol-label{
-    height:13px;font-size:10.5px;color:var(--txt-3);display:flex;align-items:center;gap:3px;
-    white-space:nowrap;
+  .screen.strip-on .strip-panel{
+    height:96px;opacity:1;pointer-events:auto;
+    /* 一层柔和的暗底：刻度读得清（参考图那块也是压在深色底上的），但不做成一整块实心面板 */
+    background:linear-gradient(180deg, rgba(10,12,15,0) 0%, rgba(10,12,15,.5) 45%, rgba(10,12,15,.72) 100%);
   }
-  .pcol.disabled .pcol-label{opacity:.62;}
-  .pcol-slider{
-    position:relative;flex:1 1 auto;width:40px;display:flex;align-items:center;justify-content:center;
+  /* 刻度可视窗口：两侧渐隐（右侧让出 64px 给开关） */
+  .sp-clip{
+    position:absolute;left:0;right:64px;top:0;bottom:0;overflow:hidden;
     cursor:grab;touch-action:none;
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 40px,#000 calc(100% - 40px),transparent 100%);
+            mask-image:linear-gradient(90deg,transparent 0,#000 40px,#000 calc(100% - 40px),transparent 100%);
   }
-  .pcol.disabled .pcol-slider{cursor:not-allowed;}
-  .pcol-track{
-    position:absolute;left:50%;margin-left:-1.5px;top:2px;bottom:2px;
-    width:3px;border-radius:2px;background:rgba(255,255,255,.16);
+  .screen.strip-auto .sp-clip{cursor:default;}
+  .sp-scale{position:absolute;left:0;top:0;bottom:0;will-change:transform;}
+  .sp-tick{position:absolute;bottom:20px;width:1.5px;border-radius:1px;background:rgba(255,255,255,.34);height:10px;}
+  .sp-tick.mid{height:15px;background:rgba(255,255,255,.48);}
+  .sp-tick.major{height:22px;background:rgba(255,255,255,.82);}
+  .sp-tick.preset{height:22px;background:rgba(242,175,60,.85);}
+  .sp-num{
+    position:absolute;bottom:2px;transform:translateX(-50%);
+    font-size:10.5px;color:rgba(255,255,255,.62);white-space:nowrap;
+    font-variant-numeric:tabular-nums;
   }
-  .pcol-fill{
-    position:absolute;left:50%;margin-left:-1.5px;width:3px;
-    border-radius:2px;background:var(--accent);
+  .screen.strip-auto .sp-num{color:rgba(255,255,255,.34);}
+  /* 中心固定的指针：绿色三角朝下 + 竖直基准线 */
+  .sp-pointer{
+    position:absolute;left:calc((100% - 64px) / 2);top:0;bottom:0;width:0;pointer-events:none;
   }
-  .pcol.disabled .pcol-fill{background:rgba(255,255,255,.3);}
-  .pcol-knob{
-    position:absolute;left:50%;margin-left:-7.5px;
-    width:15px;height:15px;border-radius:50%;background:#fff;
-    box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;
+  .sp-pointer::before{
+    content:"";position:absolute;top:24px;left:-6px;
+    border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:8px solid #3ddc84;
   }
-  .pcol.disabled .pcol-knob{background:rgba(255,255,255,.55);}
-  .pcol-value{
-    height:15px;font-size:11.5px;font-weight:700;color:var(--accent);
-    font-variant-numeric:tabular-nums;white-space:nowrap;
+  .sp-pointer::after{
+    content:"";position:absolute;top:32px;bottom:6px;left:-0.75px;width:1.5px;
+    background:rgba(61,220,132,.8);border-radius:1px;
   }
-  .pcol.disabled .pcol-value{color:var(--txt-3);font-weight:500;}
-  .pcol-center-dot{
-    position:absolute;left:50%;transform:translateX(-50%);width:9px;height:1px;
-    background:var(--stroke-2);
+  .screen.strip-auto .sp-pointer::before{border-top-color:rgba(255,255,255,.28);}
+  .screen.strip-auto .sp-pointer::after{background:rgba(255,255,255,.18);}
+  /* 数值气泡：居中、固定在指针正上方（参考图：绿底黑字圆角胶囊） */
+  .sp-bubble{
+    position:absolute;left:calc((100% - 64px) / 2);top:0;transform:translateX(-50%);
+    height:22px;padding:0 10px;border-radius:11px;z-index:2;
+    background:#3ddc84;color:#0d1013;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+    font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;
   }
+  /* 右端：自动 / 手动开关（胶囊 + 圆点，复用 .sw）+ 小字 */
+  .sp-auto{
+    position:absolute;right:8px;top:18px;width:56px;
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+  }
+  /* 开关是状态指示（自动 = 绿），标签「自动」只是说明文字，不跟着变色 */
+  .sp-auto .t{font-size:10px;color:var(--txt-2);}
 
   /* ---------- 参数排收起态：底部图标行（严格对标参考图的底部图标排） ----------
      七项：前置 / 对焦 / 白平衡 / 感光 / 快门速度 / 曝光补偿 / 设置
@@ -942,12 +968,7 @@
   .shutter:active{transform:scale(var(--shutter-scale));opacity:1;}
   .shutter:active .core{transform:scale(.8);}
 
-  /* 滑块旋钮：内高光 + 投影，像实体旋钮 */
-  .pcol-knob{
-    box-shadow:0 1px 5px rgba(0,0,0,.55),
-               inset 0 1px 0 rgba(255,255,255,.22),
-               0 0 0 1px rgba(255,255,255,.08);
-  }
+  /* （旧参数排四列的滑块旋钮样式已随 2026-09-17 改版删除 —— 那块 UI 整个不存在了） */
 
   /* 选中态高亮：轻微外发光，"当前选中"一眼可辨 */
   .mode-tab.on{text-shadow:0 0 10px rgba(255,255,255,.4);}
@@ -973,10 +994,53 @@
   .caption b{color:rgba(255,255,255,.62);font-weight:600;}
   @media (max-width:1180px){ .caption{display:none;} }
 
-  /* ---------- 参数排的两种状态互斥显示 ---------- */
-  .params-closed-bar{display:none;}
-  .screen.params-closed .params-open{display:none;}
-  .screen.params-closed .params-closed-bar{display:flex;}
+  /* ---------- EV 圆盘（曝光补偿）：对焦圆盘的**反向镜像** ----------
+     2026-09-17 定稿：组件共用（DIALS.mirror 区分），几何全部反过来 ——
+       圆心 X：对焦 83.1（屏左）→ EV calc(372px − --fd-center-x) = 288.9（屏右）
+       露出：对焦左半出屏（露右半）→ EV **右半出屏**（露左半，同样裁掉 39.9px）
+       数值框：对焦盘右 → EV **盘左**（见下方 .ev-val）
+       指针 3 点 → **9 点**；刻度弧 右半圈 → **左半圈**；角度映射 0 正右 → **0 正左**
+     行为不变：进盘收起底部浮层栈（模态），两个盘互斥（开一个关另一个）。
+     372 = 屏内宽（外壳 390 − 左右各 9）。写成 calc 而不是 288.9 —— 对焦盘中线以后要挪，
+     EV 盘跟着镜像走，不会僵在一个死数上（自检也守着：镜像坐标一律不许硬编码）。 */
+  .ev-wrap{
+    position:absolute;left:calc(372px - var(--fd-center-x));right:auto;width:0;
+    top:calc(var(--fd-center-y) - var(--fd-size) / 2);z-index:9;
+    /* flex-direction:column 是必须的：width:0 的定位盒靠"列方向 + align-items:center"
+       把 246px 的圆盘横向居中在镜像中线那一点上（对焦盘同理）。 */
+    display:none;flex-direction:column;align-items:center;
+  }
+  .screen.ev-on .ev-wrap{display:flex;}
+  /* 与对焦盘同规则：盘打开时底部浮层栈整条收起 */
+  .screen.ev-on .bottom-stack{display:none;}
+  .ev-dial{
+    position:relative;flex:0 0 auto;cursor:grab;touch-action:none;
+    width:var(--fd-size);height:var(--fd-size);border-radius:50%;
+    background:radial-gradient(circle at 50% 45%,
+      rgba(28,31,37,.78) 0%, rgba(16,19,23,.84) 55%, rgba(10,12,15,.88) 100%);
+    box-shadow:0 4px 34px rgba(0,0,0,.5), inset 0 0 0 .5px rgba(255,255,255,.08);
+  }
+  .ev-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;}
+  .ev-hub{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    display:flex;flex-direction:column;align-items:center;gap:7px;
+    color:rgba(255,255,255,.9);pointer-events:none;
+  }
+  .ev-hub .t{font-size:13px;font-weight:600;letter-spacing:.6px;}
+  /* 数值框：**盘左**（对焦盘是盘右）—— right = 中线 + 半径 + 8px，把框的**右边缘**
+     钉在圆盘左缘外 8px、框体向左展开（约 88..158），同样不依赖框自身宽度。 */
+  .ev-val{
+    position:absolute;top:50%;
+    right:calc(50% + var(--fd-size) / 2 + 8px);
+    transform:translateY(-50%);
+    border:1.5px solid #00E08A;border-radius:9px;padding:4px 12px;
+    font-size:16px;font-weight:700;color:#00E08A;background:rgba(13,16,19,.92);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    white-space:nowrap;cursor:pointer;
+  }
+
+  /* ---------- 参数排：图标行常驻（刻度条区由 .strip-on 展开） ---------- */
+  .params-closed-bar{display:flex;}
 
   /* ---------- 纯 CSS 画的挂锁（不依赖字体/emoji） ---------- */
   .lk{width:7px;height:8px;flex:0 0 auto;background:currentColor;opacity:.55;border-radius:1.5px;position:relative;margin-top:2px;}
@@ -1147,6 +1211,20 @@
       </div>
     </div>
 
+    <!-- ===== EV 圆盘（曝光补偿）：对焦圆盘的镜像，点底部「曝光补偿」图标展开。
+         几何复用对焦圆盘（fdPoint / 半径常量 / .fd-* 类），角度映射镜像到左半圈。
+         不是模态：图标行 / 焦段条照常可见，盘只是压在上面（与参考图一致）。 ===== -->
+    <div class="ev-wrap" id="evWrap">
+      <div class="ev-dial" id="evDial">
+        <svg class="ev-svg" id="evTicks" viewBox="0 0 400 400" overflow="visible"></svg>
+        <div class="ev-hub">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M7.6 12h8.8"/></svg>
+          <span class="t">曝光补偿</span>
+        </div>
+        <div class="ev-val" id="evVal" title="点击归零">+0.0 EV</div>
+      </div>
+    </div>
+
     <!-- ===== 底部浮层栈：自下而上堆叠，只遮挡不挤压取景器 ===== -->
     <div class="bottom-stack" id="bottomStack">
 
@@ -1183,43 +1261,15 @@
 
       <!-- 参数排：四列竖向滑块（平铺 104 / 收起 44） -->
       <div class="row row-params">
-        <div class="params-open" id="paramsOpen">
-          <div class="pcol" data-key="ev">
-            <div class="pcol-label">EV</div>
-            <div class="pcol-slider" id="sliderEV">
-              <div class="pcol-track"></div>
-              <div class="pcol-center-dot"></div>
-              <div class="pcol-fill" id="fillEV"></div>
-              <div class="pcol-knob" id="knobEV"></div>
-            </div>
-            <div class="pcol-value" id="valEV">+0.3</div>
+        <div class="strip-panel" id="stripPanel">
+          <div class="sp-bubble" id="spBubble">自动</div>
+          <div class="sp-clip" id="spClip">
+            <div class="sp-scale" id="spScale"></div>
           </div>
-          <div class="pcol disabled" data-key="iso">
-            <div class="pcol-label"><span class="lk"></span>ISO</div>
-            <div class="pcol-slider">
-              <div class="pcol-track"></div>
-              <div class="pcol-fill" style="bottom:38%;height:62%"></div>
-              <div class="pcol-knob" style="top:34%"></div>
-            </div>
-            <div class="pcol-value" id="valISO">自动</div>
-          </div>
-          <div class="pcol disabled" data-key="shutter">
-            <div class="pcol-label"><span class="lk"></span>快门</div>
-            <div class="pcol-slider">
-              <div class="pcol-track"></div>
-              <div class="pcol-fill" style="bottom:44%;height:56%"></div>
-              <div class="pcol-knob" style="top:41%"></div>
-            </div>
-            <div class="pcol-value" id="valShutter">1/125s</div>
-          </div>
-          <div class="pcol disabled" data-key="wb">
-            <div class="pcol-label"><span class="lk"></span>白平衡</div>
-            <div class="pcol-slider">
-              <div class="pcol-track"></div>
-              <div class="pcol-fill" style="bottom:26%;height:50%"></div>
-              <div class="pcol-knob" style="top:24%"></div>
-            </div>
-            <div class="pcol-value" id="valWB">5600K</div>
+          <div class="sp-pointer"></div>
+          <div class="sp-auto">
+            <button class="sw" id="spSwitch" type="button" title="自动 / 手动"></button>
+            <span class="t">自动</span>
           </div>
         </div>
         <div class="params-closed-bar" id="paramsClosed" data-stage="P2">
@@ -1549,6 +1599,10 @@
     /* 参数导入落到"仅记录 + 显示"的硬件字段（真机 P2 由 AVCaptureDevice 接管）：
        iso / shutter / wb / tint。null = 未导入，显示走原有模拟值。 */
     cal: { iso:null, shutter:null, wb:null, tint:0 },
+    /* 参数排（2026-09-17 改版）：当前展开的刻度条 —— 'iso' | 'shutter' | 'wb' | null（会话态）。
+       自动/手动：ISO 与快门**共用一个状态**（AVCaptureDevice 限制：锁了 ISO 就得接管曝光时长）。 */
+    paramStrip: null,
+    auto: { wb:true, isoShutter:true },
     ev:0.33
   };
 
@@ -1563,7 +1617,7 @@
     filterExpanded:false,
     // 2026-09-16 改为默认收起：这样底部 7 图标行是**常驻**的，
     // 「对焦」按钮随时可点（原来默认平铺参数滑块、图标行 display:none，按钮宽高为 0 根本点不到）
-    paramsOpen:false,
+    /* paramsOpen 已随四列参数排一起废弃（2026-09-17）—— 展开态改由 state.paramStrip 表达 */
     hud:false,
     gridOn:true,
     // 与设置页开关一一对应：这几个开关背后是**真功能**，不是只存状态
@@ -1673,8 +1727,11 @@
     paintPreviewInto($('styleThumbInner'));
   }
 
-  var SHUTTER_VAL   = [1/2000,1/1000,1/500,1/250,1/125,1/60,1/30,1/15,1/8,1/4,1/2,1];
-  var SHUTTER_LABEL = ['1/2000','1/1000','1/500','1/250','1/125','1/60','1/30','1/15','1/8','1/4','1/2','1'];
+  /* 快门档位表：**15 档，左慢右快**（1s → 1/12000，2026-09-17 按用户口径）。
+     刻度条按数组顺序从左往右画，所以顺序即方向；标度换算（simulatedShutter / 参数导入吸附）
+     都按"对数距离取最近"，与顺序无关 —— 反转只影响显示方向。 */
+  var SHUTTER_VAL   = [1,1/2,1/4,1/8,1/15,1/30,1/60,1/125,1/250,1/500,1/1000,1/2000,1/4000,1/8000,1/12000];
+  var SHUTTER_LABEL = ['1','1/2','1/4','1/8','1/15','1/30','1/60','1/125','1/250','1/500','1/1000','1/2000','1/4000','1/8000','1/12000'];
 
   function simulatedShutter(ev){
     var target = (1/125) * Math.pow(2, -ev);   // 基准 1/125，每 +1 EV 快门快一倍
@@ -1689,17 +1746,9 @@
   /** 顶栏 EV、参数排四列、收起仪表条、简易模式 EV 条，全部在这里统一刷新 */
   function renderStatus(){
     var evText = (state.ev >= 0 ? '+' : '') + state.ev.toFixed(1);
-    $('valEV').textContent = evText;
-    $('evNum').textContent = evText + ' EV';
-
-    // 快门 / 白平衡 / ISO：参数导入给了值就显示导入值（真机 P2 由 AVCaptureDevice 接管）
-    $('valShutter').textContent = state.cal.shutter ? (state.cal.shutter + 's') : simulatedShutter(state.ev);
-
-    // 白平衡显示当前场景的建议色温（P2 才能手动调，现在是占位）
-    var sc = byId(SCENES, state.scene);
-    if (sc) $('valWB').textContent = state.cal.wb || sc.wb;
-    var isoEl = $('valISO');
-    if (isoEl) isoEl.textContent = state.cal.iso ? ('ISO ' + state.cal.iso) : '自动';
+    $('evNum').textContent = evText + ' EV';      // 简易模式 EV 条的读数
+    // 参数排改版后 ISO / 快门 / 白平衡不再有常驻数值位 ——
+    // 值由刻度条气泡显示（renderStrip），EV 值由圆盘数值框显示（renderEv）。
 
     var t = (state.ev + 2) / 4;          // 0 = 底部，1 = 顶部
     var topPct = (1 - t) * 100;
@@ -1823,10 +1872,24 @@
     s.classList.toggle('ss-on', !layout.simple && layout.ssExpanded);
     var wasFilterOn = s.classList.contains('filter-on');
     s.classList.toggle('filter-on', !layout.simple && layout.filterExpanded);
+    /* 参数排（2026-09-17 改版）：图标行常驻，刻度条区按 state.paramStrip 展开 */
+    s.classList.toggle('strip-on', !layout.simple && !!state.paramStrip);
+    s.classList.toggle('strip-auto', !!state.paramStrip && stripIsAuto(state.paramStrip));
+    s.classList.toggle('strip-manual', !!state.paramStrip && !stripIsAuto(state.paramStrip));
+    s.classList.toggle('ev-on', !!layout.evOpen);
+    var activeIcon = { iso:'iconISO', shutter:'iconShutter', wb:'iconWB' };
+    for (var kk in activeIcon){
+      var ie = $(activeIcon[kk]);
+      if (ie) ie.classList.toggle('active', state.paramStrip === kk);
+    }
+    if ($('iconEV')) $('iconEV').classList.toggle('active', !!layout.evOpen);
+    if (state.paramStrip) renderStrip();
+    if (layout.evOpen) renderEv();
     // 滤镜面板呼出的瞬间重画卡片缩略图 —— 卡是"当前画面 + 该滤镜"的实时预览，
     // 呼出前画面可能已变（换场景/风格/EV 后再呼出）。已开着时不重画，避免横滑位置被重置。
     if (!wasFilterOn && layout.filterExpanded && !layout.simple) buildFilters();
-    s.classList.toggle('params-closed', !layout.simple && !layout.paramsOpen);
+    // 旧的 params-closed（四列参数排时代）已随 2026-09-17 改版废弃：
+    // 图标行常驻，展开与否由 .strip-on 表达。
     s.classList.toggle('hud-on', layout.hud);
     s.classList.toggle('stage-on', layout.stageMark);
     s.classList.toggle('dial-on', layout.dialOpen);
@@ -1873,23 +1936,19 @@
 
   function setSS(on){
     layout.ssExpanded = on;
-    if (on){ layout.filterExpanded = false; layout.paramsOpen = false; }
+    if (on){ layout.filterExpanded = false; state.paramStrip = null; layout.evOpen = false; }
     applyLayout();
   }
   function setFilter(on){
     layout.filterExpanded = on;
-    if (on){ layout.ssExpanded = false; layout.paramsOpen = false; }
-    applyLayout();
-  }
-  function setParams(on){
-    layout.paramsOpen = on;
-    if (on){ layout.ssExpanded = false; layout.filterExpanded = false; }
+    if (on){ layout.ssExpanded = false; state.paramStrip = null; layout.evOpen = false; }
     applyLayout();
   }
   function collapseAll(){
     layout.ssExpanded = false;
     layout.filterExpanded = false;
-    layout.paramsOpen = true;
+    state.paramStrip = null;      // 刻度条区一并收起（等价于旧的"参数排回到图标行"）
+    layout.evOpen = false;
     applyLayout();
   }
 
@@ -1924,7 +1983,7 @@
       ['风格', st ? st.name : '—'],
       ['滤镜', f ? f.name : '无'],
       ['影调预览', layout.tonePreview ? '<span class="hl">开</span>' : '关 · 取景器显示原片'],
-      ['参数排', layout.simple ? '隐藏' : (layout.paramsOpen ? '平铺 104px' : '收起 44px')],
+      ['参数排', layout.simple ? '隐藏' : (state.paramStrip ? '刻度条 140px' : '图标行 44px')],
       ['对焦', focusAuto ? '自动(' + focusVal.toFixed(2) + ')' : '手动(' + focusVal.toFixed(2) + ')'],
       ['浮层', overlay]
     ];
@@ -2186,8 +2245,8 @@
       var r = el.getBoundingClientRect();
       var t = (clientX - r.left) / r.width;
       t = Math.max(0, Math.min(1, t));
-      var v = -2 + t * 4;
-      state.ev = Math.max(-2, Math.min(2, Math.round(v * 3) / 3));
+      var v = -3 + t * 6;      // 简易模式 EV 条：范围随 EV 圆盘一起放宽到 ±3
+      state.ev = Math.max(-3, Math.min(3, Math.round(v * 10) / 10));
       renderPreview();
     }
     el.addEventListener('pointerdown', function(e){
@@ -2220,7 +2279,7 @@
       var r = screenEl.getBoundingClientRect();
       if (e.clientY - r.top < r.height * 0.55) { startY = null; return; }
       var t = e.target;
-      if (t && t.closest && (t.closest('.pcol-slider') || t.closest('.ev-strip') || t.closest('.strip') || t.closest('.focal-strip') || t.closest('.params-closed-bar'))){
+      if (t && t.closest && (t.closest('.sp-clip') || t.closest('.ev-strip') || t.closest('.strip') || t.closest('.focal-strip') || t.closest('.params-closed-bar') || t.closest('.ev-wrap'))){
         startY = null; return;
       }
       startY = e.clientY; startX = e.clientX; startT = Date.now();
@@ -2291,12 +2350,7 @@
      10. 交互绑定
      ========================================================= */
 
-  // EV 归零：原顶栏 EV 胶囊的位置由参数排的数值承担（点数值归零）
-  $('valEV').addEventListener('click', function(){
-    state.ev = 0;
-    renderPreview();
-    toast('曝光补偿已归零');
-  });
+  // EV 归零已移到 EV 圆盘的数值框（#evVal）——旧四列参数排的数值位随改版一并删除
   // 顶栏主行右侧：闪光灯 / 网格（⠿ 的处理器在下方功能面板那段 —— 它现在开的是面板）
   $('btnFlash').addEventListener('click', function(){
     toast('闪光灯：真机走 AVCaptureDevice.torchMode（P2 交付）');
@@ -2477,6 +2531,7 @@
       if (sh.fmt)                             state.fmt = sh.fmt;
       if (sh.fn)                              state.fn = sh.fn;
       if (sh.cal)                             state.cal = sh.cal;
+      if (sh.auto)                            state.auto = sh.auto;
     } catch(e){}
     // 回填 stState，设置页开关才能显示真实状态
     stState.simple  = layout.simple ? 1 : 0;
@@ -2561,8 +2616,7 @@
     style:   ['风格', 'style'],
     filter:  ['滤镜', 'filter']
   };
-  /* ISO 整档（真机 AVCaptureDevice 的合法档位），导入值吸附到最近档 */
-  var ISO_STOPS = [50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1250,1600,2000,2500,3200];
+  /* ISO 档位表已统一到刻度条那份 ISO_STRIP（见参数排那段）—— 这里不再留第二份。 */
 
   function presetKeyOf(word){
     var w = String(word).toLowerCase();
@@ -2657,8 +2711,10 @@
     if (key === 'iso'){
       var iso = parseInt(v, 10);
       if (isNaN(iso)) return null;
-      state.cal.iso = presetSnap(presetClamp(iso, 50, 3200), ISO_STOPS);
-      return 'ISO ' + state.cal.iso + '（显示，真机 P2 生效）';
+      /* 导入 ISO/快门/白平衡 → 对应条**自动切手动**，否则导入值在自动态下不显示 */
+      state.auto.isoShutter = false;
+      state.cal.iso = presetSnap(presetClamp(iso, 50, 12000), ISO_STRIP);
+      return 'ISO ' + state.cal.iso + '（已切手动 · 真机 P2 生效）';
     }
     if (key === 'shutter'){
       var t = v.replace(/s$/i, '');
@@ -2681,8 +2737,9 @@
     if (key === 'wb'){
       var kk = parseInt(v.replace(/[kK]/g, ''), 10);
       if (isNaN(kk)) return null;
-      state.cal.wb = (Math.round(presetClamp(kk, 2500, 8500) / 100) * 100) + 'K';
-      return '白平衡 ' + state.cal.wb + '（显示，真机 P2 生效）';
+      state.auto.wb = false;                         // 导入色温 → 白平衡条切手动
+      state.cal.wb = (Math.round(presetClamp(kk, 2500, 10000) / 100) * 100) + 'K';
+      return '白平衡 ' + state.cal.wb + '（已切手动 · 真机 P2 生效）';
     }
     if (key === 'tint'){
       var ti = parseFloat(v);
@@ -2953,6 +3010,11 @@
     var inFmt   = t && t.closest && (t.closest('#fmtMenu') || t.closest('#fmtChip'));
     if (layout.fnOpen && !inPanel){ layout.fnOpen = false; applyLayout(); }
     if (layout.fmtOpen && !inFmt){ layout.fmtOpen = false; applyLayout(); }
+    // EV 圆盘：点盘外任意处收起（盘自己 + 图标行那颗 EV 图标不算"外面"）
+    if (layout.evOpen && !(t && t.closest && (t.closest('#evWrap') || t.closest('#iconEV')))){
+      layout.evOpen = false;
+      applyLayout();
+    }
   });
 
   // 顶栏副行「影调预览」：真开关 —— 取景器是否实时叠上"影调"（风格 + 滤镜）。
@@ -2979,22 +3041,194 @@
     toggleSS();
   });
 
-  // 底部图标行（对标参考图的底部图标排）：七项各自反馈；只有「曝光补偿」会展开参数滑块
+  // 底部图标行（对标参考图的底部图标排）：七项各自反馈
   $('btnFrontCam').addEventListener('click', function(){
     toast('原型占位：前后镜头切换在真机上重建会话输入（P2 交付）');
+  });
+
+  /* =========================================================
+     刻度条（ISO / 快门 / 白平衡）—— 参数排展开态，对标飓风相机
+       一次只显示一条（底部图标行切换）；指针固定屏幕中央、刻度条左右滑；
+       拖动中气泡显示连续值，松手吸附最近档；自动态锁定 + 气泡显示「自动」。
+       ISO 与快门**共用一个自动状态**（AVCaptureDevice：锁了 ISO 就得接管曝光时长）。
+       数据表只在这里定义一次：渲染 / 拖动 / 吸附 / 参数导入全从它读，不在别处抄第二份。
+     ========================================================= */
+  var ISO_STRIP = [50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1200,1600,2000,2500,3200,4000,5000,6400,8000,10000,12000];
+  var WB_STRIP  = (function(){ var a = []; for (var k=2500;k<=10000;k+=100) a.push(k); return a; })();
+
+  function shutterText(sec){
+    if (sec >= 1) return '1s';
+    return '1/' + Math.round(1 / sec);
+  }
+
+  var STRIPS = {
+    iso: {
+      name:'ISO', slot:46, seed:800, ticks:ISO_STRIP,
+      labelAt:[400,800,1200,1600,3200,6400,12000],
+      label:function(v){ return String(v); },
+      fmt:function(v){ return String(Math.round(v)); },
+      /* 连续值：相邻两档在对数空间插值（1600 与 1200 之间能停在 1573 这种数上） */
+      valAt:function(i){
+        var i0 = Math.floor(i), i1 = Math.min(ISO_STRIP.length - 1, i0 + 1), f = i - i0;
+        return Math.round(ISO_STRIP[i0] * Math.pow(ISO_STRIP[i1] / ISO_STRIP[i0], f));
+      }
+    },
+    shutter: {
+      name:'快门', slot:56, seed:'1/125', ticks:SHUTTER_LABEL,
+      labelAt:SHUTTER_LABEL.slice(),
+      label:function(v){ return v; },
+      fmt:function(v){ return (typeof v === 'string') ? v : shutterText(v); },
+      valAt:function(i){
+        var i0 = Math.floor(i), i1 = Math.min(SHUTTER_VAL.length - 1, i0 + 1), f = i - i0;
+        return SHUTTER_VAL[i0] * Math.pow(SHUTTER_VAL[i1] / SHUTTER_VAL[i0], f);
+      }
+    },
+    wb: {
+      name:'白平衡', slot:26, seed:'5600K', ticks:WB_STRIP,
+      /* 主档每 500K；预设档（白炽灯 3000 / 荧光灯 4000 / 日光 5200 / 阴天 6000 / 阴影 7500）加琥珀标记 */
+      labelAt:(function(){ var a=[]; for (var k=3000;k<=10000;k+=500) a.push(k); return a; })(),
+      preset:[3000,4000,5200,6000,7500],
+      label:function(v){ return v + 'K'; },
+      fmt:function(v){ return Math.round(v) + 'K'; },
+      valAt:function(i){ return Math.round((WB_STRIP[0] + i * 100) / 10) * 10; }
+    }
+  };
+
+  var SP = { pad:30, slot:0, center:0, offset:0, drag:false, x0:0, o0:0 };
+
+  function stripIsAuto(id){
+    return (id === 'wb') ? !!state.auto.wb : !!state.auto.isoShutter;
+  }
+  function stripVal(id){
+    if (id === 'iso')     return state.cal.iso || STRIPS.iso.seed;
+    if (id === 'shutter') return state.cal.shutter || STRIPS.shutter.seed;
+    if (id === 'wb')      return parseInt(state.cal.wb || STRIPS.wb.seed, 10);
+    return 0;
+  }
+  function stripIdxOf(id){
+    var v = stripVal(id);
+    if (id === 'wb')      return (v - WB_STRIP[0]) / 100;
+    if (id === 'shutter'){ var si = SHUTTER_LABEL.indexOf(v); return si < 0 ? 7 : si; }
+    var best = 0, bd = Infinity;
+    ISO_STRIP.forEach(function(t, i){ var d = Math.abs(t - v); if (d < bd){ bd = d; best = i; } });
+    return best;
+  }
+
+  /** 重建刻度（换条或首个渲染时）+ 定位 + 气泡。拖动中 snapped=false 显示连续值。 */
+  function renderStrip(force, idxFloat, snapped){
+    var id = state.paramStrip;
+    if (!id || !$('spScale')) return;
+    var cfg = STRIPS[id], scale = $('spScale'), clip = $('spClip');
+
+    if (force || scale.dataset.strip !== id){
+      scale.dataset.strip = id;
+      var h = '';
+      cfg.ticks.forEach(function(t, i){
+        var cls = 'sp-tick' + (cfg.labelAt.indexOf(t) >= 0 ? ' major' : '')
+                + (cfg.preset && cfg.preset.indexOf(t) >= 0 ? ' preset' : '');
+        h += '<i class="' + cls + '" style="left:' + (SP.pad + i * cfg.slot) + 'px"></i>';
+      });
+      cfg.ticks.forEach(function(t, i){
+        if (cfg.labelAt.indexOf(t) < 0) return;
+        h += '<span class="sp-num" style="left:' + (SP.pad + i * cfg.slot) + 'px">'
+           + cfg.label(t) + '</span>';
+      });
+      scale.innerHTML = h;
+      scale.style.width = (SP.pad * 2 + (cfg.ticks.length - 1) * cfg.slot) + 'px';
+      SP.slot = cfg.slot;
+      SP.center = clip.clientWidth / 2;
+    }
+
+    var idx = (idxFloat === undefined) ? stripIdxOf(id) : idxFloat;
+    idx = Math.max(0, Math.min(cfg.ticks.length - 1, idx));
+    SP.offset = SP.center - SP.pad - idx * SP.slot;
+    scale.style.transform = 'translateX(' + SP.offset.toFixed(1) + 'px)';
+
+    var sw = $('spSwitch');
+    if (sw) sw.classList.toggle('on', stripIsAuto(id));   // 开关 = 状态指示：自动 = 绿
+
+    var bub = $('spBubble');
+    if (!bub) return;
+    if (stripIsAuto(id)){
+      bub.textContent = '自动';
+      return;
+    }
+    bub.textContent = snapped
+      ? cfg.fmt(cfg.ticks[Math.round(idx)])
+      : cfg.fmt(cfg.valAt(idx));
+  }
+
+  /** 松手：吸附最近档 → 写入 state（三个参数的落点都在这） */
+  function stripCommit(){
+    var id = state.paramStrip;
+    if (!id || $('spScale').dataset.strip !== id) return;
+    var cfg = STRIPS[id];
+    var idx = Math.round((SP.center - SP.pad - SP.offset) / SP.slot);
+    idx = Math.max(0, Math.min(cfg.ticks.length - 1, idx));
+    var v = cfg.ticks[idx];
+    if (id === 'iso')     state.cal.iso = v;
+    if (id === 'shutter') state.cal.shutter = v;
+    if (id === 'wb')      state.cal.wb = v + 'K';
+    renderStrip(false, idx, true);
+    scheduleSave();
+  }
+
+  var spClipEl = $('spClip');
+  spClipEl.addEventListener('pointerdown', function(e){
+    if (!state.paramStrip || stripIsAuto(state.paramStrip)) return;   // 自动态不可滑
+    SP.drag = true; SP.x0 = e.clientX; SP.o0 = SP.offset;
+    try { spClipEl.setPointerCapture(e.pointerId); } catch(err){}
+    e.stopPropagation();
+  });
+  spClipEl.addEventListener('pointermove', function(e){
+    if (!SP.drag) return;
+    var cfg = STRIPS[state.paramStrip];
+    var maxOff = SP.center - SP.pad;
+    var minOff = maxOff - (cfg.ticks.length - 1) * SP.slot;
+    SP.offset = Math.max(minOff, Math.min(maxOff, SP.o0 + (e.clientX - SP.x0)));
+    renderStrip(false, (SP.center - SP.pad - SP.offset) / SP.slot, false);
+  });
+  spClipEl.addEventListener('pointerup', function(){ if (SP.drag){ SP.drag = false; stripCommit(); } });
+  spClipEl.addEventListener('pointercancel', function(){ if (SP.drag){ SP.drag = false; stripCommit(); } });
+
+  $('spSwitch').addEventListener('click', function(e){
+    e.stopPropagation();
+    var id = state.paramStrip;
+    if (!id) return;
+    if (id === 'wb'){
+      state.auto.wb = !state.auto.wb;
+      if (!state.auto.wb && !state.cal.wb){
+        state.cal.wb = ((byId(SCENES, state.scene) || {}).wb) || '5600K';
+      }
+      toast(state.auto.wb ? '白平衡：自动（AWB）' : '白平衡：手动 ' + state.cal.wb);
+    } else {
+      state.auto.isoShutter = !state.auto.isoShutter;
+      if (!state.auto.isoShutter){
+        if (!state.cal.iso) state.cal.iso = 800;
+        if (!state.cal.shutter) state.cal.shutter = '1/125';
+      }
+      toast(state.auto.isoShutter
+        ? 'ISO 与快门：自动（AVCaptureDevice 下二者共用一个开关）'
+        : 'ISO 与快门：手动 · ISO ' + state.cal.iso + ' · ' + state.cal.shutter);
+    }
+    applyLayout();
+    scheduleSave();
   });
   /* ---------- 对焦圆盘（对标参考截图）：下半圆刻度 0.0 → ∞ ---------- */
   var focusVal = 0.56;      // 当前值 0 ~ 1（1 视为无穷远）
   var focusAuto = false;    // 自动对焦开关
 
   /* ---------- 第 1 步 · 几何骨架 ----------
-     统一角度约定：**刻度 / 数字 / 高亮段 / 指针 全部只吃 focusAngle() 一个函数**，
+     统一角度约定：**刻度 / 数字 / 高亮段 全部只吃 fdAngle(cfg, v) 一个函数**，
      从结构上消掉"CSS rotate 的 0° 在上、cos/sin 的 0° 在右、混用必错位"这个坑。
 
      CSS 角：0° = 12 点方向，顺时针为正。
-       v=0.0 → 180°（正下）   v=0.5 → 90°（正右）   v=1.0 → 0°（正上）
-     即刻度弧是**右半圈**，与参考图实测一致。 */
-  function focusAngle(v){ return 180 - v * 180; }
+       对焦盘（mirror:false · 右半圈）： v=0 → 180°（正下）  v=0.5 → 90°（正右）   v=1 → 0°（正上）
+       EV 盘（mirror:true · 左半圈）：   v=0 → 180°（正下）  v=0.5 → 270°（正左）  v=1 → 360°（正上）
+     两盘同时满足「0 值在正下、满值在正上」，中间值一个走右、一个走左 —— 这就是反向镜像。 */
+  function fdAngle(cfg, v){ return cfg.mirror ? 180 + v * 180 : 180 - v * 180; }
+  /* 指针角：对焦盘 3 点（90°，正对盘右的数值框）；EV 盘镜像到 9 点（270°，正对盘左的数值框） */
+  function fdPointerDeg(cfg){ return cfg.mirror ? 270 : 90; }
 
   /* 极坐标 → SVG 坐标。SVG 坐标系固定 400×400、圆心 (200,200)，
      对应 CSS 角 θ 的点：x = 200 + r·sinθ，y = 200 − r·cosθ */
@@ -3012,101 +3246,147 @@
   var FD_NUM_FLIP = 180;                            // 数字自转角：180 → 每个数字的"上"指向圆心（"朝向圆心"）；
                                                     //   改成 0 就变回切向排布（数字整体跟着转）
 
-  /* 51 格分级：i%5===0 → 主(带数字, 11 根)；i%5===1||4 → 中(20 根)；其余 → 副(20 根) */
-  function fdTickKind(i){
-    if (i % 5 === 0) return 'major';
-    if (i % 5 === 1 || i % 5 === 4) return 'mid';
-    return 'minor';
-  }
+  /* 刻度分级已收进 DIALS.<盘>.tickKind（2026-09-17 共用组件化）——
+     对焦盘：主 11（每 0.1）/ 中 20 / 副 20；EV 盘：主 7（每 1EV）/ 中 6（每 0.5EV）/ 副。 */
 
-  /* 一根刻度的 path 片段：先算"长在 12 点方向"的内外两点，再由调用方 rotate */
-  function fdTickLine(v, len){
-    var deg = focusAngle(v);
+  /* 一根刻度的 path 片段：先算"长在 12 点方向"的内外两点（角度按每盘自己的映射）*/
+  function fdTickLine(cfg, v, len){
+    var deg = fdAngle(cfg, v);
     var o = fdPoint(FD_R_OUT, deg);
     var i = fdPoint(FD_R_OUT - len, deg);
     return 'M' + o.x.toFixed(2) + ' ' + o.y.toFixed(2)
          + 'L' + i.x.toFixed(2) + ' ' + i.y.toFixed(2);
   }
 
-  function buildFocusDial(){
-    var svg = $('fdTicks');
-    if (!svg || svg.dataset.built) return;
+  /* =========================================================
+     圆盘组件（对焦 / 曝光补偿**共用一套**）—— 2026-09-17 定稿（两盘反向镜像）
+       「刻度动、指针不动」：
+         指针钉在盘的外侧中腰（对焦 3 点 / EV 9 点），transform 由 fdPointerDeg(cfg) 给出；
+         刻度环（刻度线 + 数字 + 绿色高亮段）整体旋转 指针角 − fdAngle(cfg, v)，
+         于是"当前档位"永远停在指针下。
+       v ∈ [0,1] 按每个盘自己的 min/max 线性换算；两盘互为反向镜像 ——
+       圆心 X / 露出侧 / 数值框侧 / 指针位置 / 刻度弧方向全反过来，
+       唯独 v=0 都在正下、v=1 都在正上（这是反向的定义，不是把数值取反）。
+     ========================================================= */
+  var DIALS = {
+    focus: {
+      mirror:false,        // 圆心在左（--fd-center-x）、露出右半、数值框盘右、指针 3 点、弧右半圈
+      count:51, min:0, max:1, litSpan:0.06, numFlip:FD_NUM_FLIP,
+      svg:'fdTicks', ring:'fdRing', ptr:'fdPointerG', lit:'fdLit', box:'fdVal', dial:'focusDial',
+      tickKind:function(i){                       // 主 11 / 中 20 / 副 20
+        if (i % 5 === 0) return 'major';
+        if (i % 5 === 1 || i % 5 === 4) return 'mid';
+        return 'minor';
+      },
+      get:function(){ return focusVal; },
+      set:function(v){ focusVal = Math.max(0, Math.min(1, v)); },
+      fmt:function(val){ return val >= 0.995 ? '∞' : val.toFixed(2); },
+      numText:function(val){ return val.toFixed(1); }
+    },
+    ev: {
+      mirror:true,         // **反向镜像**：圆心在右（屏宽 − --fd-center-x）、露出左半、
+                           // 数值框盘左、指针 9 点、弧左半圈 —— 对焦盘照镜子
+      count:61, min:-3, max:3, litSpan:0.05, numFlip:FD_NUM_FLIP,
+      svg:'evTicks', ring:'evRing', ptr:'evPointerG', lit:'evLit', box:'evVal', dial:'evDial',
+      tickKind:function(i){                       // 主 7（每 1EV）/ 中 6（每 0.5EV）
+        if (i % 10 === 0) return 'major';
+        if (i % 5 === 0) return 'mid';
+        return 'minor';
+      },
+      get:function(){ return state.ev; },
+      set:function(v){ state.ev = Math.round(Math.max(-3, Math.min(3, v)) * 10) / 10; },
+      fmt:function(val){ return (val >= 0 ? '+' : '') + val.toFixed(1) + ' EV'; },
+      numText:function(val){ return (val === 0) ? '0' : ((val > 0 ? '+' : '') + val.toFixed(1)); }
+    }
+  };
 
-    var d = { minor:'', mid:'', major:'' }, nums = '';
-    for (var i = 0; i <= 50; i++){
-      var v = i / 50, kind = fdTickKind(i);
-      d[kind] += fdTickLine(v, FD_LEN[kind]);
+  function dialBuild(cfg){
+    var svg = $(cfg.svg);
+    if (!svg || svg.dataset.built) return;
+    var N = cfg.count - 1, d = { minor:'', mid:'', major:'' }, nums = '';
+    for (var i = 0; i < cfg.count; i++){
+      var v = i / N, kind = cfg.tickKind(i);
+      d[kind] += fdTickLine(cfg, v, FD_LEN[kind]);
       if (kind === 'major'){
-        // 数字先"长在"12 点方向 (200, 200−FD_R_NUM)，用两层 transform 摆位：
-        //   内层 rotate(FD_NUM_FLIP, 自身锚点) → 数字自转，让"上"指向圆心
-        //   外层 rotate(θ, 圆心)              → 整体转到该刻度方位
-        // （SVG 的 transform 列表是"右边先作用"，所以自转那条写在右侧）
+        // 数字先"长在"12 点方向，用两层 transform 摆位（自转那条写右侧 —— SVG 的
+        // transform 列表是"右边先作用"），旋转由外层 ring 组统一承担
         var ny = 200 - FD_R_NUM;
         nums += '<text class="fd-num" x="200" y="' + ny + '"'
               + ' text-anchor="middle" dominant-baseline="central"'
-              + ' transform="rotate(' + focusAngle(v).toFixed(2) + ' 200 200)'
-              + ' rotate(' + FD_NUM_FLIP + ' 200 ' + ny + ')">'
-              + v.toFixed(1) + '</text>';
+              + ' transform="rotate(' + fdAngle(cfg, v).toFixed(2) + ' 200 200)'
+              + ' rotate(' + cfg.numFlip + ' 200 ' + ny + ')">'
+              + cfg.numText(cfg.min + v * (cfg.max - cfg.min)) + '</text>';
       }
     }
-
-    var px = 200, py = 200;
     svg.innerHTML =
-        '<path class="fd-minor" d="' + d.minor + '"/>'
-      + '<path class="fd-mid" d="' + d.mid + '"/>'
-      + '<path class="fd-major" d="' + d.major + '"/>'
-      + '<path class="fd-lit" id="fdLit" d=""/>'
-      + nums
-      + '<g id="fdPointerG"><polygon class="fd-pointer" points="'
-      +   (px - FD_PTR.half) + ',' + (py - FD_PTR.base) + ' '
-      +   (px + FD_PTR.half) + ',' + (py - FD_PTR.base) + ' '
-      +   px + ',' + (py - FD_PTR.tip) + '"/></g>';
+        '<g id="' + cfg.ring + '">'
+      +   '<path class="fd-minor" d="' + d.minor + '"/>'
+      +   '<path class="fd-mid" d="' + d.mid + '"/>'
+      +   '<path class="fd-major" d="' + d.major + '"/>'
+      +   '<path class="fd-lit" id="' + cfg.lit + '" d=""/>'
+      +   nums
+      + '</g>'
+      /* 指针钉住不动：对焦盘 3 点 / EV 盘 9 点（fdPointerDeg），尖端永远朝圆心、正对各自数值框 */
+      + '<g id="' + cfg.ptr + '" transform="rotate(' + fdPointerDeg(cfg) + ' 200 200)"><polygon class="fd-pointer" points="'
+      +   (200 - FD_PTR.half) + ',' + (200 - FD_PTR.base) + ' '
+      +   (200 + FD_PTR.half) + ',' + (200 - FD_PTR.base) + ' '
+      +   200 + ',' + (200 - FD_PTR.tip) + '"/></g>';
     svg.dataset.built = '1';
   }
 
-  function renderFocus(){
-    buildFocusDial();
-
-    var g = $('fdPointerG');
-    if (g) g.setAttribute('transform', 'rotate(' + focusAngle(focusVal).toFixed(2) + ' 200 200)');
-
-    var val = $('fdVal');
-    if (val) val.textContent = (focusVal >= 0.995) ? '∞' : focusVal.toFixed(2);
-
-    var a = $('fdAuto');
-    if (a) a.classList.toggle('on', focusAuto);
-    var dEl = $('focusDial');
-    if (dEl) dEl.classList.toggle('auto', focusAuto);
-
-    // 绿色高亮段：当前值 ±0.06 内的刻度，单独一条 path（各格用自己的长度，所以段内有长短变化）
-    var lit = $('fdLit');
+  function dialRender(cfg){
+    dialBuild(cfg);
+    var val = cfg.get();
+    var v = (val - cfg.min) / (cfg.max - cfg.min);
+    var ring = $(cfg.ring);
+    /* 环旋转量 = 指针角 − 本盘角度映射：v 对应的刻度正好停在指针下（两盘各自代入） */
+    if (ring) ring.setAttribute('transform', 'rotate(' + (fdPointerDeg(cfg) - fdAngle(cfg, v)).toFixed(2) + ' 200 200)');
+    var lit = $(cfg.lit), N = cfg.count - 1;
     if (lit){
       var d = '';
-      for (var i = 0; i <= 50; i++){
-        if (Math.abs(i / 50 - focusVal) <= 0.06){
-          d += fdTickLine(i / 50, FD_LEN[fdTickKind(i)]);
+      for (var i = 0; i < cfg.count; i++){
+        if (Math.abs(i / N - v) <= cfg.litSpan){
+          d += fdTickLine(cfg, i / N, FD_LEN[cfg.tickKind(i)]);
         }
       }
       lit.setAttribute('d', d);
     }
+    var box = $(cfg.box);
+    if (box) box.textContent = cfg.fmt(val);
   }
 
-  function focusFromPoint(clientX, clientY){
-    if (focusAuto) return;   // 自动对焦进行中 → 锁住手动拖动（原来漏了这个判断，toast 一直在说谎）
-    var dial = $('focusDial');
+  /** 拖拽换算：指针圆的角向 → v（每盘按自己的有效弧：对焦右半圈 / EV 左半圈） */
+  function dialFromPoint(cfg, clientX, clientY){
+    var dial = $(cfg.dial);
     if (!dial) return;
     var r = dial.getBoundingClientRect();
     var dx = clientX - (r.left + r.width / 2);
     var dy = clientY - (r.top + r.height / 2);
-    // 直接换算成 CSS 角（0° = 12 点方向，顺时针为正），省掉一次 ±90° 的心算
     var css = Math.atan2(dx, -dy) * 180 / Math.PI;
     if (css < 0) css += 360;
-    // 有效弧 = 右半圈（CSS 0° 正上 → 90° 正右 → 180° 正下）
     var v;
-    if (css <= 180){ v = (180 - css) / 180; }
-    else { v = (css > 270) ? 1 : 0; }   // 落在左半圈：就近吸附到 1.0（正上）或 0.0（正下）
-    focusVal = Math.max(0, Math.min(1, v));
-    renderFocus();
+    if (cfg.mirror){
+      /* EV 盘（镜）：有效弧 = 左半圈 [180,360]，0 在正下、满值在正上；
+         拖到右半圈（无效区，也是最靠屏外那侧）就近吸到两端 */
+      if (css >= 180){ v = (css - 180) / 180; }
+      else { v = (css > 90) ? 0 : 1; }
+    } else if (css <= 180){ v = (180 - css) / 180; }
+    else { v = (css > 270) ? 1 : 0; }
+    cfg.set(cfg.min + v * (cfg.max - cfg.min));
+    dialRender(cfg);
+  }
+
+  function renderFocus(){
+    dialRender(DIALS.focus);
+    var a = $('fdAuto');
+    if (a) a.classList.toggle('on', focusAuto);
+    var dEl = $('focusDial');
+    if (dEl) dEl.classList.toggle('auto', focusAuto);
+  }
+
+  function focusFromPoint(clientX, clientY){
+    if (focusAuto) return;   // 自动对焦进行中 → 锁住手动拖动（原来漏了这个判断，toast 一直在说谎）
+    dialFromPoint(DIALS.focus, clientX, clientY);
   }
 
   var dialDrag = false;
@@ -3190,25 +3470,70 @@
     applyLayout();
   });
 
-  // 「对焦」图标 → 展开 / 收起手动对焦圆盘
+  // 「对焦」图标 → 展开 / 收起手动对焦圆盘（与 EV 圆盘互斥：开一个关另一个）
   $('btnFocusHint').addEventListener('click', function(){
     layout.dialOpen = !layout.dialOpen;
+    if (layout.dialOpen){
+      layout.evOpen = false;
+      collapseAll();                 // 收掉刻度条 / 场景展开 / 滤镜条
+      layout.dialOpen = true;        // collapseAll 不碰 dialOpen，这里写明意图
+    }
     applyLayout();
     renderFocus();
     toast(layout.dialOpen ? '手动对焦：拖动圆盘调焦（0.0 近 → ∞ 远）' : '已收起对焦圆盘');
   });
-  $('iconWB').addEventListener('click', function(){
-    toast('白平衡手动控制将在 P2 加入（自动档与手动档互斥）');
+  /* ---------- EV 圆盘（±3 EV）：走共用圆盘组件 DIALS.ev ----------
+     几何 = 对焦圆盘的**反向镜像**（圆心 X / 露出侧 / 数值框侧 / 指针 9 点 / 弧左半圈），
+     镜像参数就在 DIALS.ev.mirror；交互同一套：刻度动、指针不动。 */
+  function renderEv(){ dialRender(DIALS.ev); }
+
+  var evDrag = false, evEl = $('evDial');
+  evEl.addEventListener('pointerdown', function(e){
+    evDrag = true;
+    if (evEl.setPointerCapture) evEl.setPointerCapture(e.pointerId);
+    dialFromPoint(DIALS.ev, e.clientX, e.clientY);
+    renderPreview();          // EV 会改取景器曝光亮度，跟着刷
+    e.stopPropagation();
   });
-  $('iconISO').addEventListener('click', function(){
-    toast('感光度 ISO 手动控制将在 P2 加入（自动档与手动档互斥）');
+  evEl.addEventListener('pointermove', function(e){
+    if (!evDrag) return;
+    dialFromPoint(DIALS.ev, e.clientX, e.clientY);
+    renderPreview();
   });
-  $('iconShutter').addEventListener('click', function(){
-    toast('快门速度手动控制将在 P2 加入（自动档与手动档互斥）');
+  evEl.addEventListener('pointerup', function(){ evDrag = false; scheduleSave(); });
+  evEl.addEventListener('pointercancel', function(){ evDrag = false; });
+  $('evVal').addEventListener('click', function(e){
+    e.stopPropagation();
+    state.ev = 0;
+    renderEv(); renderPreview();
+    toast('曝光补偿已归零');
   });
+
+  // 图标行：感光 / 快门速度 / 白平衡 → 切换刻度条（互斥：同时只开一条）
+  function toggleStrip(id){
+    var on = (state.paramStrip !== id);
+    if (on){ layout.ssExpanded = false; layout.filterExpanded = false; layout.evOpen = false; }
+    state.paramStrip = on ? id : null;
+    applyLayout();
+    if (on){
+      toast(STRIPS[id].name + '：' + (stripIsAuto(id)
+        ? '自动（点右侧开关切手动）'
+        : '手动 ' + STRIPS[id].fmt(stripVal(id)) + '（左右滑动刻度）'));
+    }
+  }
+  $('iconWB').addEventListener('click', function(){ toggleStrip('wb'); });
+  $('iconISO').addEventListener('click', function(){ toggleStrip('iso'); });
+  $('iconShutter').addEventListener('click', function(){ toggleStrip('shutter'); });
+  // 曝光补偿 → EV 圆盘：与对焦圆盘同规则（模态、同位置、互斥）
   $('iconEV').addEventListener('click', function(){
-    setParams(true);
-    toast('参数排已展开，点 EV 数值可归零');
+    layout.evOpen = !layout.evOpen;
+    if (layout.evOpen){
+      layout.dialOpen = false;          // 两个盘同位置 → 开一个关另一个
+      collapseAll();                    // 收掉底部浮层栈（刻度条 / 场景展开 / 滤镜条）
+      layout.evOpen = true;             // collapseAll 会把 evOpen 也关掉，这里补回来
+    }
+    applyLayout();
+    toast(layout.evOpen ? '曝光补偿圆盘：拖动圆盘调 ±3 EV，点数值归零' : '已收起曝光补偿圆盘');
   });
   // 底部图标行第 7 项「设置」→ 与顶栏「更多 → 设置」进的是**同一个**设置页。
   // （此前这里只弹一句"将在 P2 补齐"，和顶栏那个能真打开设置的入口行为不一致。）
@@ -3322,18 +3647,8 @@
     renderPreview();
     applyLayout();
 
-    bindVerticalSlider($('sliderEV'), {
-      min:-2, max:2, step:1/3,
-      disabled:false, disabledMsg:'',
-      onChange:function(v){ state.ev = v; renderPreview(); }
-    });
-
-    // 另外三列是 P2 才接硬件的占位：形态与 EV 完全一致，但不可拖动
-    [].forEach.call(document.querySelectorAll('.pcol.disabled .pcol-slider'), function(el){
-      el.addEventListener('pointerdown', function(){
-        toast('ISO / 快门 / 白平衡 的手动控制将在 P2 加入（自动档与手动档互斥）');
-      });
-    });
+    // 旧四列参数排（EV 竖滑块 + 三个占位列）已随 2026-09-17 改版整体删除：
+    // EV 走圆盘（#evDial），ISO / 快门 / 白平衡 走刻度条（#spClip），绑定都在各自那段里。
 
     bindHorizontalEV($('evTrack'));
     bindSwipe();
