@@ -172,6 +172,12 @@ struct CameraView: View {
                 }
             )
 
+            // 焦段条：原型里它排在参数排与快门排之间（快门按钮中心 Y 的推导式里
+            // 「焦段条 44」就是这一段）。⤢ 放大态时它会浮进取景器卡片内底边（2-5b）。
+            FocalStripView(selection: viewModel.focal) { preset in
+                viewModel.focalTapped(preset)
+            }
+
             HStack(spacing: 0) {
                 CaptureThumbnail(image: env.thumbnails.lastThumbnail) {
                     viewModel.openSystemPhotos()

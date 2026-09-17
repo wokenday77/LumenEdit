@@ -21,6 +21,10 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var mode: CaptureSessionMode = .photo
     @Published private(set) var isSaving = false
 
+    /// 当前选中的焦段档位。
+    /// **不落盘**：原型的「保留设置」只管 场景 / 风格 / 滤镜 / EV 四项，焦段不在其中。
+    @Published private(set) var focal: FocalPreset = FocalCatalog.defaultFocal
+
     /// 是否正在录制视频（P1b-2）
     @Published private(set) var isRecording = false
     /// 已录制秒数，供录制指示器计时
@@ -369,6 +373,23 @@ final class CameraViewModel: ObservableObject {
     func storageTapped() {
         guard let environment else { return }
         showToast("剩余可用存储 \(environment.session.freeSpaceText)")
+    }
+
+    /// 焦段条点档位。
+    ///
+    /// **本件只切 UI 状态**：真正的镜头切换与变焦（`applyZoomLocked` 扩成按档切镜头
+    /// + `Ramp` 平滑）属于任务书 B 组接线，单独一轮 —— 所以这里明确说明，
+    /// 不假装"已经切到 48mm 镜头了"。装成生效比不生效更容易让人误判。
+    func focalTapped(_ preset: FocalPreset) {
+        guard preset.id != focal.id else {
+            // 点已选中的档位：原型是**静默 return**。这里补一次轻触感 ——
+            // "点到了、只是本来就选中"应该有个物理反馈，但不必弹提示条刷屏。
+            Haptics.tick()
+            return
+        }
+        focal = preset
+        Haptics.tick()
+        showToast("焦段 \(preset.displayName)mm · 镜头切换与变焦将在 P2 接硬件")
     }
 
     // MARK: - 相册

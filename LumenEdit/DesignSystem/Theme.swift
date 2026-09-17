@@ -33,6 +33,14 @@ enum Theme {
         static let accentDim = accent.opacity(0.20)
         /// 模式条未选中档位（原型 `.mode-tab{ color: rgba(255,255,255,.5) }`）
         static let modeInactive = Color.white.opacity(0.5)
+
+        /// 焦段药丸：未选中的底 / 描边 / 文字（原型 `rgba(255,255,255,.11)` / `.16` / `.88`）
+        static let focalPillFill = Color.white.opacity(0.11)
+        static let focalPillStroke = Color.white.opacity(0.16)
+        static let focalPillText = Color.white.opacity(0.88)
+        /// 浅色面上的深色文字（原型 `#15181c`）。
+        /// 焦段药丸选中态是**白底**，文字必须转深色 —— 和 accent 黄底上用纯黑是同一类处理。
+        static let textOnLight = Color(red: 0.082, green: 0.094, blue: 0.110)
     }
 
     // MARK: - 间距
@@ -116,6 +124,30 @@ enum Theme {
         /// 模式条「实况」档的同心圆图标尺寸。
         /// 原型是 18（配 11.5pt 文字）；字号提到 13 之后按比例提到 **20**，视觉重量才配得上。
         static let modeSelectorGlyphSize: CGFloat = 20
+
+        // MARK: 焦段条（原型 `.row-focal` 44px + `.focal-pill` 44×30）
+
+        /// 焦段条整条高度（原型 `.row-focal{ height:44px }`）
+        static let focalStripHeight: CGFloat = 44
+        /// 药丸视觉尺寸（原型 `.focal-pill{ width:44px; height:30px }`）
+        static let focalPillWidth: CGFloat = 44
+        static let focalPillHeight: CGFloat = 30
+        /// 药丸之间的间距（原型 `.focal-strip{ gap:9px }`）
+        static let focalStripSpacing: CGFloat = 9
+        /// 药丸内部：刻度标记高 7、标记与文字间距 2（原型 `gap:2px`）
+        static let focalMarkHeight: CGFloat = 7
+        static let focalPillInnerSpacing: CGFloat = 2
+        /// 刻度标记里每根小竖条的宽与间距（原型 `.mark i{ width:1.5px }` + `gap:1.5px`）
+        static let focalMarkBarWidth: CGFloat = 1.5
+        static let focalMarkBarSpacing: CGFloat = 1.5
+
+        /// 药丸标签字号。
+        ///
+        /// ⚠️ **刻意偏离原型**：原型是 `8.5px`（在 390px 宽的 CSS 稿上定的），真机上偏小
+        /// —— 与模式条 11.5 → 13 是同一个理由。
+        /// 药丸内宽 44pt，最长的「120 mm」在 10.5pt 下约 32pt，**放得下**，
+        /// 所以这是零几何代价的可读性提升（不像模式条那样要动宽度预算）。
+        static let focalLabelSize: CGFloat = 10.5
 
         // MARK: 顶栏（两行）
         //
