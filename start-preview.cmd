@@ -14,12 +14,14 @@ rem
 rem    start-preview.cmd          起服务并打开默认浏览器
 rem    start-preview.cmd nobrowser  只起服务，不开浏览器
 rem    start-preview.cmd stop     关掉这两个服务
+rem    start-preview.cmd status   查看两个服务的运行状态（端口 / 进程 / HTTP）
 rem
 rem  说明：端口已在监听就**直接复用**，不会重复起进程。
 rem        服务跑在各自的最小化窗口里，关掉那个窗口即停止。
 rem =====================================================================
 
 if /i "%~1"=="stop" goto do_stop
+if /i "%~1"=="status" goto do_status
 
 where python >nul 2>nul
 if errorlevel 1 (
@@ -125,6 +127,53 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr /c:"LISTENING" ^| findstr /c:
   taskkill /f /pid %%p >nul 2>nul
 )
 echo   [x] 已停止 %NAME%（端口 %PT%）
+endlocal
+exit /b 0
+
+
+rem ------------------------------------------------------------ 查看状态
+:do_status
+echo.
+echo   LumenEdit 原型预览 - 运行状态
+echo   ------------------------------------------------------------
+call :show %P_PROTO% "index.html" "原型页面"
+call :show %P_SHOT%  ""           "截图目录"
+echo   ------------------------------------------------------------
+echo   说明：HTTP 200 = 服务正常；000 / 超时 = 没起来或端口被占用。
+echo         修复：双击 start-preview.cmd 重新拉起；或 stop 后再起。
+echo.
+exit /b 0
+
+:show
+setlocal
+set PT=%~1
+set SUB=%~2
+set NAME=%~3
+
+rem —— 端口是否在监听 + 是哪个进程 ——
+set PID=
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /c:"LISTENING" ^| findstr /c:":%PT% "') do set PID=%%p
+if "%PID%"=="" (
+  echo   [x] %NAME%（端口 %PT%）: 未监听 —— 服务没起来
+  endlocal
+  exit /b 0
+)
+for /f "tokens=1" %%n in ('tasklist /fi "PID eq %PID%" /nh 2^>nul') do set PNAME=%%n
+echo   [v] %NAME%  端口 %PT%  监听中   进程 %PNAME%（PID %PID%）
+
+rem —— HTTP 是否真的可用（端口活着不代表页面能打开）——
+rem 注意：set 不能写在 ( ) 块里 —— 右括号前的空格会混进变量值，
+rem URL 尾部多个空格就会被 curl 判成 malformed（HTTP 000）。
+set U=http://127.0.0.1:%PT%/%SUB%
+if "%SUB%"=="" set U=http://127.0.0.1:%PT%/
+curl -s -o nul -w "%%{http_code}" --max-time 5 "%U%" > "%TEMP%\le_http.txt" 2>nul
+set /p HTTPCODE=<"%TEMP%\le_http.txt"
+del "%TEMP%\le_http.txt" >nul 2>nul
+if "%HTTPCODE%"=="200" (
+  echo       HTTP %HTTPCODE%   %U%
+) else (
+  echo       HTTP %HTTPCODE%   %U%   [!] 异常
+)
 endlocal
 exit /b 0
 
