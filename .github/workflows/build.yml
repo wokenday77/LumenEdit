@@ -23,6 +23,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 三条结构自检（check_swift / check_presets / check_prototype）放在最前面：
+      # 它们只读源码、不依赖 Xcode，失败时第一时间红掉，省掉后面 brew / xcodegen / build 的等待。
+      # check_swift.js 第 5 组会按 Theme.swift 令牌复算顶栏模式条宽度——
+      # ViewThatFits 的降档是静默的，只有这里能拦住"字悄悄变小"（2026-09-17 真实踩过）。
+      - name: Structural self-checks
+        run: |
+          echo "== Swift 结构自检（含模式条宽度预算）=="
+          node tools/check_swift.js LumenEdit
+          echo "== 预设数据与原型一致性 =="
+          node tools/check_presets.js
+          echo "== 网页原型 =="
+          node tools/check_prototype.js
+
       - name: Select newest Xcode 16
         run: |
           XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
