@@ -577,7 +577,9 @@ if (!camViewFile || !vmFile) {
     let badG = false;
     const ranges = [
       ['swipeActivationDistance', g.activation, 8, 16, '起手门槛'],
-      ['swipeMinTravel', g.travel, 14, 24, '位移阈值'],
+      // 位移阈值：34 偏硬 → 16 过敏 → **28 定稿**（Mac 复验实测 20pt≈4.4mm 仍在敏感侧，
+      // 心理预期 5~6mm）。区间给 18~32 覆盖"能用的两端"，超出就往某个极端跑了。
+      ['swipeMinTravel', g.travel, 18, 32, '位移阈值'],
       ['swipeStartRegionRatio', g.startRatio, 0.1, 0.35, '起点线']
     ];
     for (const [name, value, lo, hi, why] of ranges) {
@@ -670,16 +672,30 @@ if (!camViewFile || !vmFile) {
     const throttle = /\btickThrottle\b/.test(sliderSrc)
       && /fireTickThrottled/.test(sliderSrc);
     const rawTick = /Haptics\.tick\(\)/.test(sliderSrc);
+    // ⚠️ **量级守卫**（2026-09-18 真机复验的教训）：机制在、量太小 = 等于没做 ——
+    // 55ms 节流在"每档 288ms 跨一档"的匀速拖动下完全拦不住快扫（复验实测约 17 声/秒）。
+    // 所以这里不只查"有没有"，还查"够不够"。
+    const numLit = name => {
+      const m = new RegExp('\\b' + name + '\\s*:\\s*(?:Double|TimeInterval)\\s*=\\s*([0-9.]+)').exec(sliderSrc);
+      return m ? parseFloat(m[1]) : null;
+    };
+    const hystVal = numLit('hysteresisRatio');
+    const throttleVal = numLit('tickThrottle');
     if (!hyst) {
       bad('ParameterSlider 缺"滞后换档"（档位边界抖动会让触觉连响）');
     } else if (!throttle) {
       bad('ParameterSlider 缺触觉节流（tickThrottle / fireTickThrottled）');
     } else if (/if snapped != value \{[\s\S]{0,200}?Haptics\.tick\(\)/.test(sliderSrc)) {
       bad('ParameterSlider 的跨档触觉绕过了节流（直接调 Haptics.tick()）');
+    } else if (hystVal === null || hystVal < 0.7) {
+      bad('hysteresisRatio = ' + hystVal + ' 小于 0.7 —— 过渡带太窄，挡不住边界抖动（复验定稿 0.75）');
+    } else if (throttleVal === null || throttleVal < 0.1) {
+      bad('tickThrottle = ' + throttleVal + 's 小于 0.1s —— 短于约 1/4 档耗时，快扫时形同虚设（复验定稿 0.15s）');
     } else if (!rawTick) {
       bad('ParameterSlider 里连一处 Haptics.tick() 都没有了？归零反馈应该保留');
     } else {
-      ok('ParameterSlider 触觉已降频（滞后换档 0.6 档 + 节流 55ms，归零反馈保留）');
+      ok('ParameterSlider 触觉已降频且量级够（滞后 ' + hystVal + ' 档 + 节流 '
+        + (throttleVal * 1000).toFixed(0) + 'ms，归零反馈保留）');
     }
   }
 
