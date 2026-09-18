@@ -96,6 +96,23 @@ Mac 侧：CI 已挂三个自检（`d989240`）、aperture 修复（`4c251d2`）�
 > **界面元素与硬件接线要分层**：先做纯 UI（A 组），接线（B 组）单独一轮。
 > 这样 UI 版式可以先用假数据截图验收，不必等硬件。
 
+### B 组执行顺序（用户 2026-09-18 拍板）
+
+**前提：A 组全部交付并过 Mac 复验**（A 组已于 2026-09-18 收官：`fe88bd6` 回写环 /
+`e2b81f2` 二次调参 / `ecfbe74` #10 面板 / `e3f426e` #11 芯片，**待复验**）。
+
+| 序 | 项 | 说明 |
+|---|---|---|
+| **B1** | **焦段切镜头 + `Ramp` 平滑变焦** | `applyZoomLocked` 扩成"按档位切镜头 + 变焦"，加平滑过渡 |
+| **B2** | **ISO / 快门 / 白平衡刻度条**（模块 #9） | ISO + 快门走 `setExposureModeCustom`；白平衡走 `setWhiteBalanceModeLocked`。**放在圆盘之前**（用户定的顺序） |
+| **B3** | **对焦与 EV 圆盘**（模块 #8） | `setManualFocus(lensPosition:)` **已就绪**；EV 走 `setExposureBias`。⚠️ 与本修好的**回写环**（`docs/14`）直接相关：圆盘的编辑态也要接 `isExposureEditing` 同类闸门 |
+| **B4** | 格式选择器接线（模块 #11） | 选完真正重设 `activeFormat`，走已有的 `CaptureDeviceConfigurator.applyFormat`；码率表改读设备的推荐录制设置（替换 `VideoFormatCatalog` 的占位值） |
+| **B5** | 参数导入链路（模块 #13） | `CapturePreset.init(from: EditRecipe)` —— **等 P4**（修图引擎引入 `EditRecipe` 后才有源） |
+
+> 顺序来源：用户 2026-09-18 建议（焦段 → 刻度条 → 圆盘 → 参数导入），
+> 其中 **B4（格式重设）由 WB 按其归属补入**（`docs/08` 原表里就是 B 组项，
+> 只是用户列的四项未提），位置放在相机参数类之后、等 P4 的 B5 之前 —— 如不合适请指出。
+
 ---
 
 ## 三、第 2 批拆分（5 小件）与验证点
