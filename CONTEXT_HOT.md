@@ -28,7 +28,13 @@
 - **底部三问题修复（`ab6e575`）✅ 已过 Mac 真机验证（2026-09-18，10 项全过）**：上划灵敏 / 参数排默认收起 /
   EV 面板开关化（点「曝光补偿」展开收起 ×6 次）/ 竖滑无干扰 / 横滑吸附（−0.0 过零吸附实锤）/
   互斥与下划收净 / 对焦不被吞；净可见从约 43%（**低于 50% 底线**）拉回约 57% ✅
-- **第二轮真机反馈的三个修正（2026-09-18 二次提交 `2cd0859`，`docs/11` 第五节有完整根因）⏳ 待复验**
+- **第二轮真机反馈的三个修正（2026-09-18 二次提交 `2cd0859`，`docs/11` 第五节有完整根因）—— 复验 ✅ 核心项全过（2026-09-18 用户实测 + 日志）**：
+  ★ **手势挂载点**：起手故意落在滤镜条卡上 → 日志 `场景·风格已展开（人像 · 糖果粉调） · 滤镜条已收起`，触摸落在滤镜条上照样识别 ✅；两级上划 0.56s 内连续成立（12:41:13.921→14.481）✅
+  **提前触发**：滑到一半即响应，不必松手 ✅
+  **EV 范围**：±2.0 全档位（toast 报 +1.0/+2.0）、每档"咔"触感 ✅
+- **🔴 新回归（复验时发现，待修）**：**横拖 EV 滑块时误触发下划**，参数排当场收起（日志实锤 12:41:13.381 `[ui] toast: 已收起参数排`，紧跟着用户被迫重新上划）。
+  **根因**：手势挂整页 ZStack（`simultaneousGesture`）+ 阈值放宽（10pt 起手 / 16pt 位移 / 起手区 0.25）后，横拖 EV 时手指的自然纵向抖动（≥16pt）即满足下划条件；而 `ExposurePanel` 拖动回调 `exposureEditingChanged(_:)`（`CameraViewModel:363`）**已存在但没有接进手势闸门** —— 手势判定处只有 `guard !swipeDidTrigger, shouldTriggerSwipe(value)`（`CameraView:177`），grep 不到任何 editing 检查。
+  **修法（一行 guard，锚点已就位）**：`exposureEditingChanged` 把编辑态存成 `@Published private(set) var isExposureEditing = false`，手势判定处加 `guard !swipeDidTrigger, !viewModel.isExposureEditing, shouldTriggerSwipe(value)`。顺带堵住同口的**上划**误触发
   （10 项验证跑在 `ab6e575` 上，本笔在其之后，装机复验是新会话第一件事）：
   ① **手势挂载点错了**（"上划两次只能呼出一个"的根因，Mac 侧日志诊断确认：状态被
   `toggleSceneStyle` / `exposureCompensationTapped` **静默改写** + 滤镜条展开占掉原起手区）：原挂
