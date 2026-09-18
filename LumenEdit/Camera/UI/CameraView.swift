@@ -105,13 +105,6 @@ struct CameraView: View {
         ZStack {
             previewLayer
 
-            // 焦段条（浮层，不参与底栏布局）。
-            // ⚠️ 场景·风格展开时**收起**（原型 `.ss-on .row-focal`）：那一行要占 147pt，
-            // 焦段条再叠上去会把底部栈撑得过高；放大态（⤢）反过来要**保留**它 —— 它浮进卡片里。
-            if !viewModel.isSceneStyleExpanded {
-                floatingFocalStrip
-            }
-
             VStack(spacing: Theme.Spacing.sm) {
                 TopBarView(
                     mode: viewModel.mode,
@@ -270,8 +263,13 @@ struct CameraView: View {
             //
             // 代价（如实记录）：放大态下它与卡片底边的间隙是 16pt（底栈统一行距），
             // 原型写的是 12pt；差 4pt，为此再引入一层绝对定位不划算。
-            FocalStripView(selection: viewModel.focal) { preset in
-                viewModel.focalTapped(preset)
+            //
+            // ⚠️ 场景·风格展开时**整行收起**（#6，原型 `.ss-on .row-focal`）：
+            // 展开态那一条要占 147pt，焦段条再叠上去会把底部栈撑得过高。
+            if !viewModel.isSceneStyleExpanded {
+                FocalStripView(selection: viewModel.focal) { preset in
+                    viewModel.focalTapped(preset)
+                }
             }
 
             // 快门排四件套：缩略图 · 快门（绝对居中）· ⤢ · 风格方块（docs/09）。
