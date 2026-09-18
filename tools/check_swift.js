@@ -130,6 +130,78 @@ if (dupes.length) {
   ok(`共 ${declared.size} 个类型，无重名`);
 }
 
+/* ---------- 2b. 同一类型内重复成员声明 ---------- */
+// 为什么加（2026-09-18 实际发生）：给 `TopBarView` 加 #11 参数时，又在下面声明了一次
+// `let storageText`（上面已有同名字段）→ **编译失败**，而本地无法编译，一路 push 到 Mac
+// 才由编译报错抓出来（Mac 侧 `156abd9` 代为修复）。
+// 第 2 组只查"顶层类型重名"，查不到"类型内成员重复" —— 这个缺口必须补：
+// **本地不能编译，静态检查就是唯一防线。**
+//
+// 判据与精度：
+//   - 只查**属性**（`let` / `var`，含 `@Published`、`private(set)` 等修饰）——
+//     属性重名是本次的真实问题，且误报率最低；
+//   - `static` 与实例属性分开计（Swift 允许 `Type.x` 与 `instance.x` 共存）；
+//   - 跨 `extension` 也算同一类型（Swift 同样不允许跨扩展重名）→ key 用"类型名"；
+//   - 只检查**类型的直接子级**（按花括号深度判定）→ 函数/闭包内的局部变量不会被误报。
+console.log('\n[2b] 同类型内重复成员声明');
+
+let dupMembers = 0;
+for (const file of files) {
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  let depth = 0;
+  let inBlockComment = false;
+  const scopes = [];              // { name, memberDepth }
+  const seen = new Map();         // `${类型名}|${static?}|${属性名}` → 行号
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (inBlockComment) {
+      const end = line.indexOf('*/');
+      if (end < 0) continue;
+      line = line.slice(end + 2);
+      inBlockComment = false;
+    }
+    const bc = line.indexOf('/*');
+    if (bc >= 0) { inBlockComment = true; line = line.slice(0, bc); }
+    const lc = line.indexOf('//');
+    if (lc >= 0) line = line.slice(0, lc);
+    const code = line.replace(/"(?:[^"\\]|\\.)*"/g, '""');   // 抹掉字符串字面量
+    const trimmed = code.trim();
+
+    // 类型开始 → 新作用域（成员深度 = 当前深度 + 1）
+    const typeStart = /^(?:@\w+(?:\([^)]*\))?\s+)*(?:public\s+|internal\s+|private\s+|fileprivate\s+|final\s+|open\s+)*(struct|class|enum|actor|extension)\s+([A-Za-z_]\w*)/.exec(trimmed);
+    if (typeStart) scopes.push({ name: typeStart[2], memberDepth: depth + 1 });
+
+    // 属性声明（只在类型的直接子级）
+    const scope = scopes.length ? scopes[scopes.length - 1] : null;
+    if (scope && depth === scope.memberDepth) {
+      const m = /^(?:@\w+(?:\([^)]*\))?\s+)*(?:public\s+|internal\s+|private\s+|fileprivate\s+|private\(set\)\s+)*(static\s+)?(?:final\s+)?(let|var)\s+([A-Za-z_]\w*)\s*[:=]/.exec(trimmed);
+      if (m) {
+        const key = scope.name + '|' + (m[1] ? 'static' : 'instance') + '|' + m[3];
+        if (seen.has(key)) {
+          dupMembers++;
+          bad(path.relative(root, file) + ':' + (i + 1) + ' → ' + scope.name + ' 内重复声明 '
+            + (m[1] ? 'static ' : '') + m[2] + ' ' + m[3]
+            + '（首次在第 ' + seen.get(key) + ' 行）');
+        } else {
+          seen.set(key, i + 1);
+        }
+      }
+    }
+
+    // 花括号深度（含离开类型作用域时的弹出）
+    for (const ch of code) {
+      if (ch === '{') {
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        while (scopes.length && depth < scopes[scopes.length - 1].memberDepth) scopes.pop();
+      }
+    }
+  }
+}
+if (dupMembers === 0) ok('无同类型成员重复声明（' + files.length + ' 个文件）');
+
 /* ---------- 3. 占位符 ---------- */
 console.log('\n[3] 残留占位符');
 const placeholderRe = /TODO|FIXME|XXX\b|待补充|自行补充|not implemented yet/;
