@@ -23,6 +23,14 @@ private enum FunctionPanelStorageKey {
     static let hdr = "lumen.camera.fn.hdr"
 }
 
+/// 视频格式（#11）的落盘键。原型把这组存进 `LS_SHOOT` 的 `state.fmt`。
+///
+/// 选择器开合**不落盘**（临时浮层状态）。
+private enum VideoFormatStorageKey {
+    static let resolution = "lumen.camera.fmt.res"
+    static let frameRate = "lumen.camera.fmt.fps"
+}
+
 /// 相机页状态机。
 ///
 /// 职责边界：
@@ -115,6 +123,60 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var isFnHDROn: Bool =
         UserDefaults.standard.bool(forKey: FunctionPanelStorageKey.hdr) {
         didSet { UserDefaults.standard.set(isFnHDROn, forKey: FunctionPanelStorageKey.hdr) }
+    }
+
+    // MARK: - 视频格式（#11）
+
+    /// 格式选择器是否展开（点芯片弹出）。**不落盘**（临时浮层状态）。
+    @Published private(set) var isFormatSelectorExpanded = false
+
+    /// 选中的分辨率（落盘）。默认 `4K`。
+    @Published private(set) var videoResolution: VideoResolution =
+        VideoResolution(
+            rawValue: UserDefaults.standard.string(forKey: VideoFormatStorageKey.resolution) ?? ""
+        ) ?? .uhd4K {
+        didSet {
+            UserDefaults.standard.set(videoResolution.rawValue, forKey: VideoFormatStorageKey.resolution)
+        }
+    }
+
+    /// 选中的帧率（落盘）。
+    ///
+    /// ⚠️ **默认 30 而不是原型初值的 60**（用户 2026-09-18 拍板）：会话目前固定
+    /// `applyFormat(..., frameRate: 30)`（`CaptureSessionController:585/602`）——
+    /// 芯片是"当前状态指示"而非"目标值声明"，显示 60 就是撒谎。
+    /// B 组接上 `activeFormat` 重设后，这里应改为**读取会话真实格式**（那才是终态）。
+    @Published private(set) var videoFrameRate: VideoFrameRate =
+        VideoFrameRate(rawValue: UserDefaults.standard.integer(forKey: VideoFormatStorageKey.frameRate))
+        ?? .fps30 {
+        didSet {
+            UserDefaults.standard.set(videoFrameRate.rawValue, forKey: VideoFormatStorageKey.frameRate)
+        }
+    }
+
+    /// 芯片文案（`4K · 30`；Log 实况模式 `Log · 4K · 30`）
+    var formatChipText: String {
+        VideoFormatCatalog.chipText(
+            resolution: videoResolution,
+            frameRate: videoFrameRate,
+            isLogMode: mode == .logLive
+        )
+    }
+
+    /// 顶栏副行「剩余存储」胶囊的文本。
+    ///
+    /// 录制类模式（视频 / Log 实况）换成**剩余可录时长 + 空间**（原型 `renderFmt` 同款）——
+    /// 那是拍摄时的关键信息。
+    /// ⚠️ 文本变长后 `TopBarView` 的**宽度预留**必须同步换形态（见其 `storageWidthReservation`），
+    /// 否则数值到达时胶囊会跳宽 —— Mac 侧实测过的 73 → 95pt 跳变会复发。
+    var storageChipText: String {
+        guard mode.isRecordingBased else {
+            return environment?.session.freeSpaceText ?? "—"
+        }
+        return VideoFormatCatalog.recordingTimeText(
+            resolution: videoResolution,
+            frameRate: videoFrameRate
+        )
     }
 
     /// 选中的场景 id（落盘）
@@ -287,7 +349,7 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 快门
 
     func shutterTapped() {
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         guard let environment else { return }
 
         // 录制类模式（视频 / Log 实况）：快门 = 开始 / 停止录制（不是一次性拍照）。
@@ -445,7 +507,7 @@ final class CameraViewModel: ObservableObject {
 
     func focusTapped(viewPoint: CGPoint, devicePoint: CGPoint) {
         // 点取景器 = 对焦 + 收起功能面板（原型 viewport 的 click 处理器同时做这两件事）
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         environment?.session.focus(atDevicePoint: devicePoint)
         focusPoint = viewPoint
         focusToken &+= 1
@@ -487,7 +549,7 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 模式
 
     func modeTapped(_ newMode: CaptureSessionMode) {
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         guard let environment else { return }
         guard newMode != mode else { return }
 
@@ -541,14 +603,14 @@ final class CameraViewModel: ObservableObject {
     /// 在那之前**不假装切换**：不记住任何"闪光灯已开"的状态，只把边界说清楚
     /// ——记住一个不生效的状态，比不记住更容易让人误判。
     func flashTapped() {
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         DebugLog.shared.debug("ui", "闪光灯图标点击（硬件未接入）")
         showToast("闪光灯：切换与常亮在 P2 参数批次接入（AVCaptureDevice.torchMode），当前固定关闭")
     }
 
     /// 顶栏「网格」图标：**真开关**，与设置页共用 `AppEnvironment.showGrid`
     func gridTapped() {
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         guard let environment else { return }
         environment.showGrid.toggle()
         Haptics.tick()
@@ -557,7 +619,7 @@ final class CameraViewModel: ObservableObject {
 
     /// 顶栏副行「影调预览」：真开关，但**当前不改变画面**，必须说明
     func tonePreviewTapped() {
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         guard let environment else { return }
         environment.showTonePreview.toggle()
         Haptics.tick()
@@ -568,7 +630,7 @@ final class CameraViewModel: ObservableObject {
 
     /// 顶栏副行「剩余存储」：真数据（约 10 秒刷新一次）
     func storageTapped() {
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         guard let environment else { return }
         showToast("剩余可用存储 \(environment.session.freeSpaceText)")
     }
@@ -761,7 +823,7 @@ final class CameraViewModel: ObservableObject {
     /// （Swift 侧暂无简易模式 —— 原型里"简易模式下浮层保持隐藏"的分支随模块 #12 补。）
     func swiped(up: Bool) {
         // 上划/下划前先收功能面板（原型全局 pointerdown 会先把它收掉，再执行手势）
-        dismissFunctionPanelIfNeeded()
+        dismissTransientPopovers()
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
                 // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格与参数排
@@ -827,6 +889,7 @@ final class CameraViewModel: ObservableObject {
 
         if isFunctionPanelExpanded {
             collapseOverlays()
+            dismissFormatSelectorIfNeeded()   // 与格式选择器互斥（原型 btnMore 那侧也关 fmtOpen）
             showToast("功能面板已打开 · 点面板外任意处收起")
         } else {
             showToast("功能面板已收起")
@@ -841,6 +904,17 @@ final class CameraViewModel: ObservableObject {
     func dismissFunctionPanelIfNeeded() {
         guard isFunctionPanelExpanded else { return }
         isFunctionPanelExpanded = false
+    }
+
+    /// 点任意"别处"时收起**所有临时弹层**（功能面板 + 格式选择器）。
+    ///
+    /// 为什么合并成一个入口：原型是一个**全局 `pointerdown` 监听**同时处理
+    /// `fnOpen` / `fmtOpen` / `evOpen`；Swift 侧没有全局监听，只能逐个控件接线 ——
+    /// 那就必须**只有一个调用点名字**，否则"新增一个弹层忘了在某处收"会反复发生。
+    /// ⚠️ 以后再加临时弹层（EV 圆盘、参数刻度条），**加进这里**，调用点不用动。
+    func dismissTransientPopovers() {
+        dismissFunctionPanelIfNeeded()
+        dismissFormatSelectorIfNeeded()
     }
 
     /// 面板第 1 格「实况」：照片模式下是否采集 Live Photo（只记状态 + 角标，接线属 B 组）
@@ -897,6 +971,49 @@ final class CameraViewModel: ObservableObject {
         environment.showDebugHUD.toggle()
         Haptics.tick()
         showToast(environment.showDebugHUD ? "调试浮层已开" : "调试浮层已关")
+    }
+
+    // MARK: - 视频格式（#11）
+
+    /// 点芯片：展开 / 收起格式选择器。与功能面板（#10）**互斥**。
+    ///
+    /// ⚠️ A/B 组边界：本件只"记住选择"，**不动 `activeFormat`** ——
+    /// 真正重设采集格式（`CaptureDeviceConfigurator.applyFormat`）属 B 组。
+    /// 底注与 toast 都把这条讲清楚，不做"选了却装作已生效"。
+    func formatChipTapped() {
+        isFormatSelectorExpanded.toggle()
+        Haptics.tick()
+        DebugLog.shared.debug("ui", "格式选择器\(isFormatSelectorExpanded ? "展开" : "收起")")
+
+        if isFormatSelectorExpanded {
+            // ⚠️ 这里只能收**功能面板**，不能用 `dismissTransientPopovers()` ——
+            // 那个会把"刚展开的选择器"自己也收掉（选择器就永远打不开）。
+            // 点别处的统一入口是给**外部**控件用的，展开者自己除外。
+            dismissFunctionPanelIfNeeded()
+            showToast("\(formatChipText) · 选完只记设置，重设采集格式属 B 组")
+        }
+    }
+
+    /// 点别处收起选择器（与 #10 同款逐点接线：取景器 / 快门 / 模式条 / 顶栏图标 / 上划）
+    func dismissFormatSelectorIfNeeded() {
+        guard isFormatSelectorExpanded else { return }
+        isFormatSelectorExpanded = false
+    }
+
+    /// 选分辨率
+    func formatResolutionTapped(_ resolution: VideoResolution) {
+        guard resolution != videoResolution else { return }
+        videoResolution = resolution
+        Haptics.tick()
+        showToast("分辨率 \(resolution.displayName) · 重设采集格式属 B 组")
+    }
+
+    /// 选帧率
+    func formatFrameRateTapped(_ frameRate: VideoFrameRate) {
+        guard frameRate != videoFrameRate else { return }
+        videoFrameRate = frameRate
+        Haptics.tick()
+        showToast("帧率 \(frameRate.displayName) · 重设采集格式属 B 组")
     }
 
     /// 面板 foot「简易模式」：Swift 侧还没有简易模式（模块 #12）

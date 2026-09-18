@@ -954,6 +954,103 @@ function Theme_Size_edgeInset(src) {
   return m ? parseFloat(m[1]) : 8;
 }
 
+/* ---------- 10. 视频格式芯片（#11，2026-09-18） ---------- */
+// 为什么要这一组：
+//   a) 芯片**顶替**三图标，两者都在 73pt 那一格里 —— 顶替关系错一半会出现"都不显示/都显示"，
+//      而芯片宽度写死数字会让**模式条居中**失效（模式条靠左右两侧等宽）；
+//   b) 码率表有 12 个组合，**缺键会静默落到兜底码率**，时长估算错得看不出来；
+//   c) 存储胶囊在录制类模式换成长文本 —— **预留宽度必须同步换形态**，
+//      否则会复发 Mac 侧实测过的"启动后 73→95pt 跳变"（那次跳变还导致几何量错）。
+console.log('\n[10] 视频格式芯片');
+
+const formatChipFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'FormatChipView.swift')));
+const formatCatalogFile = files.find(f => path.basename(f) === 'VideoFormatCatalog.swift');
+
+if (!formatChipFile || !formatCatalogFile || !topBarFile9 || !vmFile) {
+  bad('找不到 FormatChipView / VideoFormatCatalog / TopBarView / CameraViewModel（改名了？自检需要同步）');
+} else {
+  const chipSrc = fs.readFileSync(formatChipFile, 'utf8');
+  const catalogSrc = fs.readFileSync(formatCatalogFile, 'utf8');
+  const topSrc10 = fs.readFileSync(topBarFile9, 'utf8');
+  const vmSrc10 = fs.readFileSync(vmFile, 'utf8');
+
+  // ① 芯片宽度必须**引用令牌**（不许写死数字）—— 模式条居中依赖它
+  if (!/\.frame\(minWidth: Theme\.Size\.topBarSideWidth\)/.test(chipSrc)) {
+    bad('芯片没有钉成 topBarSideWidth（写死数字会让模式条的居中失效）');
+  } else {
+    ok('芯片最小宽引用 Theme.Size.topBarSideWidth（模式条居中不受影响）');
+  }
+
+  // ② 顶替关系：录制类模式下芯片出现、三图标隐藏
+  const chipInTopBar = /if mode\.isRecordingBased \{[\s\S]{0,400}?FormatChipView\(/.test(topSrc10);
+  const iconsInElse = /if mode\.isRecordingBased \{[\s\S]{0,900}?\} else \{[\s\S]{0,200}?topBarIcons/.test(topSrc10);
+  if (!chipInTopBar || !iconsInElse) {
+    bad('顶替关系不完整：应为"录制类模式 → 芯片，其它 → 三图标"（现在不是 if/else 关系）');
+  } else {
+    ok('右上角是顶替关系（录制类模式显示芯片，其它模式显示三图标）');
+  }
+
+  // ③ 选择器选项：分辨率 3 项 + 帧率 4 项
+  const resCases = (catalogSrc.match(/case p720|case p1080|case uhd4K/g) || []).length;
+  const fpsCases = (catalogSrc.match(/case fps24|case fps30|case fps60|case fps120/g) || []).length;
+  if (resCases !== 3 || fpsCases !== 4) {
+    bad('档位数量不对：分辨率 ' + resCases + ' 项（应 3）/ 帧率 ' + fpsCases + ' 项（应 4）');
+  } else {
+    ok('档位齐全（分辨率 3 项 / 帧率 4 项）');
+  }
+
+  // ④ 码率表：12 个值全正，且**键集合与档位集合一致**（缺键会静默走兜底值）
+  const tableBlock = /bitrateTable[\s\S]*?\n    \]/.exec(catalogSrc);
+  if (!tableBlock) {
+    bad('找不到码率表 bitrateTable');
+  } else {
+    const nums = (tableBlock[0].match(/:\s*[0-9]+(?=\s*[,}\]])/g) || [])
+      .map(x => parseFloat(x.replace(/[:\s]/g, '')));
+    const nonPositive = nums.filter(n => !(n > 0)).length;
+    const missingRow = ['.p720', '.p1080', '.uhd4K'].filter(r => !tableBlock[0].includes(r));
+    if (nums.length !== 12) {
+      bad('码率表有 ' + nums.length + ' 个值（应为 12 = 3 分辨率 × 4 帧率）—— 缺键会静默落到兜底码率');
+    } else if (nonPositive > 0) {
+      bad('码率表有 ' + nonPositive + ' 个非正值');
+    } else if (missingRow.length) {
+      bad('码率表缺分辨率行：' + missingRow.join(' / '));
+    } else {
+      ok('码率表 12 个值齐全且全为正（' + Math.min(...nums) + ' ~ ' + Math.max(...nums) + ' Mbps）');
+    }
+  }
+
+  // ⑤ 落盘 2 键
+  const fmtKeys = (vmSrc10.match(/lumen\.camera\.fmt\./g) || []).length;
+  if (fmtKeys < 2) {
+    bad('视频格式落盘键只有 ' + fmtKeys + ' 个（应有 2：res / fps）');
+  } else {
+    ok('分辨率与帧率都落盘（lumen.camera.fmt.res / .fps）');
+  }
+
+  // ⑥ 与功能面板互斥（两方向）
+  const popoverMutex = /func formatChipTapped[\s\S]{0,600}?dismissFunctionPanelIfNeeded\(\)/.test(vmSrc10)
+    && /func toggleFunctionPanel[\s\S]{0,600}?dismissFormatSelectorIfNeeded\(\)/.test(vmSrc10);
+  if (!popoverMutex) {
+    bad('格式选择器与功能面板没有互斥（原型两处各自关闭对方）');
+  } else {
+    ok('格式选择器与功能面板互斥（两方向都有）');
+  }
+
+  // ⑦ 存储胶囊：录制类模式的预留宽度必须同步换形态（防"启动后跳宽"复发）
+  const reservation = /private var storageWidthReservation[\s\S]{0,400}?mode\.isRecordingBased/.test(topSrc10);
+  const longTextDeclared = /≈\s*23h 59m · 999\.99 GB/.test(topSrc10);
+  const storageFromVM = /storageText: viewModel\.storageChipText/.test(
+    fs.readFileSync(camViewFile, 'utf8')
+  );
+  if (!reservation || !longTextDeclared) {
+    bad('存储胶囊的预留宽度没有随模式切换 —— 录制类模式的长文本会撑宽胶囊（73→95pt 跳变复发）');
+  } else if (!storageFromVM) {
+    bad('CameraView 没有把 viewModel.storageChipText 传进顶栏（文字与模式要对齐）');
+  } else {
+    ok('存储胶囊文本随模式切换，且预留宽度同步换形态（长文本不会跳宽）');
+  }
+}
+
 /* ---------- 结论 ---------- */
 
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));

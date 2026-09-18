@@ -34,7 +34,9 @@ import SwiftUI
 struct TopBarView: View {
 
     let mode: CaptureSessionMode
-    let freeSpaceText: String
+    /// 存储胶囊文本（`CameraViewModel.storageChipText`）：照片/实况模式是剩余空间；
+    /// 视频 / Log 实况模式是"剩余可录时长 + 空间"（拍摄关键信息）。
+    let storageText: String
     let isTonePreviewOn: Bool
     let isGridOn: Bool
 
@@ -48,6 +50,16 @@ struct TopBarView: View {
     /// 「设置」不再占顶栏，收进面板第 6 格（原型同款：一个 ⠿ 只有一个行为，
     /// 原「更多」下拉菜单整块被功能面板取代）。
     let onFunctionPanelTap: () -> Void
+
+    // MARK: 格式芯片（#11）
+
+    /// 芯片文案（`CameraViewModel.formatChipText`）
+    let formatChipText: String
+    /// 格式选择器是否展开（展开中芯片变亮）
+    let isFormatSelectorExpanded: Bool
+    let onFormatChipTap: () -> Void
+    /// 副行存储胶囊的文本（录制类模式是"剩余可录时长 + 空间"，其它模式是剩余空间）
+    let storageText: String
 
     /// 上缘渐隐黑向上多伸出的高度（覆盖状态栏区域）
     private static let scrimOverhang: CGFloat = 60
@@ -98,7 +110,26 @@ struct TopBarView: View {
         .frame(height: Theme.Size.topBarRow1Height)
     }
 
+    /// 右上角那一格：**照片 / 实况模式是三图标；视频 / Log 实况模式换成格式芯片**。
+    ///
+    /// 两组是**顶替关系**（原型 `.screen.mode-video .tb-icons{display:none}` +
+    /// `.fmt-chip{display:inline-flex}`），不是并列；两者都钉在 `topBarSideWidth`(73)
+    /// 这一格里，所以模式条的居中不受影响。
+    @ViewBuilder
     private var iconCluster: some View {
+        if mode.isRecordingBased {
+            FormatChipView(
+                text: formatChipText,
+                isExpanded: isFormatSelectorExpanded,
+                onTap: onFormatChipTap
+            )
+            .frame(width: Theme.Size.topBarSideWidth, alignment: .trailing)
+        } else {
+            topBarIcons
+        }
+    }
+
+    private var topBarIcons: some View {
         // 三个按钮**间距为 0** 地拼满 73pt（每个 73/3 ≈ 24.33）。
         // 不用负间距、也不用 contentShape 外扩：那两种做法都会让相邻按钮的命中区交叠，
         // 点「网格」可能落到「闪光灯」上。
@@ -187,7 +218,7 @@ struct TopBarView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("剩余可用存储 \(freeSpaceText)")
+        .accessibilityLabel("存储：\(storageText)")
         .accessibilityHint("点按查看存储详情")
     }
 
@@ -203,22 +234,32 @@ struct TopBarView: View {
     /// 不会留下一个需要人工同步的魔法数字；如果将来真出现更长的文本，ZStack 会自动撑开、不裁字。
     private var storageValue: some View {
         ZStack(alignment: .trailing) {
-            Text(Self.storageWidthReservation)
+            Text(storageWidthReservation)
                 .font(Theme.Typography.chip)
                 .monospacedDigit()
                 .opacity(0)
                 .accessibilityHidden(true)
-            Text(freeSpaceText)
+            Text(storageText)
                 .font(Theme.Typography.chip)
                 .monospacedDigit()
         }
     }
 
-    /// 宽度预留文本：取"最宽可能值"的量级。
+    /// 宽度预留文本：取**当前模式下**"最宽可能值"的量级。
     ///
-    /// `FormatText.fileSize` 用的是 `ByteCountFormatter` 且 `allowedUnits` 只有 MB / GB
-    /// （没有 TB，也不会出现 4 位整数），所以上界就是「999.99 GB」这一档 —— 9 个字符留足。
-    private static let storageWidthReservation = "999.99 GB"
+    /// - 照片 / 实况模式：`FormatText.fileSize` 用 `ByteCountFormatter` 且 `allowedUnits` 只有 MB / GB
+    ///   （没有 TB、也不会出现 4 位整数），上界就是「999.99 GB」这一档 —— 9 个字符留足。
+    /// - **视频 / Log 实况模式**（#11）：文本变成 `≈ 85m · 31 GB` 这种**更长的形态**
+    ///   （`≈ 时长 · 空间`）。⚠️ **这里必须跟着换**，否则预留不够 ——
+    ///   数值到达时胶囊会突然变宽（2026-09-17 Mac 侧实测过的 73 → 95pt 跳变会原样复发，
+    ///   而那次跳变还害得它把几何量错）。
+    ///   上界取「≈ 23h 59m · 999.99 GB」：999 GB 空间 ÷ 96 Mbps（4K120）≈ 23 小时。
+    ///
+    /// 用"隐形同宽兄弟"而不是硬编码 `minWidth`：字号一变预留宽度自动跟着变，
+    /// 不留需要人工同步的魔法数字；真出现更长的文本时 ZStack 会自动撑开、不裁字。
+    private var storageWidthReservation: String {
+        mode.isRecordingBased ? "≈ 23h 59m · 999.99 GB" : "999.99 GB"
+    }
 
     // MARK: - 上缘渐隐
 

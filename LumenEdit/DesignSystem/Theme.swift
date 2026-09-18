@@ -89,6 +89,19 @@ enum Theme {
         static let functionGlyphStrokeOn = Self.ok.opacity(0.6)
         /// foot 区上分隔线（原型 `.fn-foot{ border-top:.5px solid rgba(255,255,255,.09) }`）
         static let functionFootSeparator = Color.white.opacity(0.09)
+
+        // MARK: 视频格式芯片（#11，2026-09-18）
+
+        /// 芯片底 / 描边（原型 `.fmt-chip{ background:rgba(255,255,255,.10); border:.5px solid rgba(255,255,255,.16) }`）
+        static let formatChipFill = Color.white.opacity(0.10)
+        static let formatChipStroke = Color.white.opacity(0.16)
+        /// 展开中（原型 `.fmt-chip.on{ background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.3) }`）
+        static let formatChipFillExpanded = Color.white.opacity(0.18)
+        static let formatChipStrokeExpanded = Color.white.opacity(0.30)
+        /// 选择器里的选项按钮（原型 `.fmt-opt{ background:rgba(255,255,255,.05); border:.5px solid var(--stroke) }`）
+        static let formatOptionFill = Color.white.opacity(0.05)
+        /// 选择器底注上方的分隔线（原型 `.fm-note{ border-top:.5px solid rgba(255,255,255,.07) }`）
+        static let formatNoteSeparator = Color.white.opacity(0.07)
     }
 
     // MARK: - 间距
@@ -249,6 +262,36 @@ enum Theme {
                 + functionLinkHeight + functionFootBottomPadding
             return functionPanelTopPadding + grid + foot + functionPanelBottomPadding
         }
+
+        // MARK: 视频格式芯片与选择器（原型 `.fmt-chip` / `.fmt-menu` / `.fmt-opt`）—— #11
+
+        /// 芯片：高 24 / 圆角 12 / 左右内边距 10（原型 `.fmt-chip{ height:24px; border-radius:12px; padding:0 10px }`）
+        static let formatChipHeight: CGFloat = 24
+        static let formatChipCornerRadius: CGFloat = 12
+        static let formatChipHorizontalPadding: CGFloat = 10
+
+        /// 选择器：宽 196 / 圆角 14 / 内边距 10,10,8（原型 `.fmt-menu{ width:196px; border-radius:14px; padding:10px 10px 8px }`）
+        static let formatSelectorWidth: CGFloat = 196
+        static let formatSelectorCornerRadius: CGFloat = 14
+        static let formatSelectorHorizontalPadding: CGFloat = 10
+        static let formatSelectorTopPadding: CGFloat = 10
+        static let formatSelectorBottomPadding: CGFloat = 8
+        /// 两组之间的间距（原型 `.fmt-menu{ gap:10px }`）
+        static let formatSelectorGroupSpacing: CGFloat = 10
+        /// 同一组内选项之间的间距（原型 `.fm-opts{ gap:5px }`）
+        static let formatOptionSpacing: CGFloat = 5
+        /// 选项按钮：高 28 / 圆角 9（原型 `.fmt-opt{ height:28px; border-radius:9px }`）
+        static let formatOptionHeight: CGFloat = 28
+        static let formatOptionCornerRadius: CGFloat = 9
+        /// 分组标题的下内边距（原型 `.fm-label{ padding:0 2px 4px }`）
+        static let formatGroupLabelBottomPadding: CGFloat = 4
+        /// 底注：上分隔线 + 上内边距 7（原型 `.fm-note{ border-top:.5px solid; padding-top:7px }`）
+        static let formatNoteTopPadding: CGFloat = 7
+
+        /// 选择器定位：顶栏下沿 + **6**，距右 **14**（原型 `right:14px; top:92px`；
+        /// 92 = 状态栏 30 + 顶栏 56 + 6。Swift 侧用"顶栏下沿 + gap"表达，不写死 92）
+        static let formatSelectorTopGap: CGFloat = 6
+        static let formatSelectorTrailingInset: CGFloat = 14
 
         /// ⤢ 放大态的「前置 / 设置」镜像按钮（原型 `.icon-item.mirror{ 50×44 }`，图标 19px）
 
@@ -545,5 +588,16 @@ enum Theme {
         static let functionLink = Font.system(size: 12.5, weight: .regular, design: .rounded)
         /// foot 区右侧箭头（原型 `.fn-arr{ font-size:14px }`）
         static let functionLinkArrow = Font.system(size: 14, weight: .regular, design: .rounded)
+
+        // MARK: 视频格式芯片与选择器（#11）
+
+        /// 芯片文字（原型 `.fmt-chip{ font-size:12px; font-weight:700 }`）
+        static let formatChip = Font.system(size: 12, weight: .bold, design: .rounded)
+        /// 选择器分组标题（原型 `.fm-label{ font-size:10px }`）
+        static let formatGroupLabel = Font.system(size: 10, weight: .regular, design: .rounded)
+        /// 选项按钮（原型 `.fmt-opt{ font-size:11.5px; font-weight:600 }`）
+        static let formatOption = Font.system(size: 11.5, weight: .semibold, design: .rounded)
+        /// 底注（原型 `.fm-note{ font-size:9.5px }`）
+        static let formatNote = Font.system(size: 9.5, weight: .regular, design: .rounded)
     }
 }

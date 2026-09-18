@@ -332,7 +332,7 @@ struct CameraView: View {
             VStack(spacing: Theme.Spacing.sm) {
                 TopBarView(
                     mode: viewModel.mode,
-                    freeSpaceText: env.session.freeSpaceText,
+                    storageText: viewModel.storageChipText,
                     isTonePreviewOn: env.showTonePreview,
                     isGridOn: env.showGrid,
                     onModeTap: { tapped in
@@ -343,7 +343,11 @@ struct CameraView: View {
                     onTonePreviewTap: { viewModel.tonePreviewTapped() },
                     onStorageTap: { viewModel.storageTapped() },
                     // 右上第三颗图标 = ⠿ 功能面板（#10）；「设置」已收进面板第 6 格
-                    onFunctionPanelTap: { viewModel.toggleFunctionPanel() }
+                    onFunctionPanelTap: { viewModel.toggleFunctionPanel() },
+                    // 视频 / Log 实况模式下它顶替三图标（#11）
+                    formatChipText: viewModel.formatChipText,
+                    isFormatSelectorExpanded: viewModel.isFormatSelectorExpanded,
+                    onFormatChipTap: { viewModel.formatChipTapped() }
                 )
 
                 if env.showDebugHUD {
@@ -435,6 +439,26 @@ struct CameraView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: viewModel.mode)
         .animation(.easeInOut(duration: 0.18), value: viewModel.isRecording)
+        // 格式选择器（#11）：点芯片从**右上角**弹出（原型 `.fmt-menu{ right:14px; top:92px }`）。
+        // 定位写成相对表达式：右边距 14 + "顶栏下沿 + 6"（不写死原型那个 92px）。
+        // 出现动画取原型的 `scale .94 → 1` + 淡入（原型还有上移 6pt，视觉上等价，略）。
+        .overlay(alignment: .topTrailing) {
+            if viewModel.isFormatSelectorExpanded {
+                FormatSelectorView(
+                    resolution: viewModel.videoResolution,
+                    frameRate: viewModel.videoFrameRate,
+                    onSelectResolution: { viewModel.formatResolutionTapped($0) },
+                    onSelectFrameRate: { viewModel.formatFrameRateTapped($0) }
+                )
+                .padding(.trailing, Theme.Size.formatSelectorTrailingInset)
+                .padding(
+                    .top,
+                    Theme.Spacing.sm + Theme.Size.topBarHeight + Theme.Size.formatSelectorTopGap
+                )
+                .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: viewModel.isFormatSelectorExpanded)
     }
 
     // MARK: - 顶栏
