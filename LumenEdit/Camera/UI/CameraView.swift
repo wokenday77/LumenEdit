@@ -674,6 +674,17 @@ private struct FrameRatioMask: View {
                     .frame(height: barHeight)
             }
             .animation(.easeInOut(duration: 0.26), value: ratio)
+            // 诊断日志（backlog ⑤「1:1 遮幅偏下 8.3pt」）：
+            // 真机实测的"窗中心 445.3pt"**既不等于全屏中心 437、也不等于安全区中心 451**，
+            // 说明容器的 frame 与"安全区/全屏"两个假设都不符 —— 修法选 A 还是 B 取决于这个值，
+            // 所以先把容器尺寸与算出的黑边打出来（每次切比例一次，不刷屏）。
+            .onChange(of: ratio) { _, newValue in
+                DebugLog.shared.debug(
+                    "ui",
+                    "遮幅 \(newValue.displayName)：容器 \(Int(proxy.size.width))×\(Int(proxy.size.height))"
+                        + "，窗高 \(Int(frameHeight))，上下黑边各 \(Int(barHeight))"
+                )
+            }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
