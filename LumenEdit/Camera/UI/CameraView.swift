@@ -13,7 +13,7 @@ struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
     @State private var isHUDExpanded = false
 
-    // MARK: 上划 / 下划手势状态（#7）
+    // MARK: 上划 / 下划手势状态（#7 滤镜条）
 
     /// 取景器容器高度（几何判定用，经 PreferenceKey 读出，不参与布局）
     @State private var previewHeight: CGFloat = 0
@@ -98,10 +98,17 @@ struct CameraView: View {
         viewModel.isZoomOn ? Theme.Spacing.sm + Theme.Size.topBarHeight : 0
     }
 
-    /// 卡片底 = 快门排上沿（放大态快门排 106 + 底栏下内边距 10）
+    /// 卡片底 = 快门排上沿（放大态快门排 106 + 底栏下内边距**两层**共 20）
+    ///
+    /// ⚠️ **必须用 `bottomStackBottomPadding`，不要自己写 `+ Spacing.sm`**：
+    /// 底栏到安全区之间有两层各 10pt 的内边距（外层 `VStack` 的 `.padding(.vertical, _)`
+    /// + `bottomArea` 自己的 `.padding(.bottom, _)`）。2-5b 只算了其中一层，
+    /// 卡片底比快门排上沿低了 10pt（整张卡片多出 10pt 高）。
     private var previewBottomInset: CGFloat {
-        viewModel.isZoomOn ? Theme.Size.shutterRowZoomHeight + Theme.Spacing.sm : 0
+        viewModel.isZoomOn ? Theme.Size.shutterRowZoomHeight + Theme.Size.bottomStackBottomPadding : 0
     }
+
+    // MARK: - 滤镜条（#7）与上划 / 下划手势
 
     /// 滤镜条当前是否真的展开。
     ///
@@ -110,31 +117,6 @@ struct CameraView: View {
     private var isFilterStripShown: Bool {
         viewModel.isFilterStripExpanded && !viewModel.isZoomOn
     }
-
-    /// 焦段条：**常态贴在快门排上方；放大态脱离底栈、浮进卡片内底边**
-    /// （原型 `.zoom-on .row-focal{ position:absolute; bottom:136px }` = 卡底偏移 + 12）
-    ///
-    /// 两种状态都用"绝对定位到底部"表达，避免"放大态既要从 VStack 里消失、
-    /// 又要出现在卡片里"这种跨容器的切换。
-    private var floatingFocalStrip: some View {
-        FocalStripView(selection: viewModel.focal) { preset in
-            viewModel.focalTapped(preset)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, focalStripBottomOffset)
-        .padding(.horizontal, Theme.Spacing.md)
-    }
-
-    private var focalStripBottomOffset: CGFloat {
-        if viewModel.isZoomOn {
-            // 卡底（106 + 10）+ 与卡底的间隙 12
-            return Theme.Size.shutterRowZoomHeight + Theme.Spacing.sm + Theme.Size.focalStripZoomGap
-        }
-        // 常态：快门排 80 + 底栏下内边距 10 + 与快门排的行距 16
-        return Theme.Size.shutterRowHeight + Theme.Spacing.sm + Theme.Spacing.md
-    }
-
-    // MARK: - 上划 / 下划手势（#7）
 
     /// 手势几何参数 —— 对齐原型 `bindSwipe` 的实测口径，不要凭感觉改：
     /// `minimumDistance` 24（SwiftUI 侧起手门槛，低于它就是点按对焦）；
@@ -194,14 +176,6 @@ struct CameraView: View {
                 )
                 .onPreferenceChange(ViewfinderHeightKey.self) { previewHeight = $0 }
                 .simultaneousGesture(viewfinderSwipeGesture)
-
-            // 焦段条（浮层，不参与底栏布局）。
-            // ⚠️ 场景·风格展开**或**滤镜条展开时**收起**（原型 `.ss-on/.filter-on .row-focal`）：
-            // 滤镜条占 144pt、场景·风格展开占 147pt，焦段条再叠上去会把底部栈撑得过高；
-            // 放大态（⤢）反过来要**保留**它 —— 它浮进卡片里。
-            if !viewModel.isSceneStyleExpanded && !isFilterStripShown {
-                floatingFocalStrip
-            }
 
             VStack(spacing: Theme.Spacing.sm) {
                 TopBarView(
@@ -336,6 +310,8 @@ struct CameraView: View {
 
             // ⤢ 放大态：参数排与图标行**整行让位**（原型 `.zoom-on` 把三条归零）。
             // 前置 / 设置的入口由快门排的镜像按钮顶上，不会丢功能。
+            // ⚠️ 焦段条**不在让位之列** —— 它顺序往下走、正好落在取景器卡片的内底边，
+            // 这就是原型 `.zoom-on .row-focal` 的效果（见下方它的注释）。
             if !viewModel.isZoomOn {
                 ExposurePanel(
                     exposureBias: $viewModel.exposureBias,
@@ -357,6 +333,32 @@ struct CameraView: View {
                     onExposureCompensation: { viewModel.exposureCompensationTapped() },
                     onSettings: { env.showSettings = true }
                 )
+            }
+
+            // 焦段条：**底栈里的普通一行**，位置在「图标行之下、快门排之上」
+            // —— 原型 HTML 就是这个顺序（`.params-closed-bar` → `.row-focal` → `.shutter-row`），
+            // 2-4 的交付版式也是这个顺序（真机截图 `LumenEdit-底部三排-2-3.png`）。
+            //
+            // ⚠️ **2-5b 曾把它改成"绝对定位到底部"的浮层，这是一次回归**：那个偏移公式
+            // （快门排 80 + 内边距 10 + 行距 16 = 106）是 2-3 时代的账，当时底栈里还没有图标行。
+            // 2-4 把图标行插进底栈后，那个位置正好落在图标行上 —— 真机上四颗药丸直接压在
+            // 「对焦 / 白平衡 / 快门速度 / 曝光补偿」的文字上（2026-09-17 Mac 侧截图取证）。
+            //
+            // 现在回到"它就是一行"：常态自然落在图标行与快门排之间；放大态那两行整行让位后，
+            // 它自然落在快门排正上方、也就是取景器卡片的内底边（原型 `.zoom-on .row-focal`
+            // 想要的效果）—— **不需要任何绝对定位、也就不需要维护两套偏移**。
+            //
+            // 代价（如实记录）：放大态下它与卡片底边的间隙是 16pt（底栈统一行距），
+            // 原型写的是 12pt；差 4pt，为此再引入一层绝对定位不划算。
+            //
+            // ⚠️ 场景·风格展开**或**滤镜条展开时**整行收起**（#6 / #7，原型
+            // `.ss-on/.filter-on .row-focal`）：那两条要占 147 / 144pt，
+            // 焦段条再占一行会把底部栈撑得过高。放大态下滤镜条本来就隐藏
+            //（`isFilterStripShown` 为 false），焦段条照常落进卡片内底边。
+            if !viewModel.isSceneStyleExpanded && !isFilterStripShown {
+                FocalStripView(selection: viewModel.focal) { preset in
+                    viewModel.focalTapped(preset)
+                }
             }
 
             // 快门排四件套：缩略图 · 快门（绝对居中）· ⤢ · 风格方块（docs/09）。

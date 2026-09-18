@@ -512,6 +512,19 @@ if (!filterStripFile || !vmFile || !camViewFile || !thumbFile || !themeFile2) {
   } else {
     ok('上划/下划手势参数齐全，且与点按对焦并存（simultaneousGesture）');
   }
+
+  // ⑥ 底栏到安全区的内边距令牌（Mac 侧 0609fa9 引入，注释承诺"自检第 7 组会校验"）：
+  //    它必须恒等于两层各 10pt 之和 —— 任何"从底部往上量"的浮层都吃这一整份，
+  //    改内边距时漏改令牌，卡片底边就会多出/少掉一层。
+  const stackPad = readTok('bottomStackBottomPadding');
+  const sm = readTok('sm');
+  if (stackPad === null || sm === null) {
+    bad('读不到 bottomStackBottomPadding / Theme.Spacing.sm（改名了？自检需要同步）');
+  } else if (Math.abs(stackPad - 2 * sm) > 0.01) {
+    bad('bottomStackBottomPadding = ' + stackPad + 'pt ≠ 2 × Spacing.sm（' + (2 * sm) + 'pt）—— 两层内边距的账对不上');
+  } else {
+    ok('bottomStackBottomPadding = ' + stackPad + 'pt = 2 × Spacing.sm（两层内边距账目一致）');
+  }
 }
 
 
