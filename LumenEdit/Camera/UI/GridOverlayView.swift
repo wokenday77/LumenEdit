@@ -7,13 +7,15 @@ import SwiftUI
 ///
 /// 线用 `Path` + `.stroke` 直接画，不用 `Divider`/`Rectangle` 去拼：
 /// 后者在等分位置会因为自身的对齐方式产生半像素偏移，四条线的粗细看起来会不一致。
+///
+/// 粗细走 `Theme.Size.gridLineWidth`（**1.0pt**，2026-09-17 由 0.5 提上来 ——
+/// 真机反馈"网格线太细"：0.5pt 在 3x 屏上只有 1.5 物理像素，被抗锯齿摊淡了）。
 struct GridOverlayView: View {
 
     /// 等分数。3 = 三分构图线（相机 App 的行业标准）。
     private static let divisions = 3
-    /// 线的透明度与粗细：在明亮画面上要看得见、在暗画面上又不能抢戏。
+    /// 线的透明度：在明亮画面上要看得见、在暗画面上又不能抢戏。
     private static let lineOpacity = 0.28
-    private static let lineWidth: CGFloat = 0.5
 
     var body: some View {
         GeometryReader { geometry in
@@ -32,7 +34,7 @@ struct GridOverlayView: View {
             }
             .stroke(
                 Theme.Palette.primaryText.opacity(Self.lineOpacity),
-                lineWidth: Self.lineWidth
+                lineWidth: Theme.Size.gridLineWidth
             )
         }
         .allowsHitTesting(false)

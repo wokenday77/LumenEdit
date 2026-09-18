@@ -147,9 +147,20 @@ enum Theme {
         static let shutterZoomScale: CGFloat = 1.3
         /// 放大态取景器卡片的圆角（原型 `viewport{ border-radius:18px }`）
         static let previewCardRadius: CGFloat = 18
-        /// 焦段条浮进卡片内底边后，与卡片底边的间隙
-        /// （原型 `bottom:136px` = 卡底偏移 124 + 12）
-        static let focalStripZoomGap: CGFloat = 12
+
+        /// 底栏**最下沿到安全区之间**的总内边距 = **20pt（两层各 10）**。
+        ///
+        /// ⚠️ **这个数是两层内边距之和，不是一层**：
+        ///   1. `CameraView.cameraContent` 外层 `VStack` 的 `.padding(.vertical, Spacing.sm)` → 10
+        ///   2. `CameraView.bottomArea` 自己的 `.padding(.bottom, Spacing.sm)` → 10
+        ///
+        /// 为什么单独立一个令牌：任何"从底部往上量"的浮层（放大态取景器卡片的底边）
+        /// 都必须吃这一整份，而不是自己写 `+ Spacing.sm`。
+        /// 2-5b 就是按"只有一层 10pt"算的，卡片底边比快门排上沿低了 10pt；
+        /// 更早那次则是焦段条浮层漏算了整条图标行（2026-09-17 真机截图取证，见 `CameraView`）。
+        /// 自检第 7 组会校验它 = 2 × `Theme.Spacing.sm`，改内边距时不会漏改这里。
+        static let bottomStackBottomPadding: CGFloat = 20
+
         /// 放大态的「前置 / 设置」镜像按钮（原型 `.icon-item.mirror{ 50×44 }`，图标 19px）
         static let mirrorButtonWidth: CGFloat = 50
         static let mirrorButtonHeight: CGFloat = 44
@@ -279,6 +290,16 @@ enum Theme {
         /// 单元宽 = (370 − 2×6) / 7 ≈ 51.1pt，最长的四字标签「快门速度」「曝光补偿」
         /// 在 10.5pt 下约 42pt —— 放得下，且单元宽本身已 ≥ HIG 的 44pt 下限。
         static let toolRowLabelSize: CGFloat = 10.5
+
+        // MARK: 取景器辅助线（三分构图线）
+
+        /// 三分线粗细。
+        ///
+        /// ⚠️ **0.5 → 1.0（2026-09-17 真机反馈"网格线太细"）**。
+        /// 0.5pt 在 3x 屏上是 1.5 物理像素，被抗锯齿摊成两条半透明的边，
+        /// 在明亮画面上几乎看不见（真机截图核对过）。1.0pt 恰好落在 3 物理像素上，
+        /// 边缘清晰，同时透明度和原来同档，不会抢戏。
+        static let gridLineWidth: CGFloat = 1.0
 
         // MARK: 顶栏（两行）
         //
