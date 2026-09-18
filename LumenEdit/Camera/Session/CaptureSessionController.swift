@@ -77,6 +77,13 @@ final class CaptureSessionController: ObservableObject {
     @Published private(set) var deviceState = CaptureDeviceState()
     @Published private(set) var exposureBias: Float = 0
     @Published private(set) var exposureBiasRange: ClosedRange<Float> = -2...2
+
+    /// 当前设备上**不可用**的焦段档位 id 集合（B1 置灰用）。
+    ///
+    /// 判据在 `CaptureCapabilities.unavailableFocalIds(for:)`：档位换算出的 zoom 落不进
+    /// 设备的可用区间（典型：单摄设备上的 13mm 档）。
+    /// 会话配置完成后计算一次 —— 它只随设备/格式变化，不随拍摄状态变。
+    @Published private(set) var unavailableFocalIds: Set<String> = []
     @Published private(set) var isLivePhotoSupported = false
     @Published private(set) var shutterCount = 0
     @Published private(set) var lastErrorMessage: String?
@@ -216,6 +223,81 @@ final class CaptureSessionController: ObservableObject {
     }
 
     // MARK: - 参数
+
+    /// 运行时**平滑变焦**（B1：焦段药丸点击）。
+    ///
+    /// ## 会话稳定性：这里**不重建会话**
+    ///
+    /// 设备回退链本来就是**虚拟多摄优先**（`.builtInTripleCamera` 起），
+    /// 越过系统的切换点时由系统内部换 constituent 镜头 —— 采集图没变
+    /// （同一个虚拟设备、同一个 input），所以只需要 `lock → ramp → unlock`。
+    ///
+    /// ⚠️ **不要**在这里用"模式切换那套动态增删 output"（`reconfigureOutputsLocked`）：
+    /// 那套是给"采集图真的变了"用的（照片↔视频），套到变焦上会平白引入重建停顿。
+    ///
+    /// - Parameters:
+    ///   - animated: `false` 时用极短时长（≈ 直接设值的效果），留给"需要瞬移"的场景
+    ///   - completion: 回主线程回调**实际生效**的 zoom（已 clamp），供 UI 对账
+    func setZoomFactor(
+        _ target: CGFloat,
+        animated: Bool = true,
+        completion: ((CGFloat) -> Void)? = nil
+    ) {
+        guard let device else { return }
+        let duration = animated
+            ? CaptureDeviceConfigurator.zoomRampDuration
+            : CaptureDeviceConfigurator.zoomRampDuration * 0.03
+
+        // 与其它设备配置一致：都在 sessionQueue 上串行执行（不会与配置变更/曝光写入打架）
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let applied = self.configurator.applyZoomRamp(
+                targetZoomFactor: target,
+                duration: duration,
+                to: device
+            )
+            self.refreshSnapshot()
+            if let completion {
+                self.publish { completion(applied) }
+            }
+        }
+    }
+
+    /// 按焦段档位变焦（B1）。
+    ///
+    /// **换算放在这里而不是 ViewModel**：档位 mm → `videoZoomFactor` 需要设备的基准焦距
+    /// （`CaptureCapabilities.baseMillimeters` 靠 constituent 探测得出），那是会话层的知识；
+    /// VM 只管"用户点了哪个档"（分层纪律：UI 不碰设备细节）。
+    ///
+    /// - Parameter completion: 回主线程回调 `(实际生效 zoom?, 是否被 clamp)`；
+    ///   解析 / 换算失败时第一个参数为 `nil`
+    func applyFocal(
+        _ preset: FocalPreset,
+        animated: Bool = true,
+        completion: ((_ applied: CGFloat?, _ wasClamped: Bool) -> Void)? = nil
+    ) {
+        guard let device, let millimeters = preset.millimeters else {
+            completion?(nil, false)
+            return
+        }
+        let base = CaptureCapabilities.baseMillimeters(of: device)
+        guard let zoom = CaptureCapabilities.zoomFactor(
+            forFocalMillimeters: millimeters,
+            baseMillimeters: base
+        ) else {
+            completion?(nil, false)
+            return
+        }
+
+        // 预先判断"会不会被 clamp"：真正 clamp 发生在 configurator 里，
+        // 这里算一次是为了**如实告知用户**（不假装切到了标称档位）
+        let range = CaptureCapabilities.zoomRange(of: device)
+        let willClamp = zoom < range.lowerBound - 0.01 || zoom > range.upperBound + 0.01
+
+        setZoomFactor(zoom, animated: animated) { applied in
+            completion?(applied, willClamp)
+        }
+    }
 
     func setExposureBias(_ value: Float) {
         guard let device else { return }
@@ -441,6 +523,8 @@ final class CaptureSessionController: ObservableObject {
                     self.isLivePhotoSupported = livePhotoSupported
                     self.exposureBiasRange = rangeLower <= rangeUpper ? rangeLower...rangeUpper : -2...2
                     self.exposureBias = currentBias
+                    // 焦段档位可用性（B1）：随设备/格式而定，配置完成后算一次
+                    self.unavailableFocalIds = CaptureCapabilities.unavailableFocalIds(for: device)
                 }
                 DebugLog.shared.info("session", "会话配置完成，Live Photo 支持=\(livePhotoSupported)")
             }

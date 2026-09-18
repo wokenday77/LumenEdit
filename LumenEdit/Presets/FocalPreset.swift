@@ -14,6 +14,18 @@ struct FocalPreset: Identifiable, Equatable, Codable {
     let displayName: String
     /// 是否为默认选中的档位
     let isDefault: Bool
+
+    /// 等效焦距（mm）。
+    ///
+    /// 从 `id` 解析（`id` 本身就是 mm 字符串，见 `FocalCatalog.all`）——
+    /// 不新增存储字段，避免与原型 `FOCALS` 的数据同源校验（`tools/check_presets.js` 第 4 组）
+    /// 产生第二处真源。B1 用它换算 `videoZoomFactor`。
+    var millimeters: CGFloat? {
+        // ⚠️ 不能写 `CGFloat(Double(id))` —— `Double(id)` 是 `Double?`，
+        // 而 `CGFloat` 没有接收 Optional 的初始化器（编译错误）
+        guard let value = Double(id) else { return nil }
+        return CGFloat(value)
+    }
 }
 
 enum FocalCatalog {

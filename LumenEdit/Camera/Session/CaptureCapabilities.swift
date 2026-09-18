@@ -35,6 +35,74 @@ enum CaptureCapabilities {
         return discovery.devices.first
     }
 
+    // MARK: - 焦段 → 变焦倍率（B1）
+
+    /// 设备**最广** constituent 的等效焦距（mm）—— 档位换算 `videoZoomFactor` 的基准。
+    ///
+    /// **靠 constituent 类型探测，不写机型名**（铁律）：
+    ///   - 有超广角 constituent → 最广就是超广角 → **13mm**
+    ///   - 没有（单广角 / 只是双摄长焦）→ 最广就是广角 → **24mm**
+    ///
+    /// 为什么基准必须是探测值而不是写死 13：单摄设备上 `videoZoomFactor = 1.0` 代表的是
+    /// **24mm 视场**，此时"13mm 档"要算成 13/24 = 0.54 —— 小于设备的 min（1.0），
+    /// 于是会被 `unavailableFocalIds(for:)` 正确判为**不可用**（而不是装作切过去）。
+    static func baseMillimeters(of device: AVCaptureDevice) -> CGFloat {
+        let hasUltraWide = device.constituentDevices.contains {
+            $0.deviceType == .builtInUltraWideCamera
+        }
+        return hasUltraWide ? 13 : 24
+    }
+
+    /// 档位等效焦距 → 虚拟设备的 `videoZoomFactor`（**纯算术**，基准见上）。
+    ///
+    /// 之所以能用纯算术：虚拟多摄设备的 `videoZoomFactor = 1.0` 是"最广 constituent 的 native 视场"
+    /// （Apple 文档：`1.0 (full field of view)`），所以倍率就是焦距比。
+    /// 越过系统切换点（`virtualDeviceSwitchOverVideoZoomFactors`，三摄约 `[2.0, 9.2]`）时
+    /// **系统自动换 constituent 镜头**，画面平滑 —— 这正是回退链选虚拟设备的理由。
+    static func zoomFactor(
+        forFocalMillimeters millimeters: CGFloat,
+        baseMillimeters base: CGFloat
+    ) -> CGFloat? {
+        guard base > 0, millimeters > 0 else { return nil }
+        return millimeters / base
+    }
+
+    /// 设备的 `[min, max]` 可用 zoom 区间（**下限至少 1.0**）。
+    ///
+    /// 与 `CaptureDeviceConfigurator.applyZoomLocked` 里的口径一致，含"max 可能为 0 / 非正"的防护。
+    static func zoomRange(of device: AVCaptureDevice) -> ClosedRange<CGFloat> {
+        let lower = max(1.0, device.minAvailableVideoZoomFactor)
+        let rawUpper = min(device.activeFormat.videoMaxZoomFactor, device.maxAvailableVideoZoomFactor)
+        let upper = max(lower, rawUpper)
+        return lower...upper
+    }
+
+    /// 当前设备上**不可用**的焦段档位 id 集合（B1 置灰用）。
+    ///
+    /// 判据：档位换算出的 zoom **落不进** `zoomRange` → 该视场在这台设备上表达不了。
+    /// 典型场景：单摄设备上 13mm 档（13/24 = 0.54 < 1.0）。
+    ///
+    /// ⚠️ 这里**只判"能不能表达"，不判"是不是光学变焦"** ——
+    /// 数字变焦也算能表达（画质降级是另一回事，不在置灰范围内）。
+    static func unavailableFocalIds(for device: AVCaptureDevice) -> Set<String> {
+        let range = zoomRange(of: device)
+        let base = baseMillimeters(of: device)
+        var unavailable: Set<String> = []
+        for preset in FocalCatalog.all {
+            guard let mm = preset.millimeters,
+                  let zoom = zoomFactor(forFocalMillimeters: mm, baseMillimeters: base) else {
+                // 解析不出来的档位按"不可用"处理（宁可灰掉，也不让用户点了没反应）
+                unavailable.insert(preset.id)
+                continue
+            }
+            // 容差 0.01：设备能力是浮点，卡在边界上的档位不该被误判
+            if zoom < range.lowerBound - 0.01 || zoom > range.upperBound + 0.01 {
+                unavailable.insert(preset.id)
+            }
+        }
+        return unavailable
+    }
+
     /// 内置麦克风（Live Photo 与视频都要音轨）
     static func microphone() -> AVCaptureDevice? {
         AVCaptureDevice.default(for: .audio)

@@ -285,11 +285,14 @@ final class CameraViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // 会话就绪（冷启动 / 重建完成）同样清空 —— 那一刻 publish 出来的 EV 来自设备当前值，
-        // 不是我们推送的，留着记录会把合法回写误吞掉
+        // 不是我们推送的，留着记录会把合法回写误吞掉。
+        // 顺带（B1）：**按当前焦段档位对齐一次硬件 zoom**，原因见 `reapplyFocalAfterSessionReady`。
         environment.session.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
-                if state == .running { self?.lastPushedExposureBias = nil }
+                guard let self, state == .running else { return }
+                self.lastPushedExposureBias = nil
+                self.reapplyFocalAfterSessionReady()
             }
             .store(in: &cancellables)
 
@@ -635,21 +638,80 @@ final class CameraViewModel: ObservableObject {
         showToast("剩余可用存储 \(environment.session.freeSpaceText)")
     }
 
-    /// 焦段条点档位。
+    /// 焦段条点档位（**B1：真接硬件**）。
     ///
-    /// **本件只切 UI 状态**：真正的镜头切换与变焦（`applyZoomLocked` 扩成按档切镜头
-    /// + `Ramp` 平滑）属于任务书 B 组接线，单独一轮 —— 所以这里明确说明，
-    /// 不假装"已经切到 48mm 镜头了"。装成生效比不生效更容易让人误判。
+    /// - **不重建会话**：切镜头是虚拟多摄设备内部的事（越过系统切换点时自动换 constituent），
+    ///   只做 `lock → ramp → unlock`，见 `CaptureSessionController.setZoomFactor`。
+    /// - **不可用档位**（`unavailableFocalIds`，例如单摄设备上的 13mm）：
+    ///   不动硬件，只给 toast 说明 —— UI 已置灰，但**灰着也要能点出原因**（产品约束）。
     func focalTapped(_ preset: FocalPreset) {
+        guard let environment else { return }
+
+        if environment.session.unavailableFocalIds.contains(preset.id) {
+            Haptics.warning()
+            DebugLog.shared.debug("ui", "焦段 \(preset.displayName)mm 在当前设备不可用（已置灰）")
+            showToast(
+                "焦段 \(preset.displayName)mm 在当前设备上不可用 —— 本机镜头覆盖不到这个视场"
+            )
+            return
+        }
+
+        // 点已选中的档位：原型是静默 return；这里补一次轻触感（"点到了、本来就选中"）
         guard preset.id != focal.id else {
-            // 点已选中的档位：原型是**静默 return**。这里补一次轻触感 ——
-            // "点到了、只是本来就选中"应该有个物理反馈，但不必弹提示条刷屏。
             Haptics.tick()
             return
         }
+
         focal = preset
         Haptics.tick()
-        showToast("焦段 \(preset.displayName)mm · 镜头切换与变焦将在 P2 接硬件")
+
+        environment.session.applyFocal(preset) { [weak self] applied, wasClamped in
+            guard let self else { return }
+            guard let applied else {
+                showToast("焦段 \(preset.displayName)mm：档位数据异常，未切换")
+                return
+            }
+            if wasClamped {
+                // 理论上到不了这里（超能力的档位已被置灰拦掉）—— 留作防御：
+                // 真出现就**照实说**，不假装切到了标称档位
+                showToast(String(
+                    format: "焦段 %@ mm 超出本机能力，已用 %.2f× 变焦",
+                    preset.displayName, Double(applied)
+                ))
+            } else {
+                showToast(String(
+                    format: "焦段 %@ mm · 变焦 %.2f×",
+                    preset.displayName, Double(applied)
+                ))
+            }
+        }
+    }
+
+    /// 当前设备上不可用的焦段档位（UI 置灰用；透传 session 的探测结果）
+    var unavailableFocalIds: Set<String> {
+        environment?.session.unavailableFocalIds ?? []
+    }
+
+    /// 会话就绪后，把硬件 zoom 对齐到**当前焦段档位**（B1）。
+    ///
+    /// 为什么必须做：配置阶段的变焦只认 `CapturePreset`（预设注入链路），
+    /// 而 UI 的真相是"焦段档位"（默认 24mm）。不对齐就会出现
+    /// **"画面是 13mm 超广角视场、但选中态写着 24mm"** 这类不一致。
+    ///
+    /// ⚠️ 用**非动画**：会话刚就绪时不该让用户看到画面推近一下。
+    /// ⚠️ 不可用档位不推硬件（保持设备默认视场，UI 那边本来就置灰）。
+    private func reapplyFocalAfterSessionReady() {
+        guard let environment else { return }
+        guard !environment.session.unavailableFocalIds.contains(focal.id) else { return }
+
+        environment.session.applyFocal(focal, animated: false) { applied, _ in
+            guard let applied else { return }
+            DebugLog.shared.debug(
+                "ui",
+                "会话就绪 · 焦段 \(focal.displayName)mm 已对齐（变焦 "
+                    + String(format: "%.2f", Double(applied)) + "×）"
+            )
+        }
     }
 
     // MARK: - 底部图标行

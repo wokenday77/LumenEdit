@@ -386,8 +386,63 @@ final class CaptureDeviceConfigurator {
         // 不能假设 maxAvailableVideoZoomFactor 一定是正数（外接设备/异常格式下可能为 0）。
         let upper = max(1.0, Double(maxZoom))
         let target = CGFloat(preset.zoomFactor.sanitized(or: 1.0).clamped(to: 1.0...upper))
-        // P2 会换成 iOS 18 的 AVCaptureDevice.Ramp 做平滑变焦，这里先用直接设置
+        // **配置阶段**用直接设置（瞬移）—— 会话刚建起来，没有"过程"要给用户看。
+        // 运行时的平滑变焦走 `applyZoomRamp`（B1 焦段条接的就是那条）。
         device.videoZoomFactor = target
+    }
+
+    /// 变焦平滑时长（用户 2026-09-18 拍板：约 0.35s）
+    static let zoomRampDuration: TimeInterval = 0.35
+
+    /// 运行时**平滑**变焦（B1：焦段药丸点击 → 这里是接线）。
+    ///
+    /// ## 三条硬事实（Apple 文档 2026-09-18 查证，别凭印象改）
+    ///
+    /// 1. **必须在 `lockForConfiguration()` 内调用** —— 否则抛 `NSGenericException`。
+    ///    这也正是本文件存在的理由（工程铁律 2：全工程只有这里允许加锁）。
+    /// 2. `rate` 的单位是"**每秒 2 的幂次**"：`1.0` = 每秒翻倍/减半；**只取绝对值**，
+    ///    方向由目标值自动决定；`0` 等价于 `cancelVideoZoomRamp()`。
+    /// 3. 给 `videoZoomFactor` **赋值会打断进行中的 ramp** —— 所以连点档位**不需要先 cancel**，
+    ///    直接再调 ramp 即可（目标被替换）。
+    ///
+    /// ## 为什么按"目标距离"算 rate，而不是固定 rate
+    ///
+    /// 固定 rate 意味着"每秒翻倍"恒定 → **跨档越大耗时越长**
+    /// （13→120mm 需要 `log2(9.23) / 3 ≈ 1.07s`，太拖）。改成
+    /// `rate = log2(目标 / 当前) / 期望时长`，每次切换都约 `duration` 秒，手感一致。
+    ///
+    /// - Returns: **实际生效**的目标 zoom（已 clamp），供 UI 对账
+    @discardableResult
+    func applyZoomRamp(
+        targetZoomFactor: CGFloat,
+        duration: TimeInterval,
+        to device: AVCaptureDevice
+    ) -> CGFloat {
+        // clamp（铁律 2 的通用要求：越界赋值是**抛异常**，不是被忽略）。
+        // 区间口径统一走 CaptureCapabilities.zoomRange，避免两处判断漂移。
+        let range = CaptureCapabilities.zoomRange(of: device)
+        let target = targetZoomFactor.sanitized(or: range.lowerBound).clamped(to: range)
+
+        let current = device.videoZoomFactor
+        // 已在目标附近：不折腾（省掉一次无意义的 ramp，也避免"点了像没反应"的错觉）
+        guard abs(target - current) > 0.001 else { return target }
+
+        let ratio = Double(target) / Double(max(current, 0.0001))
+        let rate = Float(abs(log2(ratio)) / max(duration, 0.05))
+
+        do {
+            try withLock(device) {
+                // ⚠️ `_ =` 是**刻意**的：`ramp(toVideoZoomFactor:withRate:)` 在 iOS 18 上
+                // 可能返回 `AVCaptureDevice.Ramp`（可持有以取消 / 观察完成），也可能是 Void ——
+                // 这样写对**两种签名都能编译**，且不产生 unused warning。
+                // 真机编译若报错，按 Xcode 自动补全改这一行
+                //（与 `AVCaptureEventInteraction` 那次的处理方式相同）。
+                _ = device.ramp(toVideoZoomFactor: target, withRate: rate)
+            }
+        } catch {
+            DebugLog.shared.error("device", "平滑变焦失败：\(error.localizedDescription)")
+        }
+        return target
     }
 
     private func normalize(

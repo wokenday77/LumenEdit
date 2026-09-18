@@ -1123,6 +1123,117 @@ if (!formatChipFile || !formatCatalogFile || !topBarFile9 || !vmFile) {
   }
 }
 
+/* ---------- 11. 焦段切镜头（B1，2026-09-18） ---------- */
+// 为什么要这一组：
+//   a) 档位 → zoom 的映射写反/漏改会让"点 120mm 反而拉远"；
+//   b) `ramp` 必须在 lockForConfiguration 内（否则抛 NSGenericException）→ 它只允许出现在
+//      CaptureDeviceConfigurator（= 铁律 2"唯一锁"）；
+//   c) **"切镜头不重建会话"是本件的核心不变量** —— 一旦有人在这里 beginConfiguration
+//      或增删 input，就会平白引入重建停顿（那套是模式切换用的）。
+console.log('\n[11] 焦段切镜头 (B1)');
+
+const focalFile = files.find(f => path.basename(f) === 'FocalPreset.swift');
+const capFile = files.find(f => path.basename(f) === 'CaptureCapabilities.swift');
+const configuratorFile = files.find(f => path.basename(f) === 'CaptureDeviceConfigurator.swift');
+const stripFile = files.find(f => path.basename(f) === 'FocalStripView.swift');
+
+if (!focalFile || !capFile || !configuratorFile || !stripFile) {
+  bad('找不到 FocalPreset / CaptureCapabilities / CaptureDeviceConfigurator / FocalStripView');
+} else {
+  const focalSrc = fs.readFileSync(focalFile, 'utf8');
+  const capSrc = fs.readFileSync(capFile, 'utf8');
+  const cfgSrc = fs.readFileSync(configuratorFile, 'utf8');
+  const stripSrc = fs.readFileSync(stripFile, 'utf8');
+  const sessionSrc = fs.readFileSync(
+    files.find(f => path.basename(f) === 'CaptureSessionController.swift'), 'utf8'
+  );
+
+  // ① 映射表：4 档焦距解析 + 基准 mm 探测 + zoom 单调递增
+  const baseLine = /baseMillimeters[\s\S]{0,400}?return hasUltraWide \? (\d+) : (\d+)/.exec(capSrc);
+  const mmCount = (focalSrc.match(/FocalPreset\(/g) || []).length;
+  if (!baseLine) {
+    bad('CaptureCapabilities 里找不到基准焦距探测（baseMillimeters：有超广角 → 13 / 否则 24）');
+  } else if (mmCount < 4) {
+    bad('焦段数据只剩 ' + mmCount + ' 档（应为 4）');
+  } else {
+    const base = parseFloat(baseLine[1]);              // 13
+    const fallbackBase = parseFloat(baseLine[2]);      // 24
+    const mms = (focalSrc.match(/FocalPreset\(id: "(\d+)"/g) || [])
+      .map(s => parseFloat(/"(\d+)"/.exec(s)[1]));
+    const zooms = mms.map(mm => mm / base);
+    const increasing = zooms.every((z, i) => i === 0 || z > zooms[i - 1]);
+    if (mms.length !== 4) {
+      bad('焦段档位数不是 4（解析到 ' + mms.length + '）');
+    } else if (!increasing) {
+      bad('档位 zoom 不是严格递增：' + zooms.map(z => z.toFixed(2)).join(' < ') + '（写反了？）');
+    } else if (!(fallbackBase > base)) {
+      bad('基准焦距探测的兜底值应大于超广角基准（无超广角时基准是广角 24mm）');
+    } else {
+      ok('档位映射单调递增（基准 ' + base + 'mm：'
+        + mms.map((mm, i) => mm + '→' + zooms[i].toFixed(2)).join(' / ') + '）');
+    }
+  }
+
+  // ② 必须用 ramp（硬设 = 直接跳，失去本件的意义）
+  if (!/device\.ramp\(toVideoZoomFactor:/.test(cfgSrc)) {
+    bad('CaptureDeviceConfigurator 里没有 ramp(toVideoZoomFactor:) —— 变焦会是硬跳');
+  } else {
+    ok('运行时变焦走 ramp（平滑）而不是硬设 videoZoomFactor');
+  }
+
+  // ③ ramp 只允许出现在 configurator（铁律 2：唯一锁的地方）
+  const rampFiles = files.filter(f => /\.ramp\(toVideoZoomFactor:/.test(fs.readFileSync(f, 'utf8')))
+    .map(f => path.basename(f));
+  if (rampFiles.length !== 1 || rampFiles[0] !== 'CaptureDeviceConfigurator.swift') {
+    bad('ramp 出现在 ' + rampFiles.join(' / ') + ' —— 它必须在 lockForConfiguration 内调用，'
+      + '只允许出现在 CaptureDeviceConfigurator');
+  } else {
+    ok('ramp 只出现在 CaptureDeviceConfigurator（在唯一锁内调用，符合铁律 2）');
+  }
+
+  // ④ clamp 到设备能力（越界赋值是抛异常）
+  if (!/CaptureCapabilities\.zoomRange\(of:/.test(cfgSrc)) {
+    bad('applyZoomRamp 没有用 CaptureCapabilities.zoomRange 做 clamp（越界赋值会抛异常）');
+  } else {
+    ok('变焦前先 clamp 到设备能力区间（统一走 zoomRange，两处口径不漂）');
+  }
+
+  // ⑤ **不重建会话**：变焦路径里不得出现配置变更 / input 增删
+  const zoomBody = methodBodyOf(sessionSrc, 'setZoomFactor');
+  if (!zoomBody) {
+    bad('找不到 CaptureSessionController.setZoomFactor');
+  } else if (/beginConfiguration|addInput|removeInput|commitConfiguration/.test(zoomBody)) {
+    bad('setZoomFactor 里出现了会话配置变更 —— 切镜头**不该重建会话**（那套是模式切换用的）');
+  } else if (!/applyFocal/.test(sessionSrc)) {
+    bad('找不到 applyFocal（档位 → zoom 的换算入口）');
+  } else {
+    ok('切镜头路径只做 lock → ramp → unlock（无 beginConfiguration / input 增删）');
+  }
+
+  // ⑥ 焦段条命中高仍为条高 44（药丸视觉 30，别把命中高改成药丸高）
+  if (!/\.frame\(height: Theme\.Size\.focalStripHeight\)[\s\S]{0,120}?contentShape\(Rectangle\(\)\)/.test(stripSrc)) {
+    bad('焦段药丸的命中高不再是条高 44（HIG 下限 44，改回药丸高 30 就掉下去了）');
+  } else {
+    ok('焦段药丸命中高仍为 44（视觉 44×30 不变，热区借条内空白）');
+  }
+
+  // ⑦ 置灰：不可用档位**仍可点**（灰 + 可点 + 有解释），不是 disabled
+  const grayed = /unavailableIds/.test(stripSrc);
+  const notDisabled = !/\.disabled\([^)]*unavailable/.test(stripSrc);
+  const vmExplains = /unavailableFocalIds\.contains\(preset\.id\)[\s\S]{0,600}?showToast/.test(
+    fs.readFileSync(vmFile, 'utf8')
+  );
+  if (!grayed) {
+    bad('FocalStripView 缺 unavailableIds（不可用档位没有置灰）');
+  } else if (!notDisabled) {
+    bad('不可用档位被 disabled 了 —— 产品约束要求"灰但仍可点并给出原因"');
+  } else if (!vmExplains) {
+    bad('点了不可用档位没有 toast 说明原因（"点了没反应"违反产品约束）');
+  } else {
+    ok('不可用档位置灰但仍可点，且点了给 toast 说明原因');
+  }
+}
+
 /* ---------- 结论 ---------- */
 
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));

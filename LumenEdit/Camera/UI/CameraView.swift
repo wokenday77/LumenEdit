@@ -586,7 +586,11 @@ struct CameraView: View {
             // 焦段条再占一行会把底部栈撑得过高。放大态下滤镜条本来就隐藏
             //（`isFilterStripShown` 为 false），焦段条照常落进卡片内底边。
             if !viewModel.isSceneStyleExpanded && !isFilterStripShown {
-                FocalStripView(selection: viewModel.focal) { preset in
+                FocalStripView(
+                    selection: viewModel.focal,
+                    // B1：设备覆盖不到的档位置灰（仍可点 —— 点了给 toast 说明原因）
+                    unavailableIds: viewModel.unavailableFocalIds
+                ) { preset in
                     viewModel.focalTapped(preset)
                 }
             }
