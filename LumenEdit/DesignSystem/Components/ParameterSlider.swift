@@ -31,8 +31,27 @@ struct ParameterSlider: View {
     /// 本次拖动是否已被判定为"横向接管"。nil = 还没判出来（见 `dragGesture`）。
     @State private var isHorizontalDrag: Bool?
 
+    /// 上次"跨档"触觉的时刻（节流用，见 `fireTickThrottled()`）
+    @State private var lastTickAt: Date = .distantPast
+
     /// 判定死区：位移不超过它时不判方向（避免手抖就把一次点按判成拖动）
     private static let directionDeadZone: CGFloat = 6
+
+    /// **换档滞后**：手指要从当前档位挪开**超过 step 的这个比例**，才换到下一档。
+    ///
+    /// 为什么必须有它（2026-09-18 真机反馈"拉到部分数值时一直触发咔"）：
+    /// 档位边界是**一个点** —— 手指停在那附近时，亚像素抖动会让
+    /// `roundedToStep` 在相邻两档之间反复翻转，于是"值变了 → 响一下"每帧成立，触觉连响。
+    /// 滞后把边界变成**一段 0.2 档宽的过渡带**（0.6 与 1.0 之间），停在边界上不再是"来回换档"。
+    ///
+    /// 0.6 的手感代价：数值变化比手指位置滞后 0.1 档 ≈ 2.8pt —— 肉眼与手感都察觉不到。
+    private static let hysteresisRatio: Double = 0.6
+
+    /// **触觉节流**：两次"跨档"触感之间的最小间隔。
+    ///
+    /// 滞后已经压掉绝大部分边界抖动；节流是第二道保险 ——
+    /// 快速来回拖动时（手指在几档之间来回扫），不至于把触觉打成连续振动。
+    private static let tickThrottle: TimeInterval = 0.055
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -141,18 +160,30 @@ struct ParameterSlider: View {
                 }
                 guard isHorizontalDrag == true else { return }
 
+                // ⚠️ 编辑态**先上报**：它同时是 `CameraView` 整页手势的闸门
+                //（`isExposureEditing`）。放在"是否换档"判定之前 ——
+                // 否则手指小幅移动（未跨档）时闸门不生效，横拖仍可能被整页手势误判。
+                onEditingChanged?(true)
+
                 let x = gesture.location.x.clamped(to: 0...width)
                 let travel = max(1, width - thumbDiameter)
                 let ratio = Double((x - thumbDiameter / 2) / travel).clamped(to: 0...1)
                 let raw = range.lowerBound + ratio * (range.upperBound - range.lowerBound)
+
+                // 滞后换档（见 `hysteresisRatio`）：离当前档位不够远就不换。
+                // 这里比的是**连续索引**，不是吸附后的相等 —— 后者正是
+                // "边界抖动导致触觉连响"的来源。
+                let rawIndex = (raw - range.lowerBound) / step
+                let currentIndex = (value - range.lowerBound) / step
+                guard abs(rawIndex - currentIndex) >= Self.hysteresisRatio else { return }
+
                 // 吸附 + 钳制：任何值进硬件参数前都要过这一关
                 let snapped = raw.sanitizedClamped(to: range, step: step)
 
                 if snapped != value {
                     value = snapped
-                    Haptics.tick()
+                    fireTickThrottled()
                 }
-                onEditingChanged?(true)
             }
             .onEnded { _ in
                 // 被方向闸门判为竖向的那次拖动：整个生命周期都不碰值，也不发编辑事件。
@@ -163,8 +194,17 @@ struct ParameterSlider: View {
                 defer { isHorizontalDrag = nil }
                 guard isHorizontalDrag == true else { return }
                 onEditingChanged?(false)
-                Haptics.tick()
-            }    }
+                fireTickThrottled()
+            }
+    }
+
+    /// 带节流的跨档触感（见 `tickThrottle`）
+    private func fireTickThrottled() {
+        let now = Date()
+        guard now.timeIntervalSince(lastTickAt) >= Self.tickThrottle else { return }
+        lastTickAt = now
+        Haptics.tick()
+    }
 
     private func resetToDefault() {
         guard isEnabled else { return }

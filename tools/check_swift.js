@@ -572,26 +572,45 @@ if (!camViewFile || !vmFile) {
   if (gMissing.length) {
     bad('读不到手势参数：' + gMissing.join(' / '));
   } else {
+    // ⚠️ 改成**区间守卫**（2026-09-18 第三轮）：早先只守"不许太严"（单向上限），
+    // 结果是放宽过头 → 真机反馈"太敏感"。两端都要守：太严会"要很用力"，太松会误触。
     let badG = false;
-    const limits = [
-      ['swipeActivationDistance', g.activation, 12, '起手门槛（原 24，真机偏迟钝）'],
-      ['swipeMinTravel', g.travel, 20, '位移阈值（原 34，要求滑过 3.4mm 才算）'],
-      ['swipeStartRegionRatio', g.startRatio, 0.3, '起点线（原 0.55，与底栏上沿只差约 6pt）']
+    const ranges = [
+      ['swipeActivationDistance', g.activation, 8, 16, '起手门槛'],
+      ['swipeMinTravel', g.travel, 14, 24, '位移阈值'],
+      ['swipeStartRegionRatio', g.startRatio, 0.1, 0.35, '起点线']
     ];
-    for (const [name, value, limit, why] of limits) {
-      if (value > limit) { bad(name + ' = ' + value + ' 超过 ' + limit + '（' + why + '）'); badG = true; }
+    for (const [name, value, lo, hi, why] of ranges) {
+      if (value < lo) {
+        bad(name + ' = ' + value + ' 低于 ' + lo + '（' + why + '太严 → "要很用力"）');
+        badG = true;
+      } else if (value > hi) {
+        bad(name + ' = ' + value + ' 超过 ' + hi + '（' + why + '太松 → 误触）');
+        badG = true;
+      }
     }
+    // 时长是**宽容度**参数不是敏感度参数：它只会被调大，调小等于回到"滑快才认"
     if (g.duration < 1.0) {
-      bad('swipeMaxDuration = ' + g.duration + 's 小于 1.0s（慢滑会被拒，表现为"要很用力"）');
+      bad('swipeMaxDuration = ' + g.duration + 's 小于 1.0s（慢滑会被拒，等于回到"要很用力"）');
       badG = true;
     }
     if (g.slack < 1.0) {
       bad('swipeHorizontalSlack = ' + g.slack + ' 小于 1.0（斜着上滑会被误判为横滑）');
       badG = true;
     }
+    // 方向锁死区：太小则主轴判定含糊，太大则起手要滑很远才定性
+    const axisZone = numOf(viewSrc8, 'swipeAxisDeadZone');
+    if (axisZone === null) {
+      bad('读不到 swipeAxisDeadZone（方向锁起手死区）');
+      badG = true;
+    } else if (axisZone < 6 || axisZone > 14) {
+      bad('swipeAxisDeadZone = ' + axisZone + 'pt 不在 6~14 之间（太小判定含糊 / 太大起手要滑很远才定性）');
+      badG = true;
+    }
     if (!badG) {
-      ok('手势口径是放宽后的版本（起手 ' + g.activation + ' / 位移 ' + g.travel + 'pt / '
-        + g.duration + 's / 起点 ' + g.startRatio + ' / 横向裕度 ' + g.slack + '）');
+      ok('手势口径在合理区间（起手 ' + g.activation + ' / 位移 ' + g.travel + 'pt / 时长 '
+        + g.duration + 's / 起点 ' + g.startRatio + ' / 横向裕度 ' + g.slack
+        + ' / 方向锁死区 ' + axisZone + 'pt）');
     }
   }
 
@@ -643,6 +662,25 @@ if (!camViewFile || !vmFile) {
     } else {
       ok('ParameterSlider 有方向闸门（竖向落手不改值）');
     }
+
+    // d2) 触觉降频：滞后换档 + 节流（2026-09-18 真机反馈"拉到部分数值时一直触发咔"）
+    //     根因是档位边界处的抖动让 `snapped != value` 每帧成立 —— 不是档位太密。
+    const hyst = /\bhysteresisRatio\b/.test(sliderSrc)
+      && /abs\(rawIndex - currentIndex\)\s*>=\s*Self\.hysteresisRatio/.test(sliderSrc);
+    const throttle = /\btickThrottle\b/.test(sliderSrc)
+      && /fireTickThrottled/.test(sliderSrc);
+    const rawTick = /Haptics\.tick\(\)/.test(sliderSrc);
+    if (!hyst) {
+      bad('ParameterSlider 缺"滞后换档"（档位边界抖动会让触觉连响）');
+    } else if (!throttle) {
+      bad('ParameterSlider 缺触觉节流（tickThrottle / fireTickThrottled）');
+    } else if (/if snapped != value \{[\s\S]{0,200}?Haptics\.tick\(\)/.test(sliderSrc)) {
+      bad('ParameterSlider 的跨档触觉绕过了节流（直接调 Haptics.tick()）');
+    } else if (!rawTick) {
+      bad('ParameterSlider 里连一处 Haptics.tick() 都没有了？归零反馈应该保留');
+    } else {
+      ok('ParameterSlider 触觉已降频（滞后换档 0.6 档 + 节流 55ms，归零反馈保留）');
+    }
   }
 
   // e) 手势挂载点必须在整页 ZStack 上（第二轮真机反馈"上划两次只能呼出一个"）
@@ -664,7 +702,10 @@ if (!camViewFile || !vmFile) {
   } else if (!/onChanged[\s\S]{0,700}?shouldTriggerSwipe/.test(viewSrc8)) {
     bad('判定没放在 onChanged 里（必须滑够阈值即生效，不能只在 onEnded 判定）');
   } else {
-    ok('手势提前触发（滑够 16pt 立刻生效，不等松手）');
+    // 消息里**动态**拼当前阈值：写死数字会在调参后立刻变成过时文案
+    //（本项目已多次栽在"注释/消息与代码不一致"上）
+    const travelNow = numOf(viewSrc8, 'swipeMinTravel');
+    ok('手势提前触发（滑够 ' + travelNow + 'pt 立刻生效，不等松手）');
   }
 
   // g) EV 滑条范围：必须用「UI 范围 ∩ 设备范围」，不许直接给设备范围
