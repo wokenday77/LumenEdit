@@ -434,6 +434,80 @@ else {
   if (!badF) ok('档位 id / 显示名 / 默认选中一致');
 }
 
+/* --- 3.5 视频格式码率表（#11） --- */
+
+console.log('\n[5] 码率表 FMT_BITRATE ⟷ VideoFormatCatalog');
+
+// 原型侧：`var FMT_BITRATE = { '720p': {24:9, ...}, ... };`（对象，不是数组）
+// —— 所以不能用 `extractJsArray`，单独提取并用 `new Function` 求值（内容是我们自己的原型字面量）
+const bitrateLiteral = /var FMT_BITRATE = (\{[\s\S]*?\n  \});/.exec(html);
+let jsBitrate = null;
+if (bitrateLiteral) {
+  try {
+    jsBitrate = new Function('return ' + bitrateLiteral[1])();
+  } catch (e) {
+    bad('原型 FMT_BITRATE 解析失败：' + e.message);
+  }
+} else {
+  bad('原型里找不到 FMT_BITRATE');
+}
+
+// Swift 侧：`.p720: [.fps24: 9, ...]` → 归一成 `{ '720p': { 24: 9, ... } }`
+const swiftFmtSrc = readSwift('VideoFormatCatalog.swift');
+const resMap = { p720: '720p', p1080: '1080p', uhd4K: '4K' };
+const tableBlock = /bitrateTable[\s\S]*?\n    \]/.exec(swiftFmtSrc);
+const swBitrate = {};
+if (!tableBlock) {
+  bad('VideoFormatCatalog.swift 里找不到 bitrateTable');
+} else {
+  const rowRe = /\.(p720|p1080|uhd4K):\s*\[([^\]]+)\]/g;
+  let row;
+  while ((row = rowRe.exec(tableBlock[0]))) {
+    const resKey = resMap[row[1]];
+    const pairs = row[2].match(/\.fps(\d+):\s*([0-9.]+)/g) || [];
+    swBitrate[resKey] = {};
+    pairs.forEach(p => {
+      const m = /\.fps(\d+):\s*([0-9.]+)/.exec(p);
+      swBitrate[resKey][m[1]] = parseFloat(m[2]);
+    });
+  }
+}
+
+if (jsBitrate && Object.keys(swBitrate).length) {
+  let badB = 0;
+  let compared = 0;
+  const jsResKeys = Object.keys(jsBitrate);
+  const swResKeys = Object.keys(swBitrate);
+  const missingRes = jsResKeys.filter(k => !swResKeys.includes(k));
+  const extraRes = swResKeys.filter(k => !jsResKeys.includes(k));
+  if (missingRes.length || extraRes.length) {
+    bad(`分辨率键不一致：原型缺 [${extraRes.join(', ')}]，Swift 缺 [${missingRes.join(', ')}]`);
+    badB++;
+  } else {
+    jsResKeys.forEach(res => {
+      const jsFps = Object.keys(jsBitrate[res]).sort((a, b) => +a - +b);
+      const swFps = Object.keys(swBitrate[res]).sort((a, b) => +a - +b);
+      if (jsFps.join(',') !== swFps.join(',')) {
+        bad(`[${res}] 帧率键不一致：原型 [${jsFps.join(',')}] vs Swift [${swFps.join(',')}]`);
+        badB++;
+        return;
+      }
+      jsFps.forEach(fps => {
+        compared++;
+        const jv = jsBitrate[res][fps];
+        const sv = swBitrate[res][fps];
+        if (Math.abs(jv - sv) > 0.001) {
+          bad(`[${res} ${fps}fps] 码率不一致：原型 ${jv} vs Swift ${sv}`);
+          badB++;
+        }
+      });
+    });
+  }
+  if (!badB) {
+    ok(`码率表逐条一致（${jsResKeys.length} 分辨率 × 帧率 = ${compared} 个值）`);
+  }
+}
+
 /* ============================================================
    结论
    ============================================================ */
