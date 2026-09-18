@@ -83,6 +83,11 @@ struct CameraView: View {
 
             // 与预览同一坐标系，直接用视图坐标绘制
             FocusIndicatorView(point: viewModel.focusPoint, token: viewModel.focusToken)
+
+            // 画幅比遮幅（#10）：取景器上下各压一块黑边。
+            // 放在网格线与对焦框**之上**（黑边区域不该出现网格/对焦框），
+            // 但**不接收触摸**（原型 `pointer-events:none`）—— 点黑边区域照样对焦，与原型一致。
+            FrameRatioMask(ratio: viewModel.fnRatio)
         }
         .clipShape(RoundedRectangle(cornerRadius: previewCornerRadius, style: .continuous))
         .padding(.top, previewTopInset)
@@ -124,6 +129,72 @@ struct CameraView: View {
     /// ⤢ 放大态强制隐藏（与滤镜条同规则，原型 `.zoom-on` 把参数排整行归零）。
     private var isExposurePanelShown: Bool {
         viewModel.isExposurePanelExpanded && !viewModel.isZoomOn
+    }
+
+    // MARK: - 功能面板（#10）
+
+    /// 功能面板的 7 格（**顺序即版式**，见 `docs/12` 第三节）。
+    ///
+    /// 原型是 8 格（第 8 格「阶段标记」是给原型演示看的研发工具）；**用户 2026-09-18 拍板去掉**，
+    /// 做成 7 格 —— 真机上对拍摄无价值，实现它要给每个控件加标记层（成本高、收益低）。
+    ///
+    /// ⚠️ **SF Symbol 名写错会静默留白**（本项目踩过 `aperture` 那次）：
+    /// 这里用的 `livephoto` / `bolt.fill` / `gearshape` / `square.grid.3x3` 都是常见符号，
+    /// 但**必须真机确认 7 个圆钮都有图形**（`docs/12` 验收清单里已列）。
+    private var functionPanelItems: [FunctionPanelItem] {
+        [
+            FunctionPanelItem(
+                id: "live",
+                glyph: .symbol("livephoto"),
+                label: "实况",
+                isOn: viewModel.isFnLiveOn
+            ) { viewModel.fnLiveTapped() },
+
+            // 画幅比 / 倒计时用**文字字形**（原型 `.fn-ic-text`）——
+            // 符号库里没有"4:3"或"关"这种档位文字，直接写文字最清楚
+            FunctionPanelItem(
+                id: "ratio",
+                glyph: .text(viewModel.fnRatio.displayName),
+                label: "画幅比",
+                isOn: viewModel.fnRatio != .r4x3
+            ) { viewModel.fnRatioTapped() },
+
+            FunctionPanelItem(
+                id: "flash",
+                glyph: .symbol("bolt.fill"),
+                label: "闪光灯",
+                isOn: viewModel.isFnFlashOn
+            ) { viewModel.fnFlashTapped() },
+
+            FunctionPanelItem(
+                id: "timer",
+                glyph: .text(viewModel.fnTimer.displayName),
+                label: "倒计时",
+                isOn: viewModel.fnTimer.isOn
+            ) { viewModel.fnTimerTapped() },
+
+            FunctionPanelItem(
+                id: "hdr",
+                glyph: .text("HDR"),
+                label: "高亮增益",
+                isOn: viewModel.isFnHDROn
+            ) { viewModel.fnHDROnTapped() },
+
+            FunctionPanelItem(
+                id: "settings",
+                glyph: .symbol("gearshape"),
+                label: "设置",
+                // 入口类**永不点亮**（原型：入口项不带 `.on`）；点它 = 开设置页并收回面板
+                isOn: false
+            ) { viewModel.fnSettingsTapped() },
+
+            FunctionPanelItem(
+                id: "hud",
+                glyph: .symbol("square.grid.3x3"),
+                label: "HUD",
+                isOn: env.showDebugHUD
+            ) { viewModel.fnHudTapped() }
+        ]
     }
 
     /// 手势几何参数（2026-09-18 按真机反馈放宽过一次，别再照着原型原样抄）。
@@ -229,7 +300,8 @@ struct CameraView: View {
                     onGridTap: { viewModel.gridTapped() },
                     onTonePreviewTap: { viewModel.tonePreviewTapped() },
                     onStorageTap: { viewModel.storageTapped() },
-                    onSettingsTap: { env.showSettings = true }
+                    // 右上第三颗图标 = ⠿ 功能面板（#10）；「设置」已收进面板第 6 格
+                    onFunctionPanelTap: { viewModel.toggleFunctionPanel() }
                 )
 
                 if env.showDebugHUD {
@@ -278,6 +350,27 @@ struct CameraView: View {
         //   - 落在 EV 滑条上的竖向拖动：滑条的方向闸门不接管，这里接管 → 正是期望行为
         // 点按对焦（UIKit 的 tap）与拖动天然不冲突，`simultaneousGesture` 保证两者并存。
         .simultaneousGesture(viewfinderSwipeGesture)
+        // 功能面板（#10）：**盖住底栏的模态浮层**（原型 `.fn-panel{ left:8px; right:8px; bottom:8px;
+        // z-index:20 }`）—— 不参与底栈布局，所以它是"盖"而不是"挤"，面板态取景器反而比底栏行更省。
+        // 升起动画 = 原型 `translateY(112%) → 0` 的 300ms `cubic-bezier(.22,.9,.3,1)`；
+        // 7 个圆钮的"依次浮入"在 `FunctionPanelView` 内部（每个错 40ms）。
+        .overlay(alignment: .bottom) {
+            if viewModel.isFunctionPanelExpanded {
+                FunctionPanelView(
+                    items: functionPanelItems,
+                    // 简易模式属模块 #12（Swift 侧还没有）→ 链接置灰 + toast 说明，不做"点了没反应"
+                    isSimpleModeOn: false,
+                    onSimpleModeTap: { viewModel.fnSimpleModeTapped() }
+                )
+                .padding(.horizontal, Theme.Size.functionPanelEdgeInset)
+                .padding(.bottom, Theme.Size.functionPanelEdgeInset)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(
+            .timingCurve(0.22, 0.9, 0.3, 1, duration: 0.3),
+            value: viewModel.isFunctionPanelExpanded
+        )
         // 顶部浮层槽位（模式条正下方）：**录制计时** 与 **实况角标** 共用，二者互斥 ——
         // 录制只发生在视频 / Log 实况模式，实况角标只在实况模式。
         // 录制徽标从快门上方挪到这里（2026-09-17：2-3 加焦段条后，原位置会盖住药丸）。
@@ -288,7 +381,10 @@ struct CameraView: View {
                     .offset(y: Theme.Spacing.sm + Theme.Size.topBarHeight + 8)
                     .allowsHitTesting(false)
                     .transition(.opacity)
-            } else if viewModel.mode == .livePhoto {
+            } else if viewModel.mode == .livePhoto
+                // 照片模式下由功能面板（#10）的「实况」开关驱动（原型同款口径：
+                // `state.mode === 'live' || (state.mode === 'photo' && state.fn.live)`）
+                || (viewModel.mode == .photo && viewModel.isFnLiveOn) {
                 liveBadge
                     .offset(y: Theme.Spacing.sm + Theme.Size.topBarHeight + 8)
                     .allowsHitTesting(false)
@@ -474,6 +570,43 @@ struct CameraView: View {
                 Capsule().stroke(Theme.Palette.stroke, lineWidth: 0.5)
             )
             .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+// MARK: - 画幅比遮幅（#10）
+
+/// 画幅比遮幅：取景器宽不变，按比例算出画面高，**上下各压一块等高的黑边**（原型 `.ratio-mask`）。
+///
+/// - 高度公式：`画面高 = 取景器宽 × 比例高宽比`，黑边 = `(取景器高 − 画面高) / 2`
+///   （例子：402×778 的取景器里，`4:3` 竖拍 → 画面高 536 → 上下各 121pt 黑边）
+/// - **默认就显示**（`FrameRatio` 初值 `4:3`，与原型一致）—— 也就是说取景器默认会有上下黑边，
+///   这是"画幅比"这项设置的正常表现，不是 bug
+/// - 260ms 过渡（原型 `.26s ease`）让黑边"长出来"
+/// - 用 `GeometryReader` 读容器实际高度：⤢ 放大态卡片高度会变，**天然跟随**，
+///   不需要原型那个 `setTimeout(renderFn, 320)` 的过渡后重算
+/// - **不接收触摸**（原型 `pointer-events:none`）
+private struct FrameRatioMask: View {
+
+    let ratio: FrameRatio
+
+    var body: some View {
+        GeometryReader { proxy in
+            let frameHeight = min(proxy.size.height, proxy.size.width * ratio.heightOverWidth)
+            let barHeight = max(0, (proxy.size.height - frameHeight) / 2)
+
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: barHeight)
+                Spacer(minLength: 0)
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: barHeight)
+            }
+            .animation(.easeInOut(duration: 0.26), value: ratio)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

@@ -716,6 +716,141 @@ if (!camViewFile || !vmFile) {
   }
 }
 
+/* ---------- 9. 功能面板（#10，2026-09-18） ---------- */
+// 为什么要这一组：本件最容易错的两件事 ——
+//   a) 把面板做成"底栈里的一行"（原型是盖住底栏的**模态浮层**，位置错了净可见账就全错）；
+//   b) 面板里的格子少一个 / 顺序变了 / 某格没有 action（"点了没反应"，本项目明令禁止）。
+// 另外面板高度是算出来的（7 格 = 4 列 × 2 行），净可见必须仍然 ≥ 50%。
+console.log('\n[9] 功能面板');
+
+const fnPanelFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'FunctionPanelView.swift')));
+const topBarFile9 = files.find(f => f.endsWith(path.join('Camera', 'UI', 'TopBarView.swift')));
+
+if (!fnPanelFile || !camViewFile || !vmFile || !topBarFile9 || !themeFile2) {
+  bad('找不到 FunctionPanelView / CameraView / CameraViewModel / TopBarView / Theme');
+} else {
+  const panelSrc = fs.readFileSync(fnPanelFile, 'utf8');
+  const viewSrc9 = fs.readFileSync(camViewFile, 'utf8');
+  const vmSrc9 = fs.readFileSync(vmFile, 'utf8');
+  const topSrc9 = fs.readFileSync(topBarFile9, 'utf8');
+  const themeSrc9 = fs.readFileSync(themeFile2, 'utf8');
+
+  // ① 面板必须是 overlay（盖住底栏），不能是底栈里的一行
+  if (!/\.overlay\(alignment: \.bottom\)[\s\S]{0,900}?FunctionPanelView\(/.test(viewSrc9)) {
+    bad('功能面板不是 bottom 对齐的 overlay —— 原型是盖住底栏的模态浮层，不是底栈一行');
+  } else {
+    ok('功能面板是 bottom 对齐的模态浮层（盖住底栏，不参与底栈布局）');
+  }
+
+  // ② 7 格、顺序、且每格都有 action；阶段标记必须已移除（用户 2026-09-18 拍板）
+  const labels = ['实况', '画幅比', '闪光灯', '倒计时', '高亮增益', '设置', 'HUD'];
+  const labelIndexes = labels.map(l => viewSrc9.indexOf('label: "' + l + '"'));
+  const missingLabel = labels.filter((l, i) => labelIndexes[i] < 0);
+  const orderOK = labelIndexes.every((v, i) => i === 0 || v > labelIndexes[i - 1]);
+  const fnActionCount = (viewSrc9.match(/\{ viewModel\.fn\w+Tapped\(\) \}/g) || []).length;
+  if (missingLabel.length) {
+    bad('功能面板缺格：' + missingLabel.join(' / '));
+  } else if (!orderOK) {
+    bad('功能面板格子顺序与原型不符（应为：' + labels.join(' → ') + '）');
+  } else if (fnActionCount < labels.length) {
+    // 7 格里每格都要有 action；计数会多算 foot 的「简易模式」那一处，所以只查下限
+    bad('功能面板有格子没接 action（匹配到 ' + fnActionCount + ' 个，至少应 ' + labels.length + '）');
+  } else if (/label: "阶段标记"/.test(viewSrc9)) {
+    // ⚠️ 只查代码（`label:` 字面量），不查"阶段标记"这四个字 ——
+    // 注释里本来就要解释它为什么被去掉，用宽匹配会被自己的注释绊倒（原型侧也踩过同款）
+    bad('「阶段标记」又回来了 —— 用户 2026-09-18 拍板去掉（研发工具，真机无价值）');
+  } else {
+    ok('功能面板 7 格齐全、顺序正确、每格都有 action（无「阶段标记」）');
+  }
+
+  // ③ 开面板要收起其余扩展浮层（原型 collapseAll）
+  const toggleFnBody = methodBodyOf(vmSrc9, 'toggleFunctionPanel');
+  if (!toggleFnBody || !/collapseOverlays\(\)/.test(toggleFnBody)) {
+    bad('toggleFunctionPanel 没有收起其余扩展浮层（两层浮层叠加会破净可见底线）');
+  } else {
+    ok('开功能面板会收起其余扩展浮层（collapseOverlays）');
+  }
+
+  // ④ 五项拍摄现场设置必须落盘（原型存 LS_SHOOT 的 state.fn）
+  const fnKeys = (vmSrc9.match(/lumen\.camera\.fn\./g) || []).length;
+  if (fnKeys < 5) {
+    bad('功能面板的落盘键只有 ' + fnKeys + ' 个（应有 5：live / ratio / flash / timer / hdr）');
+  } else {
+    ok('功能面板 5 项设置都落盘（lumen.camera.fn.*）');
+  }
+
+  // ⑤ 顶栏第三颗图标必须是 ⠿（设置已收进面板）
+  if (!/circle\.grid\.3x3\.fill/.test(topSrc9)) {
+    bad('顶栏没有 ⠿ 图标（circle.grid.3x3.fill）—— 原型第三颗是功能面板入口');
+  } else if (/gearshape/.test(topSrc9)) {
+    bad('顶栏还有 gearshape —— 「设置」应已收进功能面板第 6 格');
+  } else if (!/onFunctionPanelTap/.test(topSrc9)) {
+    bad('顶栏缺少 onFunctionPanelTap 回调');
+  } else {
+    ok('顶栏第三颗图标是 ⠿（设置已收进面板），回调命名正确');
+  }
+
+  // ⑥ 画幅比遮幅：存在 + 不接收触摸 + 由 fnRatio 驱动
+  if (!/FrameRatioMask\(ratio: viewModel\.fnRatio\)/.test(viewSrc9)) {
+    bad('取景器里没有画幅比遮幅（FrameRatioMask(ratio: viewModel.fnRatio)）');
+  } else if (!/struct FrameRatioMask[\s\S]{0,1400}?allowsHitTesting\(false\)/.test(viewSrc9)) {
+    bad('遮幅会接收触摸 —— 原型是 pointer-events:none（点黑边区照样对焦）');
+  } else {
+    ok('画幅比遮幅存在、由 fnRatio 驱动、不接收触摸');
+  }
+
+  // ⑦ 面板高度账 + 净可见（目标机型；iPhone SE 不在目标范围，不查）
+  const panelHeight = (() => {
+    const t = n => {
+      const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc9);
+      return m ? parseFloat(m[1]) : null;
+    };
+    const parts = {
+      top: t('functionPanelTopPadding'), bottom: t('functionPanelBottomPadding'),
+      circle: t('functionGlyphCircleSide'), inner: t('functionCellInnerSpacing'),
+      label: t('functionLabelHeight'), rowGap: t('functionGridRowSpacing'),
+      footGap: t('functionFootTopSpacing'), footTop: t('functionFootTopPadding'),
+      link: t('functionLinkHeight'), footBottom: t('functionFootBottomPadding')
+    };
+    const miss = Object.keys(parts).filter(k => parts[k] === null);
+    if (miss.length) return { error: '读不到面板令牌：' + miss.join(' / ') };
+    const cell = parts.circle + parts.inner + parts.label;
+    const grid = 2 * cell + parts.rowGap;
+    const foot = parts.footGap + 0.5 + parts.footTop + parts.link + parts.footBottom;
+    return { value: parts.top + grid + foot + parts.bottom };
+  })();
+
+  if (panelHeight.error) {
+    bad(panelHeight.error);
+  } else {
+    // 与 Theme.Size.functionPanelHeight 的注释一致（16 + 162 + 57.5 + 6 = 241.5）
+    ok('功能面板高度 ' + panelHeight.value.toFixed(1) + 'pt（= 上内边距 + 2 行网格 + foot + 下内边距）');
+
+    // 净可见 = (屏高 − 安全区 96) − 顶栏 66 − 面板高 − 面板底边距 8，口径与原型 net/H 一致
+    const targets = [
+      { name: 'iPhone 16 Pro（874）', screen: 874 },
+      { name: 'iPhone 16 / 15（852）', screen: 852 },
+      { name: 'iPhone 14（844）', screen: 844 }
+    ];
+    let visBad = false;
+    for (const d of targets) {
+      const safe = d.screen - 96;                       // 上 62 + 下 34（iPhone 16 起）
+      const net = safe - 66 - panelHeight.value - Theme_Size_edgeInset(themeSrc9);
+      const pct = net / d.screen * 100;
+      const label = d.name + ' 面板态净可见 ' + pct.toFixed(1) + '%';
+      if (pct < 50) { bad(label + '（低于 50% 底线）'); visBad = true; }
+      else ok(label);
+    }
+    if (!visBad) ok('面板态净可见在目标机型上均 ≥ 50%');
+  }
+}
+
+/** 读面板贴边距离（用于净可见账；独立出来是为了在上面那段里也能用 */
+function Theme_Size_edgeInset(src) {
+  const m = /\bfunctionPanelEdgeInset\s*:\s*CGFloat\s*=\s*([0-9.]+)/.exec(src);
+  return m ? parseFloat(m[1]) : 8;
+}
+
 /* ---------- 结论 ---------- */
 
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));

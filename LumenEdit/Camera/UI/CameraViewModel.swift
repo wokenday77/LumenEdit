@@ -12,6 +12,17 @@ private enum SceneStyleStorageKey {
     static let filter = "lumen.camera.filter"
 }
 
+/// 功能面板五项拍摄现场设置的落盘键（#10）。原型存进 `LS_SHOOT` 的 `state.fn`。
+///
+/// 面板开合**不落盘**（临时浮层状态），HUD 用 `AppEnvironment.showDebugHUD`（已落盘）。
+private enum FunctionPanelStorageKey {
+    static let live = "lumen.camera.fn.live"
+    static let ratio = "lumen.camera.fn.ratio"
+    static let flash = "lumen.camera.fn.flash"
+    static let timer = "lumen.camera.fn.timer"
+    static let hdr = "lumen.camera.fn.hdr"
+}
+
 /// 相机页状态机。
 ///
 /// 职责边界：
@@ -60,6 +71,51 @@ final class CameraViewModel: ObservableObject {
     ///   3. **吃掉上滑手势的起手区**：它把"取景器可见区下沿"往上推了约 124pt，
     ///      而 #7 的手势起点线是 55%，两者之间只剩几 pt —— 表现为"上滑要很用力 + 特定位置"。
     @Published private(set) var isExposurePanelExpanded = false
+
+    // MARK: - 功能面板（#10）
+
+    /// 功能面板（⠿）的展开态。**不落盘**：临时浮层状态。
+    ///
+    /// 原型 `layout.fnOpen`，面板是**盖住底栏的模态浮层**（不是底栈一行）——
+    /// 打开时会收起其它扩展浮层（`collapseOverlays()`），点面板外任意处收起。
+    @Published private(set) var isFunctionPanelExpanded = false
+
+    /// 面板「实况」：**照片模式**下是否采集 Live Photo（落盘）。
+    ///
+    /// ⚠️ 与模式条的「实况」模式 (`CaptureSessionMode.livePhoto`) 是**两回事**（原型注释同款）：
+    /// 这里管的是"照片模式下也拍 Live"。本件只到"状态 + 角标"——
+    /// 真正让 `.photo` 模式打开 Live 采集（`PhotoCaptureService.prepareTemplate` 的
+    /// `.photo` 分支现在显式关掉它）属 B 组接线。
+    @Published private(set) var isFnLiveOn: Bool =
+        UserDefaults.standard.bool(forKey: FunctionPanelStorageKey.live) {
+        didSet { UserDefaults.standard.set(isFnLiveOn, forKey: FunctionPanelStorageKey.live) }
+    }
+
+    /// 面板「画幅比」（落盘）。默认 `4:3`（原型初值）—— **默认就有遮幅**，见 `FrameRatioMask`。
+    @Published private(set) var fnRatio: FrameRatio =
+        FrameRatio(rawValue: UserDefaults.standard.string(forKey: FunctionPanelStorageKey.ratio) ?? "")
+        ?? .r4x3 {
+        didSet { UserDefaults.standard.set(fnRatio.rawValue, forKey: FunctionPanelStorageKey.ratio) }
+    }
+
+    /// 面板「闪光灯」（落盘；硬件未接，只记状态）
+    @Published private(set) var isFnFlashOn: Bool =
+        UserDefaults.standard.bool(forKey: FunctionPanelStorageKey.flash) {
+        didSet { UserDefaults.standard.set(isFnFlashOn, forKey: FunctionPanelStorageKey.flash) }
+    }
+
+    /// 面板「倒计时」（落盘；硬件未接，只记状态）
+    @Published private(set) var fnTimer: ShootTimer =
+        ShootTimer(rawValue: UserDefaults.standard.string(forKey: FunctionPanelStorageKey.timer) ?? "")
+        ?? .off {
+        didSet { UserDefaults.standard.set(fnTimer.rawValue, forKey: FunctionPanelStorageKey.timer) }
+    }
+
+    /// 面板「高亮增益 HDR」（落盘；硬件未接，只记状态）
+    @Published private(set) var isFnHDROn: Bool =
+        UserDefaults.standard.bool(forKey: FunctionPanelStorageKey.hdr) {
+        didSet { UserDefaults.standard.set(isFnHDROn, forKey: FunctionPanelStorageKey.hdr) }
+    }
 
     /// 选中的场景 id（落盘）
     @Published private(set) var sceneId: String =
@@ -196,6 +252,7 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 快门
 
     func shutterTapped() {
+        dismissFunctionPanelIfNeeded()
         guard let environment else { return }
 
         // 录制类模式（视频 / Log 实况）：快门 = 开始 / 停止录制（不是一次性拍照）。
@@ -352,6 +409,8 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 对焦
 
     func focusTapped(viewPoint: CGPoint, devicePoint: CGPoint) {
+        // 点取景器 = 对焦 + 收起功能面板（原型 viewport 的 click 处理器同时做这两件事）
+        dismissFunctionPanelIfNeeded()
         environment?.session.focus(atDevicePoint: devicePoint)
         focusPoint = viewPoint
         focusToken &+= 1
@@ -367,6 +426,7 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 模式
 
     func modeTapped(_ newMode: CaptureSessionMode) {
+        dismissFunctionPanelIfNeeded()
         guard let environment else { return }
         guard newMode != mode else { return }
 
@@ -420,12 +480,14 @@ final class CameraViewModel: ObservableObject {
     /// 在那之前**不假装切换**：不记住任何"闪光灯已开"的状态，只把边界说清楚
     /// ——记住一个不生效的状态，比不记住更容易让人误判。
     func flashTapped() {
+        dismissFunctionPanelIfNeeded()
         DebugLog.shared.debug("ui", "闪光灯图标点击（硬件未接入）")
         showToast("闪光灯：切换与常亮在 P2 参数批次接入（AVCaptureDevice.torchMode），当前固定关闭")
     }
 
     /// 顶栏「网格」图标：**真开关**，与设置页共用 `AppEnvironment.showGrid`
     func gridTapped() {
+        dismissFunctionPanelIfNeeded()
         guard let environment else { return }
         environment.showGrid.toggle()
         Haptics.tick()
@@ -434,6 +496,7 @@ final class CameraViewModel: ObservableObject {
 
     /// 顶栏副行「影调预览」：真开关，但**当前不改变画面**，必须说明
     func tonePreviewTapped() {
+        dismissFunctionPanelIfNeeded()
         guard let environment else { return }
         environment.showTonePreview.toggle()
         Haptics.tick()
@@ -444,6 +507,7 @@ final class CameraViewModel: ObservableObject {
 
     /// 顶栏副行「剩余存储」：真数据（约 10 秒刷新一次）
     func storageTapped() {
+        dismissFunctionPanelIfNeeded()
         guard let environment else { return }
         showToast("剩余可用存储 \(environment.session.freeSpaceText)")
     }
@@ -635,6 +699,8 @@ final class CameraViewModel: ObservableObject {
     ///
     /// （Swift 侧暂无简易模式 —— 原型里"简易模式下浮层保持隐藏"的分支随模块 #12 补。）
     func swiped(up: Bool) {
+        // 上划/下划前先收功能面板（原型全局 pointerdown 会先把它收掉，再执行手势）
+        dismissFunctionPanelIfNeeded()
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
                 // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格与参数排
@@ -676,6 +742,8 @@ final class CameraViewModel: ObservableObject {
     ///
     /// ⚠️ **新浮层必须加进这里**（#8 的 EV 圆盘、#9 的参数刻度条落地时补）——
     /// 少加一处就会出现"下划收不干净"。
+    /// ⚠️ 功能面板（#10）**不在这里**：它是模态浮层，不是"扩展浮层"（原型 `collapseAll` 也不碰
+    /// `fnOpen`）；它是**反向**关系 —— 开面板时收起这些（见 `toggleFunctionPanel()`）。
     private func collapseOverlays() {
         guard isFilterStripExpanded || isSceneStyleExpanded || isExposurePanelExpanded else {
             return
@@ -684,6 +752,97 @@ final class CameraViewModel: ObservableObject {
         isSceneStyleExpanded = false
         isExposurePanelExpanded = false
         Haptics.tick()
+    }
+
+    // MARK: - 功能面板（#10）
+
+    /// ⠿ 切换功能面板。
+    ///
+    /// 开面板时收起其余扩展浮层（原型 `if (fnOpen && (ssExpanded || filterExpanded)) collapseAll()`）。
+    func toggleFunctionPanel() {
+        isFunctionPanelExpanded.toggle()
+        Haptics.tick()
+        DebugLog.shared.debug("ui", "功能面板\(isFunctionPanelExpanded ? "打开" : "收起")")
+
+        if isFunctionPanelExpanded {
+            collapseOverlays()
+            showToast("功能面板已打开 · 点面板外任意处收起")
+        } else {
+            showToast("功能面板已收起")
+        }
+    }
+
+    /// 点面板外收起（原型是全局 `pointerdown` 监听：取景器 / 快门 / 模式条 / 顶栏图标都会收）。
+    ///
+    /// ⚠️ **Swift 侧是逐点接线**（在几个入口方法里各调一次），不是真的全局监听 ——
+    /// 以后新增顶栏 / 取景器上的控件时，要记得也在它的 action 里调一次这个。
+    /// （底栏控件被面板盖住、点不到，不需要处理。）
+    func dismissFunctionPanelIfNeeded() {
+        guard isFunctionPanelExpanded else { return }
+        isFunctionPanelExpanded = false
+    }
+
+    /// 面板第 1 格「实况」：照片模式下是否采集 Live Photo（只记状态 + 角标，接线属 B 组）
+    func fnLiveTapped() {
+        isFnLiveOn.toggle()
+        Haptics.tick()
+        showToast(isFnLiveOn
+            ? "实况已开（照片模式下角标已亮）· 真正让照片模式采集 Live 的接线属 B 组"
+            : "实况已关")
+    }
+
+    /// 面板第 2 格「画幅比」：循环 4:3 → 16:9 → 1:1，**取景器遮幅真生效**
+    /// （实拍裁切属 B 组，与原型口径一致："遮幅示意，实拍裁切在 P2"）
+    func fnRatioTapped() {
+        fnRatio = fnRatio.next
+        Haptics.tick()
+        showToast("画幅比 \(fnRatio.displayName)：遮幅已生效 · 实拍裁切在 P2 落地")
+    }
+
+    /// 面板第 3 格「闪光灯」：只记状态（`AVCaptureDevice.torchMode` 属 B 组）
+    func fnFlashTapped() {
+        isFnFlashOn.toggle()
+        Haptics.tick()
+        showToast(isFnFlashOn
+            ? "闪光灯已开：真机走 AVCaptureDevice.torchMode（P2 交付）"
+            : "闪光灯已关")
+    }
+
+    /// 面板第 4 格「倒计时」：循环 关 → 3s → 10s，只记状态（真机实现属 B 组）
+    func fnTimerTapped() {
+        fnTimer = fnTimer.next
+        Haptics.tick()
+        showToast(fnTimer.isOn ? "倒计时 \(fnTimer.displayName)（真机在 P2 生效）" : "倒计时已关")
+    }
+
+    /// 面板第 5 格「高亮增益 HDR」：只记状态
+    func fnHDROnTapped() {
+        isFnHDROn.toggle()
+        Haptics.tick()
+        showToast(isFnHDROn ? "高亮增益已开：真机在 P2 生效" : "高亮增益已关")
+    }
+
+    /// 面板第 6 格「设置」：真开设置页，并**先收起面板**（原型同一个行为）
+    func fnSettingsTapped() {
+        guard let environment else { return }
+        isFunctionPanelExpanded = false
+        DebugLog.shared.debug("ui", "功能面板 → 设置页")
+        environment.showSettings = true
+    }
+
+    /// 面板第 7 格「HUD」：真开关（与设置页那一项、`DebugHUDView` 共用 `env.showDebugHUD`）
+    func fnHudTapped() {
+        guard let environment else { return }
+        environment.showDebugHUD.toggle()
+        Haptics.tick()
+        showToast(environment.showDebugHUD ? "调试浮层已开" : "调试浮层已关")
+    }
+
+    /// 面板 foot「简易模式」：Swift 侧还没有简易模式（模块 #12）
+    /// → 置灰外观 + 说明原因，不做"点了没反应"
+    func fnSimpleModeTapped() {
+        DebugLog.shared.debug("ui", "简易模式入口点击（模块 #12 未交付）")
+        showToast("简易模式将在模块 #12 交付 —— 现在点它不会改变界面")
     }
 
     // MARK: - 快门排

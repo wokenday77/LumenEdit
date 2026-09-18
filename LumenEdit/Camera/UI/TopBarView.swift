@@ -43,7 +43,11 @@ struct TopBarView: View {
     let onGridTap: () -> Void
     let onTonePreviewTap: () -> Void
     let onStorageTap: () -> Void
-    let onSettingsTap: () -> Void
+    /// 右上第三颗图标：**⠿ 功能面板**（#10，2026-09-18 由齿轮改成 ⠿）。
+    ///
+    /// 「设置」不再占顶栏，收进面板第 6 格（原型同款：一个 ⠿ 只有一个行为，
+    /// 原「更多」下拉菜单整块被功能面板取代）。
+    let onFunctionPanelTap: () -> Void
 
     /// 上缘渐隐黑向上多伸出的高度（覆盖状态栏区域）
     private static let scrimOverhang: CGFloat = 60
@@ -112,10 +116,10 @@ struct TopBarView: View {
                 action: onGridTap
             )
             TopBarIconButton(
-                glyph: "gearshape",
-                label: "设置",
+                glyph: "circle.grid.3x3.fill",
+                label: "功能面板",
                 isOn: false,
-                action: onSettingsTap
+                action: onFunctionPanelTap
             )
         }
         .frame(width: Theme.Size.topBarSideWidth, alignment: .trailing)

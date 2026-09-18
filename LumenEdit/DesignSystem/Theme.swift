@@ -69,6 +69,26 @@ enum Theme {
         /// 滤镜条面板顶部描边（原型 `border-top:.5px solid rgba(255,255,255,.08)`）。
         /// 与场景·风格块的 `ssBlockBorder`（.07）数值不同，是两笔账，别合并。
         static let filterPanelTopBorder = Color.white.opacity(0.08)
+
+        // MARK: 功能面板（#10，2026-09-18）
+
+        /// 面板底（原型 `--panel-solid: rgba(16,19,23,.92)`，几乎不透明的一张卡）
+        static let functionPanelFill = Color(
+            red: 16.0 / 255, green: 19.0 / 255, blue: 23.0 / 255
+        ).opacity(0.92)
+        /// 面板描边（原型 `--stroke-2: rgba(255,255,255,.26)`）
+        static let functionPanelStroke = Color.white.opacity(0.26)
+        /// 圆形图标底 / 描边（原型 `.fn-ic{ background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.12) }`）
+        static let functionGlyphFill = Color.white.opacity(0.09)
+        static let functionGlyphStroke = Color.white.opacity(0.12)
+        /// 按下态（原型 `.fn-btn:active .fn-ic{ background:rgba(255,255,255,.16) }`）
+        static let functionGlyphFillPressed = Color.white.opacity(0.16)
+        /// 开启态（原型 `.fn-btn.on .fn-ic{ background:rgba(52,208,88,.16); border-color:rgba(52,208,88,.6) }`）
+        /// —— 复用 `ok` 而不是写第二遍 RGB（`Self.` 是必需的：静态属性初始化器里引用同类型成员）
+        static let functionGlyphFillOn = Self.ok.opacity(0.16)
+        static let functionGlyphStrokeOn = Self.ok.opacity(0.6)
+        /// foot 区上分隔线（原型 `.fn-foot{ border-top:.5px solid rgba(255,255,255,.09) }`）
+        static let functionFootSeparator = Color.white.opacity(0.09)
     }
 
     // MARK: - 间距
@@ -181,6 +201,54 @@ enum Theme {
         /// 滤镜名字的**钉死行高**（原型 `.filter-name{ font-size:10px; line-height:1.1 }` = 11px）。
         /// 钉死理由与 `styleNameHeight` 相同：144 的深度账不交给字体度量浮动。
         static let filterNameHeight: CGFloat = 11
+
+        // MARK: 功能面板（原型 `.fn-panel` / `.fn-btn` / `.fn-link`）—— 2026-09-18 #10
+
+        /// 面板贴边距离（原型 `left:8px; right:8px; bottom:8px`）
+        static let functionPanelEdgeInset: CGFloat = 8
+        /// 面板圆角（原型 `border-radius:22px`）
+        static let functionPanelCornerRadius: CGFloat = 22
+        /// 面板内边距（原型 `padding:16px 10px 6px`）
+        static let functionPanelTopPadding: CGFloat = 16
+        static let functionPanelHorizontalPadding: CGFloat = 10
+        static let functionPanelBottomPadding: CGFloat = 6
+
+        /// 网格：4 列，格宽 64，行距 14 / 列距 4（原型 `.fn-grid{ repeat(4,1fr); gap:14px 4px }`）
+        static let functionGridColumns: Int = 4
+        static let functionCellWidth: CGFloat = 64
+        static let functionGridRowSpacing: CGFloat = 14
+        static let functionGridColumnSpacing: CGFloat = 4
+
+        /// 圆形图标底（原型 `.fn-ic{ width:54px; height:54px; border-radius:50% }`）
+        static let functionGlyphCircleSide: CGFloat = 54
+        /// 图标字形（原型 `.fn-ic svg{ 20px }` / `.fn-ic-text{ 11.5px }`）
+        static let functionGlyphSize: CGFloat = 20
+        static let functionGlyphTextSize: CGFloat = 11.5
+        /// 圆形图标与标签的间距（原型 `.fn-btn{ gap:7px }`）
+        static let functionCellInnerSpacing: CGFloat = 7
+
+        /// 标签**钉死行高**（10.5pt ≈ 13）。
+        /// 钉死理由同 `styleNameHeight`：面板高度账（自检第 9 组复算）不交给字体度量浮动。
+        static let functionLabelHeight: CGFloat = 13
+
+        /// foot 区：上间距 14、内边距 2/6/8（原型 `.fn-foot{ margin-top:14px; padding:2px 6px 8px }`）
+        static let functionFootTopSpacing: CGFloat = 14
+        static let functionFootTopPadding: CGFloat = 2
+        static let functionFootBottomPadding: CGFloat = 8
+        static let functionLinkHorizontalPadding: CGFloat = 6
+        /// 链接行高（原型 `padding:9px 6px` × 2 + 12.5pt 行高 ≈ 15 → 33）
+        static let functionLinkHeight: CGFloat = 33
+
+        /// 功能面板总高（**派生值**，自检第 9 组按同一批令牌复算，与这里必须一致）：
+        /// `上内边距 16 + 网格 (2 行 × (54 + 7 + 13) + 行距 14) + foot(14 + 0.5 + 2 + 33 + 8) + 下内边距 6`
+        /// = 16 + 162 + 57.5 + 6 = **241.5**
+        static var functionPanelHeight: CGFloat {
+            let cellHeight = functionGlyphCircleSide + functionCellInnerSpacing + functionLabelHeight
+            let grid = 2 * cellHeight + functionGridRowSpacing
+            let foot = functionFootTopSpacing + 0.5 + functionFootTopPadding
+                + functionLinkHeight + functionFootBottomPadding
+            return functionPanelTopPadding + grid + foot + functionPanelBottomPadding
+        }
 
         /// ⤢ 放大态的「前置 / 设置」镜像按钮（原型 `.icon-item.mirror{ 50×44 }`，图标 19px）
 
@@ -465,5 +533,17 @@ enum Theme {
 
         /// 滤镜卡名字（原型 `.filter-name{ font-size:10px }`；选中态由调用点 `.fontWeight(.semibold)`）
         static let filterName = Font.system(size: 10, weight: .regular, design: .rounded)
+
+        // MARK: 功能面板（#10，2026-09-18）
+
+        /// 面板格标签（原型 `.fn-t{ font-size:10.5px }`）
+        static let functionLabel = Font.system(size: 10.5, weight: .regular, design: .rounded)
+        /// 圆形图标里的**文字字形**（原型 `.fn-ic.fn-ic-text{ font-size:11.5px; font-weight:700 }`）
+        /// —— 用于「画幅比」（`4:3`）、「倒计时」（`关`）这类没有合适符号的格子
+        static let functionGlyphText = Font.system(size: 11.5, weight: .bold, design: .rounded)
+        /// foot 区的「简易模式」链接（原型 `.fn-link{ font-size:12.5px }`）
+        static let functionLink = Font.system(size: 12.5, weight: .regular, design: .rounded)
+        /// foot 区右侧箭头（原型 `.fn-arr{ font-size:14px }`）
+        static let functionLinkArrow = Font.system(size: 14, weight: .regular, design: .rounded)
     }
 }
