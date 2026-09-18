@@ -367,6 +367,16 @@ if (!themeFile || !modeSelFile || !topBarFile) {
   }
 }
 
+/* ---------- 工具：按函数体提取 ---------- */
+// 为什么要有它：断言"某函数的函数体里必须出现 X"时，用固定字符窗口（如 {0,400}）
+// 会在函数被加长后**静默失效**（2026-09-18 实际发生：toggleSceneStyle 加了连带检测后
+// 长度翻倍，互斥断言直接误报"互斥不全"）。改成提取到同级闭合花括号，长度无关。
+/** 取一个 4 空格缩进的方法体：从 `func 名` 到同级的 `    }`；找不到返回 null */
+function methodBodyOf(src, fnName) {
+  const m = new RegExp('func ' + fnName + '\\b[\\s\\S]*?\\n    \\}').exec(src);
+  return m ? m[0] : null;
+}
+
 /* ---------- 6. 状态引用完整性 ---------- */
 // 为什么要这条：2-5b 的一次编辑本意是**新增** `isZoomOn`，却把 `focal` 那一行**替换**掉了，
 // 于是 `focalTapped` 与 `CameraView` 里的绑定全部失效 —— 括号配平、占位符检查全都看不出来，
@@ -468,9 +478,10 @@ if (!filterStripFile || !vmFile || !camViewFile || !thumbFile || !themeFile2) {
   }
 
   // ② 互斥两方向都要在（单方向会出现两个扩展浮层同时展开）
+  const toggleSSBody = methodBodyOf(vmSrc, 'toggleSceneStyle');
   const mutexOK =
     // 展开场景·风格 → 收起滤镜条（toggleSceneStyle，原型 setSS）
-    /func toggleSceneStyle[\s\S]{0,400}?isFilterStripExpanded\s*=\s*false/.test(vmSrc)
+    !!toggleSSBody && /isFilterStripExpanded\s*=\s*false/.test(toggleSSBody)
     // 上划呼出滤镜条 → 收起场景·风格（swiped(up:)，原型 setFilter(true)）
     && /isFilterStripExpanded\s*=\s*true/.test(vmSrc)
     && /isSceneStyleExpanded\s*=\s*false/.test(vmSrc);
@@ -598,11 +609,11 @@ if (!camViewFile || !vmFile) {
   }
 
   // c) 互斥收口：collapseOverlays() 必须同时管三个（新增浮层必须加进来）
-  const collapseBody = /private func collapseOverlays\(\)[\s\S]{0,700}?\n    \}/.exec(vmSrc8);
+  const collapseBody = methodBodyOf(vmSrc8, 'collapseOverlays');
   if (!collapseBody) {
     bad('找不到 collapseOverlays()');
   } else {
-    const body = collapseBody[0];
+    const body = collapseBody;
     const needed = ['isFilterStripExpanded', 'isSceneStyleExpanded', 'isExposurePanelExpanded'];
     const miss = needed.filter(n => !new RegExp(n + '\\s*=\\s*false').test(body));
     if (miss.length) {
@@ -612,8 +623,10 @@ if (!camViewFile || !vmFile) {
     }
   }
   // 展开另外两个浮层时也必须收参数排（互斥三方向）
-  const mutex3 = /func toggleSceneStyle[\s\S]{0,500}?isExposurePanelExpanded\s*=\s*false/.test(vmSrc8)
-    && /func swiped[\s\S]{0,1200}?isExposurePanelExpanded\s*=\s*false/.test(vmSrc8);
+  const toggleSS8 = methodBodyOf(vmSrc8, 'toggleSceneStyle');
+  const swiped8 = methodBodyOf(vmSrc8, 'swiped');
+  const mutex3 = !!toggleSS8 && /isExposurePanelExpanded\s*=\s*false/.test(toggleSS8)
+    && !!swiped8 && /isExposurePanelExpanded\s*=\s*false/.test(swiped8);
   if (mutex3) {
     ok('展开场景·风格 / 呼出浮层时都会收起参数排（互斥三方向齐全）');
   } else {
@@ -668,6 +681,38 @@ if (!camViewFile || !vmFile) {
     } else {
       ok('EV 滑条范围 = UI(±2) ∩ 设备范围（13 档 / 每档约 28pt，吸附可感知）');
     }
+  }
+
+  // h) 状态改写必须留痕（2026-09-18 真机教训：静默改写让"上划走到哪个分支"无法对账）
+  //    凡是会改写**多个**浮层状态的入口函数，体内必须同时出现 showToast 与 DebugLog。
+  const stateToggles = [
+    ['toggleSceneStyle', '场景·风格条（三入口共用，会连带收滤镜条/参数排）'],
+    ['exposureCompensationTapped', '曝光补偿（会连带收滤镜条/场景·风格条）']
+  ];
+  let traceBad = false;
+  for (const [fn, why] of stateToggles) {
+    const body = methodBodyOf(vmSrc8, fn);
+    if (!body) {
+      bad('找不到 ' + fn + '()');
+      traceBad = true;
+      continue;
+    }
+    if (!/showToast\(/.test(body)) {
+      bad(fn + '() 没有 toast —— ' + why + '：静默改写状态，用户看不见翻转');
+      traceBad = true;
+    } else if (!/DebugLog\.shared/.test(body)) {
+      bad(fn + '() 没有 DebugLog —— ' + why + '：日志里也查不到这次改写');
+      traceBad = true;
+    }
+  }
+  // 连带收起必须在提示里说清（"已收起"字样），否则用户仍不知道自己的浮层去哪了
+  const evBody = methodBodyOf(vmSrc8, 'exposureCompensationTapped');
+  if (!evBody || !/已收起/.test(evBody)) {
+    bad('exposureCompensationTapped 的提示没说清连带收起（应出现"已收起"字样）');
+    traceBad = true;
+  }
+  if (!traceBad) {
+    ok('改写浮层状态的入口都留了痕（toast + 日志），且连带收起在提示里说清');
   }
 }
 

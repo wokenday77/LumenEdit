@@ -357,7 +357,9 @@ struct CameraView: View {
                 style: viewModel.style,
                 filterName: viewModel.filterName,
                 isExpanded: viewModel.isSceneStyleExpanded,
-                onToggle: { viewModel.toggleSceneStyle() },
+                // 入口名只用于日志对账：三个入口行为一致，但"是哪一个被点的"必须可查
+                //（2026-09-18：静默改写状态导致"上划为什么走到那个分支"无法对账）
+                onToggle: { viewModel.toggleSceneStyle(source: "胶囊/箭头") },
                 onSceneTap: { viewModel.sceneTapped($0) },
                 onStyleTap: { viewModel.styleTapped($0) }
             )

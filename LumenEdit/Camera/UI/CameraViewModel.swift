@@ -500,15 +500,34 @@ final class CameraViewModel: ObservableObject {
     /// （2026-09-18 真机反馈"曝光补偿条无法关闭"）。现在这一项就是那个开关。
     ///
     /// 互斥：展开参数排时收起滤镜条 / 场景·风格条（同一时刻只允许一个扩展浮层）。
+    /// ⚠️ **连带收起必须在提示里说清**（2026-09-18 真机教训）：此前这里是静默改写
+    /// 两个浮层的状态，用户与日志都看不见 → "上划为什么走到那个分支"无法对账。
     func exposureCompensationTapped() {
+        // 先记住这一下会连带收起谁（toast 只报真发生的事，不虚报）
+        let willCollapseOthers = !isExposurePanelExpanded && (isFilterStripExpanded || isSceneStyleExpanded)
+        let collapsedNames = [
+            isFilterStripExpanded ? "滤镜条" : nil,
+            isSceneStyleExpanded ? "场景·风格条" : nil
+        ].compactMap { $0 }
+
         isExposurePanelExpanded.toggle()
         Haptics.tick()
+
+        DebugLog.shared.debug(
+            "ui",
+            "参数排\(isExposurePanelExpanded ? "展开" : "收起")（入口：图标行「曝光补偿」）"
+                + (willCollapseOthers && isExposurePanelExpanded
+                    ? " · 连带收起 \(collapsedNames.joined(separator: "、"))" : "")
+        )
 
         if isExposurePanelExpanded {
             isFilterStripExpanded = false
             isSceneStyleExpanded = false
             let value = FormatText.exposureBias(Float(exposureBias))
-            showToast("曝光补偿 \(value) EV · 再点一次收起参数排")
+            let suffix = willCollapseOthers
+                ? " · \(collapsedNames.joined(separator: "与"))已收起"
+                : " · 再点收起参数排"
+            showToast("曝光补偿 \(value) EV\(suffix)")
         } else {
             showToast("参数排已收起（点「曝光补偿」可再次展开）")
         }
@@ -516,16 +535,46 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - 场景 · 风格（#6）
 
-    /// 展开 / 收起场景·风格条。三个入口（胶囊 / 箭头 / 快门排风格方块）都走它。
+    /// 展开 / 收起场景·风格条。三个入口（折叠胶囊 / 箭头 / 快门排风格方块）都走它。
     ///
     /// 互斥（原型 `setSS`）：展开时收起滤镜条**与参数排** —— 同一时刻只允许一个扩展浮层。
-    func toggleSceneStyle() {
+    ///
+    /// ⚠️ **必须给反馈**（2026-09-18 真机教训）：这个函数此前只有 `Haptics.tick()`，
+    /// 既不弹提示也不落日志 —— 而它**会改写另外两个浮层的状态**。用户在验收时反复点过
+    /// 胶囊 / 方块，每次都在无声收起滤镜条或参数排，于是"上划时撞到的分支"和用户以为的
+    /// 不一致，排查时日志里也什么都看不到。**任何改写状态的动作都要留下痕迹。**
+    ///
+    /// - Parameter source: 入口名，只用于日志对账（"胶囊/箭头" 还是 "风格方块"）
+    func toggleSceneStyle(source: String = "胶囊") {
+        // 先记住"这一下会不会连带收起别的浮层"，toast 才说得准
+        let willCollapseOthers = !isSceneStyleExpanded && (isFilterStripExpanded || isExposurePanelExpanded)
+        let collapsedNames = [
+            isFilterStripExpanded ? "滤镜条" : nil,
+            isExposurePanelExpanded ? "参数排" : nil
+        ].compactMap { $0 }
+
         isSceneStyleExpanded.toggle()
         if isSceneStyleExpanded {
             isFilterStripExpanded = false
             isExposurePanelExpanded = false
         }
         Haptics.tick()
+
+        let state = isSceneStyleExpanded ? "展开" : "收起"
+        DebugLog.shared.debug(
+            "ui",
+            "场景·风格条\(state)（入口：\(source)）"
+                + (willCollapseOthers ? " · 连带收起 \(collapsedNames.joined(separator: "、"))" : "")
+        )
+
+        if isSceneStyleExpanded {
+            let suffix = willCollapseOthers
+                ? " · \(collapsedNames.joined(separator: "与"))已收起"
+                : " · 再点收起"
+            showToast("场景·风格已展开（\(scene.displayName) · \(style.displayName)）\(suffix)")
+        } else {
+            showToast("场景·风格已收起")
+        }
     }
 
     /// 选场景 = 连带把**推荐的风格或滤镜**一起选上（数据层保证两者不会同时有值）。
@@ -589,18 +638,21 @@ final class CameraViewModel: ObservableObject {
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
                 // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格与参数排
+                // 连带收起参数排时在提示里说明（同一类"状态被改写要留痕"，2026-09-18）
+                let panelNote = isExposurePanelExpanded ? "（参数排已收起）" : ""
                 isFilterStripExpanded = true
                 isSceneStyleExpanded = false
                 isExposurePanelExpanded = false
                 Haptics.tick()
-                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格")
+                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格\(panelNote)")
             } else if isFilterStripExpanded && !isSceneStyleExpanded {
                 // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条与参数排
+                let panelNote = isExposurePanelExpanded ? "（参数排已收起）" : ""
                 isFilterStripExpanded = false
                 isSceneStyleExpanded = true
                 isExposurePanelExpanded = false
                 Haptics.tick()
-                showToast("已呼出场景与风格 · 下划收起")
+                showToast("已呼出场景与风格 · 下划收起\(panelNote)")
             } else {
                 showToast("浮层已全部展开 · 下划收起")
             }
@@ -651,7 +703,7 @@ final class CameraViewModel: ObservableObject {
     /// 内层预览与风格卡同源（`StyleThumbnailView`），不再是 2-5a 那个深色占位 ——
     /// `docs/09` 第六节的未决项随 #6 一起落地了。
     func styleThumbTapped() {
-        toggleSceneStyle()
+        toggleSceneStyle(source: "风格方块")
     }
 
     // MARK: - 相册
