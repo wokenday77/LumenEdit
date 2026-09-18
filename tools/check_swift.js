@@ -714,6 +714,23 @@ if (!camViewFile || !vmFile) {
   if (!traceBad) {
     ok('改写浮层状态的入口都留了痕（toast + 日志），且连带收起在提示里说清');
   }
+
+  // i) 误触闸门（2026-09-18 真机回归：横拖 EV 时被误判为下划把面板收起）
+  //    手势挂整页 + 提前触发之后，横滑类控件的纵向抖动会命中"下划"。
+  //    两条闸门都必须留着：① 编辑态禁言 ② 方向锁。
+  const evEditGate = /!viewModel\.isExposureEditing/.test(viewSrc8);
+  const axisLock = /swipeAxis/.test(viewSrc8) && /lockSwipeAxisIfNeeded/.test(viewSrc8);
+  const editingState = /isExposureEditing/.test(vmSrc8)
+    && /func exposureEditingChanged[\s\S]{0,600}?isExposureEditing\s*=/.test(vmSrc8);
+  if (!editingState) {
+    bad('exposureEditingChanged 没有把编辑态存下来（isExposureEditing）—— 闸门①无从判断');
+  } else if (!evEditGate) {
+    bad('手势缺闸门①（!viewModel.isExposureEditing）—— 横拖 EV 时会误触发下划');
+  } else if (!axisLock) {
+    bad('手势缺闸门②（方向锁 swipeAxis / lockSwipeAxisIfNeeded）—— 横滑条上的纵向抖动会误触发');
+  } else {
+    ok('误触闸门齐全（① EV 编辑态禁言 ② 方向锁），横滑类控件的抖动不会再误触发');
+  }
 }
 
 /* ---------- 9. 功能面板（#10，2026-09-18） ---------- */

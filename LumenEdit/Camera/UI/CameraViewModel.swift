@@ -419,7 +419,24 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - 曝光
 
+    /// 参数排（EV 滑块）**是否正在被拖动**。
+    ///
+    /// 为什么要这个状态：`CameraView` 的上划 / 下划手势挂在**整页 ZStack** 上
+    /// （`simultaneousGesture`，见那里的注释），它与 EV 滑条的拖动是**并发识别**的。
+    /// 而横拖 EV 时手指几乎必然带纵向抖动 —— 提前触发（滑够 16pt 立即生效）下，
+    /// 这点抖动就足以被判成"下划"，把面板当场收起（2026-09-18 真机实锤：
+    /// 横拖中途 `toast: 已收起参数排`）。所以**滑块拖动期间必须让整页手势禁言**。
+    ///
+    /// ⚠️ 这只是"精确闸门"（只覆盖 EV 滑块）；横滑条那类控件的同类误触由
+    /// `CameraView` 的**方向锁**兜住（见 `swipeAxis`）。
+    @Published private(set) var isExposureEditing = false
+
     func exposureEditingChanged(_ isEditing: Bool) {
+        // 幂等赋值：拖动中 onChanged 会反复送 `true`，值没变就别发 `objectWillChange`
+        //（这里是每档一次的高频回调，多余的刷新没必要）
+        if isExposureEditing != isEditing {
+            isExposureEditing = isEditing
+        }
         environment?.session.setExposureBias(Float(exposureBias))
     }
 

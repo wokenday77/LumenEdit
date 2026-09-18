@@ -21,6 +21,8 @@ struct CameraView: View {
     @State private var swipeGestureStart: Date?
     /// 本次拖动是否已经触发过（提前触发后手势仍在继续，防止一次长滑连跨两级）
     @State private var swipeDidTrigger = false
+    /// 本次拖动锁定的主轴（`.horizontal` = 不参与呼出/收起）
+    @State private var swipeAxis: Axis?
 
     var body: some View {
         ZStack {
@@ -228,24 +230,47 @@ struct CameraView: View {
     /// 横向排除的宽容倍数：|dx| > |dy| × 本值 才算"在横滑条上滑动"。
     /// 原型是 1.0（斜一点就拒），真机上斜着上滑很常见，放宽到 1.5。
     private static let swipeHorizontalSlack: CGFloat = 1.5
+    /// 方向锁的起手死区（超过它才定主轴）。起手门槛是 10pt，所以第一次回调就能定下来；
+    /// 给 6pt 是留一点手抖余量。
+    private static let swipeAxisDeadZone: CGFloat = 6
 
     /// 上划呼出滤镜条（再上划呼出场景·风格）、下划逐级收起。
     ///
-    /// **两条关键实现细节**（2026-09-18 两轮真机反馈后定的）：
+    /// **三条关键实现细节**（2026-09-18 三轮真机反馈后定的）：
     ///
     /// 1. **提前触发**：判定放在 `onChanged` 里，**滑够阈值立刻生效**，不等松手。
     ///    原来只在 `onEnded` 判定 → 必须"滑到位并松手"才有反馈，用户滑到一半看不见变化、
     ///    以为没反应，就会滑得更用力更快 —— 这就是"上滑僵硬、要用力"的体感来源。
     /// 2. **一次拖动只触发一级**（`swipeDidTrigger`）：提前触发后手势还在继续，
     ///    没有这个标记会在一次长滑里连续跨两级（滤镜条 → 场景·风格）。
+    /// 3. **两道"别误触"闸门**（真机回归后补，见下）。
     ///
     /// 挂载点在 `cameraContent` 的 ZStack 上（原因见那里的注释）。
+    ///
+    /// ## 两道闸门（2026-09-18 真机回归：横拖 EV 时误触发下划）
+    ///
+    /// 实锤日志：`参数排展开` → 横拖 EV 途中 → `toast: 已收起参数排`（面板当场被收起）。
+    /// 根因：手势挂**整页** + **提前触发** → 横拖 EV 时手指的自然纵向抖动只要累计到 16pt，
+    /// 就在起手阶段命中了"下划"（滑条本身有方向闸门，但它拦不住**父级**的整页手势）。
+    ///
+    /// - **闸门 ①（精确）**：`!viewModel.isExposureEditing` —— EV 滑块拖动期间整页手势禁言。
+    /// - **闸门 ②（通用）**：**方向锁** —— 一次拖动只在最初 6pt 定一次主轴，之后不再改判。
+    ///   横拖 EV / 横滑滤镜卡条 / 横滑场景胶囊条，起手都是横向 → 锁成横向 → 全程不参与呼出收起。
+    ///   这和闸门①覆盖的场景有重叠，但方向锁**不依赖"谁在拖动"** ——
+    ///   闸门①只能覆盖接了编辑态的滑块，其它横滑控件（以及未来新增的）靠方向锁兜住。
     private var viewfinderSwipeGesture: some Gesture {
         DragGesture(minimumDistance: Self.swipeActivationDistance)
             .onChanged { value in
                 // 记一次起点时刻；同一次拖动只记一次
                 if swipeGestureStart == nil { swipeGestureStart = Date() }
-                guard !swipeDidTrigger, shouldTriggerSwipe(value) else { return }
+                lockSwipeAxisIfNeeded(value)
+
+                guard !swipeDidTrigger,
+                      !viewModel.isExposureEditing,      // 闸门①
+                      swipeAxis == .vertical,            // 闸门②
+                      shouldTriggerSwipe(value) else {
+                    return
+                }
                 swipeDidTrigger = true
                 viewModel.swiped(up: value.translation.height < 0)
             }
@@ -253,7 +278,22 @@ struct CameraView: View {
                 // 手势结束只做清理 —— 判定已经在 onChanged 里做完了
                 swipeGestureStart = nil
                 swipeDidTrigger = false
+                swipeAxis = nil
             }
+    }
+
+    /// 方向锁：本次拖动是"横向为主"还是"纵向为主"，**只在起手阶段判定一次**。
+    ///
+    /// 为什么不能像之前那样全程按位移判：横滑控件的拖动里纵向抖动是常态，
+    /// 全程判定会在抖动的某一帧"短暂满足纵向为主"（尤其配合提前触发），于是误触发。
+    /// 锁定主轴后，同一次拖动不会再改判 —— 这也是 iOS 手势识别的通行做法。
+    private func lockSwipeAxisIfNeeded(_ value: DragGesture.Value) {
+        guard swipeAxis == nil else { return }
+        let dx = abs(value.translation.width)
+        let dy = abs(value.translation.height)
+        // 起手门槛（`minimumDistance`）是 10pt，所以第一次回调就能定下来
+        guard dx >= Self.swipeAxisDeadZone || dy >= Self.swipeAxisDeadZone else { return }
+        swipeAxis = dx > dy ? .horizontal : .vertical
     }
 
     /// 是否已达触发条件：起点区 / 时长 / 位移 / 纵向为主，四条全满足。

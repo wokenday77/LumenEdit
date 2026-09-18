@@ -155,13 +155,16 @@ struct ParameterSlider: View {
                 onEditingChanged?(true)
             }
             .onEnded { _ in
-                // 被方向闸门判为竖向的那次拖动：整个生命周期都不碰值，也不发编辑事件
+                // 被方向闸门判为竖向的那次拖动：整个生命周期都不碰值，也不发编辑事件。
+                // ⚠️ 这里**不需要**"无条件复位编辑态"：`isHorizontalDrag` 在同一次拖动里
+                // 只会从 nil 判定一次，所以"发过 `true` 就一定走到这里的 `false`"，
+                // 不可能出现"闸门卡在拖动中导致整页手势永久禁言"。
+                // （那个闸门是 `CameraViewModel.isExposureEditing`，见其注释。）
                 defer { isHorizontalDrag = nil }
                 guard isHorizontalDrag == true else { return }
                 onEditingChanged?(false)
                 Haptics.tick()
-            }
-    }
+            }    }
 
     private func resetToDefault() {
         guard isEnabled else { return }
