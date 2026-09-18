@@ -697,6 +697,18 @@ if (!camViewFile || !vmFile) {
       ok('ParameterSlider 触觉已降频且量级够（滞后 ' + hystVal + ' 档 + 节流 '
         + (throttleVal * 1000).toFixed(0) + 'ms，归零反馈保留）');
     }
+
+    // l) 渲染源唯一（2026-09-18 docs/14 的第 ② 条查证）：thumb / 填充 / 数字必须同源于 value。
+    //    若有人"为了跟手"把 thumb 改成跟 gesture.location.x，反而会制造真不同步
+    //   （thumb 连续、填充与数字离散吸附）。跳动真因是 value 被回写改写，不是渲染源。
+    const thumbBody = /private func thumbCenterX[\s\S]{0,500}?\n    \}/.exec(sliderSrc);
+    const usesValue = !!thumbBody && /normalized\(value\)/.test(thumbBody[0]);
+    const usesGesture = !!thumbBody && /(location|translation)/.test(thumbBody[0]);
+    if (!usesValue || usesGesture) {
+      bad('ParameterSlider 的 thumb 位置不是纯由 value 派生（第二个渲染源会造成真不同步）');
+    } else {
+      ok('ParameterSlider 渲染源唯一（thumb / 填充 / 数字同源于 value）');
+    }
   }
 
   // e) 手势挂载点必须在整页 ZStack 上（第二轮真机反馈"上划两次只能呼出一个"）
@@ -787,6 +799,23 @@ if (!camViewFile || !vmFile) {
     bad('手势缺闸门②（方向锁 swipeAxis / lockSwipeAxisIfNeeded）—— 横滑条上的纵向抖动会误触发');
   } else {
     ok('误触闸门齐全（① EV 编辑态禁言 ② 方向锁），横滑类控件的抖动不会再误触发');
+  }
+
+  // j/k) EV 回写环的两道守卫（2026-09-18 用户诊断"反复跳动"，方案 docs/14）
+  //      ① 拖动期间不回写（否则滑条被拽回旧档，滞后判定以旧值为基准 → 重复跨档 + 触觉重复响）
+  //      ② 只接受"与最后推送值一致"的回写（丢弃队列里积压的旧值，否则松手后跳一下）
+  const writebackGuarded = /\.sink \{ \[weak self\] value in[\s\S]{0,600}?guard !self\.isExposureEditing/.test(vmSrc8);
+  const lastPushedSet = /func exposureEditingChanged[\s\S]{0,700}?lastPushedExposureBias\s*=/.test(vmSrc8);
+  const lastPushedCompared = /lastPushedExposureBias[\s\S]{0,300}?abs\(Double\(sent\)/.test(vmSrc8);
+  const lastPushedCleared = (vmSrc8.match(/lastPushedExposureBias\s*=\s*nil/g) || []).length >= 2;
+  if (!writebackGuarded) {
+    bad('硬件 EV 回写没有编辑态守卫（拖动中回写会把滑条拽回旧档 → 反复跳动）');
+  } else if (!lastPushedSet || !lastPushedCompared) {
+    bad('硬件 EV 回写没有"最后推送值"比对（拖动尾部积压的旧值会在松手后回放）');
+  } else if (!lastPushedCleared) {
+    bad('lastPushedExposureBias 没有在切模式 / 会话就绪时清空（会把来自设备的合法回写误吞）');
+  } else {
+    ok('EV 回写环两道守卫齐全（拖动中不回写 + 只接受最新推送值，且切换时清空记录）');
   }
 }
 

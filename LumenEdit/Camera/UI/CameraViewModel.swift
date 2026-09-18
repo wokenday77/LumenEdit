@@ -171,6 +171,13 @@ final class CameraViewModel: ObservableObject {
     private var toastTask: Task<Void, Never>?
     private var lastShownError: String?
 
+    /// 最近一次**推送出去**的 EV 值，用于回写守卫：只接受与它一致的回写。
+    ///
+    /// 为什么需要：拖动中每跨一档推一次硬件，`sessionQueue` 按序回放 ——
+    /// 松手瞬间积压的旧值会依次回来（"松手后跳一下"）。用它与回写值比对即可丢弃。
+    /// **切模式 / 会话就绪时必须置 `nil`**（那时硬件值来自设备而非我们推送）。
+    private var lastPushedExposureBias: Float?
+
     // MARK: - 装配
 
     /// 由视图在 `onAppear` 时调用。`@StateObject` 无法在初始化时拿到 EnvironmentObject，
@@ -180,19 +187,47 @@ final class CameraViewModel: ObservableObject {
         isAttached = true
         self.environment = environment
 
-        // 硬件侧读回来的曝光补偿 → 同步到滑块
+        // 硬件侧读回来的曝光补偿 → 同步到滑块。
+        //
+        // ⚠️ **两道守卫，缺一不可**（2026-09-18 真机反馈"EV 条反复跳动"，根因见 `docs/14`）：
+        //
+        //   ① **拖动期间不回写**。回写这条链路有四段异步
+        //      （`sessionQueue` → 设备锁 → `publish` 的 `main.async` → 本订阅的 `RunLoop`），
+        //      拖快时回来的是**几拍之前**的值。把滑条拽回旧档位还不算最糟 ——
+        //      下一次 `onChanged` 里的**滞后判定会以"被拽回的值"当基准**，于是同一个档位边界
+        //      被重复跨越、触觉重复触发。**滞后比越大跳动越明显，这是环路的判别特征**
+        //      （纯密度问题不会对比值敏感）。
+        //   ② **只接受与最后推送值一致的回写**。拖动尾部积压在 `sessionQueue` 里的旧值
+        //      会在松手瞬间被依次回放（表现为"松手后跳一下"）。
         environment.session.$exposureBias
             .receive(on: RunLoop.main)
             .sink { [weak self] value in
-                self?.exposureBias = Double(value)
+                guard let self else { return }
+                guard !self.isExposureEditing else { return }
+                if let sent = self.lastPushedExposureBias,
+                   abs(Double(sent) - Double(value)) >= 0.001 {
+                    return
+                }
+                self.exposureBias = Double(value)
             }
             .store(in: &cancellables)
 
-        // 会话侧的模式 → 同步到 UI
+        // 会话侧的模式 → 同步到 UI；**同时清空"最后推送值"记录** ——
+        // 切模式会重建会话，之后的硬件值来自设备（不是我们推的），必须允许回写
         environment.session.$mode
             .receive(on: RunLoop.main)
             .sink { [weak self] value in
                 self?.mode = value
+                self?.lastPushedExposureBias = nil
+            }
+            .store(in: &cancellables)
+
+        // 会话就绪（冷启动 / 重建完成）同样清空 —— 那一刻 publish 出来的 EV 来自设备当前值，
+        // 不是我们推送的，留着记录会把合法回写误吞掉
+        environment.session.$state
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                if state == .running { self?.lastPushedExposureBias = nil }
             }
             .store(in: &cancellables)
 
@@ -431,12 +466,21 @@ final class CameraViewModel: ObservableObject {
     /// `CameraView` 的**方向锁**兜住（见 `swipeAxis`）。
     @Published private(set) var isExposureEditing = false
 
+    /// EV 滑块开始 / 结束拖动。
+    ///
+    /// 两个职责：
+    ///   1. 维护 `isExposureEditing` —— 它是**整页手势的闸门**（`CameraView`）与**硬件回写的闸门**
+    ///      （本文件 `$exposureBias` 订阅），见 `docs/14`；
+    ///   2. 记录本次推送的值（`lastPushedExposureBias`），供回写守卫丢弃队列里积压的旧值。
+    ///
+    /// ⚠️ 顺序有讲究：**先复位编辑态、再推硬件**。松手那一下推出的值会正常回写回来
+    ///（此时编辑态已复位），"松手后以最终吸附值为准同步一次"就靠这个顺序自然成立。
     func exposureEditingChanged(_ isEditing: Bool) {
         // 幂等赋值：拖动中 onChanged 会反复送 `true`，值没变就别发 `objectWillChange`
-        //（这里是每档一次的高频回调，多余的刷新没必要）
         if isExposureEditing != isEditing {
             isExposureEditing = isEditing
         }
+        lastPushedExposureBias = Float(exposureBias)
         environment?.session.setExposureBias(Float(exposureBias))
     }
 

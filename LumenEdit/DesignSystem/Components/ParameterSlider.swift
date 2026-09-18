@@ -134,6 +134,13 @@ struct ParameterSlider: View {
         return ((raw - range.lowerBound) / span).clamped(to: 0...1)
     }
 
+    /// 拇指中心 X —— **唯一的渲染源是 `value`**（填充条与数字同样派生自它）。
+    ///
+    /// ⚠️ **不要改成跟随 `gesture.location.x`**（2026-09-18 排查"EV 条反复跳动"时讨论过）：
+    /// 那会制造**真正的**不同步 —— thumb 跟手指（连续）而填充/数字跟 `value`（吸附后离散），
+    /// 两者必然错位。
+    /// 而且当时的跳动**真因不是渲染源**：是 `value` 被硬件回写擅自改写（环路，见 `docs/14`）。
+    /// 三者同源是本控件的既定不变量，自检第 8 组 l) 条守着它。
     private func thumbCenterX(width: CGFloat) -> CGFloat {
         let travel = max(0, width - thumbDiameter)
         return thumbDiameter / 2 + CGFloat(normalized(value)) * travel
