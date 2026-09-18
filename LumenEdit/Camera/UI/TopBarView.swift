@@ -58,8 +58,6 @@ struct TopBarView: View {
     /// 格式选择器是否展开（展开中芯片变亮）
     let isFormatSelectorExpanded: Bool
     let onFormatChipTap: () -> Void
-    /// 副行存储胶囊的文本（录制类模式是"剩余可录时长 + 空间"，其它模式是剩余空间）
-    let storageText: String
 
     /// 上缘渐隐黑向上多伸出的高度（覆盖状态栏区域）
     private static let scrimOverhang: CGFloat = 60
