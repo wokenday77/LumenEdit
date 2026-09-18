@@ -48,6 +48,19 @@ final class CameraViewModel: ObservableObject {
     /// 状态在 VM，渲染在 `FilterStripView`（⤢ 放大态下强制隐藏，见 `CameraView`）。
     @Published private(set) var isFilterStripExpanded = false
 
+    /// 参数排（曝光补偿面板）的展开态。
+    ///
+    /// **默认收起** —— 原型的常态就是"图标行 44pt"（`.row-params{height:44px}`），
+    /// 展开是点图标行「曝光补偿」之后的事（`.screen.strip-on .row-params{height:140px}`）。
+    ///
+    /// ⚠️ Swift 侧此前把 `ExposurePanel` 常驻渲染，这是个真问题（2026-09-18 真机反馈）：
+    ///   1. **没有收起入口**：图标行「曝光补偿」只弹 toast（"在上方参数排调节"），
+    ///      用户找不到关闭方式；
+    ///   2. **常态净可见被压到 50% 以下**（面板约 108pt，底栏栈 334pt → 取景器净可见约 43%）；
+    ///   3. **吃掉上滑手势的起手区**：它把"取景器可见区下沿"往上推了约 124pt，
+    ///      而 #7 的手势起点线是 55%，两者之间只剩几 pt —— 表现为"上滑要很用力 + 特定位置"。
+    @Published private(set) var isExposurePanelExpanded = false
+
     /// 选中的场景 id（落盘）
     @Published private(set) var sceneId: String =
         UserDefaults.standard.string(forKey: SceneStyleStorageKey.scene)
@@ -480,23 +493,37 @@ final class CameraViewModel: ObservableObject {
         showToast("快门速度刻度条在 P2 参数批次交付（同一套 setExposureModeCustom）")
     }
 
-    /// 第 6 项「曝光补偿」：**EV 已经可用**（上方参数排常驻），所以这一项不是"未实现"，
-    /// 而是告知入口在哪 + 当前值。原型里它开的是 EV 圆盘（模块 #8，与对焦圆盘同规则互斥）。
+    /// 第 6 项「曝光补偿」：**展开 / 收起参数排**（EV 滑块就在它里面）。
+    ///
+    /// 原型的做法（第二轮定稿）：参数排常态只剩图标行，**只有点「曝光补偿」才展开滑块区**，
+    /// 再点一次收起。Swift 侧此前是"面板常驻 + 这一项只弹 toast"，所以用户**找不到收起入口**
+    /// （2026-09-18 真机反馈"曝光补偿条无法关闭"）。现在这一项就是那个开关。
+    ///
+    /// 互斥：展开参数排时收起滤镜条 / 场景·风格条（同一时刻只允许一个扩展浮层）。
     func exposureCompensationTapped() {
-        let value = FormatText.exposureBias(Float(exposureBias))
-        showToast("曝光补偿在上方参数排调节（当前 \(value) EV）· 圆盘在模块 #8 交付")
+        isExposurePanelExpanded.toggle()
+        Haptics.tick()
+
+        if isExposurePanelExpanded {
+            isFilterStripExpanded = false
+            isSceneStyleExpanded = false
+            let value = FormatText.exposureBias(Float(exposureBias))
+            showToast("曝光补偿 \(value) EV · 再点一次收起参数排")
+        } else {
+            showToast("参数排已收起（点「曝光补偿」可再次展开）")
+        }
     }
 
     // MARK: - 场景 · 风格（#6）
 
     /// 展开 / 收起场景·风格条。三个入口（胶囊 / 箭头 / 快门排风格方块）都走它。
     ///
-    /// 互斥（原型 `setSS`）：展开时收起滤镜条 —— 同一时刻只允许一个扩展浮层
-    /// （反向的"呼出滤镜条收场景·风格"在 `swiped(up:)` 里）。
+    /// 互斥（原型 `setSS`）：展开时收起滤镜条**与参数排** —— 同一时刻只允许一个扩展浮层。
     func toggleSceneStyle() {
         isSceneStyleExpanded.toggle()
         if isSceneStyleExpanded {
             isFilterStripExpanded = false
+            isExposurePanelExpanded = false
         }
         Haptics.tick()
     }
@@ -554,23 +581,24 @@ final class CameraViewModel: ObservableObject {
 
     /// 取景器上划 / 下划手势的分层决策（原型 `swipeUp` / `swipeDown`）。
     ///
-    /// 上划第一段呼出**滤镜条**、第二段呼出**场景与风格**（两级，互斥收起对方）；
-    /// 下划逐级收起。手势的几何判定（起点 55% 以下、位移 ≥34pt、纵向为主、≤0.8s）
-    /// 在 `CameraView.viewfinderSwipeGesture`，这里只管"呼出什么"。
+    /// 上划第一段呼出**滤镜条**、第二段呼出**场景与风格**（两级，互斥收起对方与参数排）；
+    /// 下划逐级收起。手势的几何判定在 `CameraView.viewfinderSwipeGesture`，这里只管"呼出什么"。
     ///
     /// （Swift 侧暂无简易模式 —— 原型里"简易模式下浮层保持隐藏"的分支随模块 #12 补。）
     func swiped(up: Bool) {
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格
+                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格与参数排
                 isFilterStripExpanded = true
                 isSceneStyleExpanded = false
+                isExposurePanelExpanded = false
                 Haptics.tick()
                 showToast("已呼出滤镜条 · 再上划一次呼出场景与风格")
             } else if isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条
+                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条与参数排
                 isFilterStripExpanded = false
                 isSceneStyleExpanded = true
+                isExposurePanelExpanded = false
                 Haptics.tick()
                 showToast("已呼出场景与风格 · 下划收起")
             } else {
@@ -583,18 +611,26 @@ final class CameraViewModel: ObservableObject {
             } else if isFilterStripExpanded {
                 collapseOverlays()
                 showToast("已收起滤镜条，参数排回到平铺")
+            } else if isExposurePanelExpanded {
+                collapseOverlays()
+                showToast("已收起参数排")
             } else {
                 showToast("没有更多可收起的浮层")
             }
         }
     }
 
-    /// 收起全部扩展浮层（原型 `collapseAll`）。
-    /// 参数刻度条与 EV 圆盘尚不存在 —— 随 B 组（模块 #8 / #9）落地时补进这里。
+    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / 参数排 / EV 圆盘。
+    ///
+    /// ⚠️ **新浮层必须加进这里**（#8 的 EV 圆盘、#9 的参数刻度条落地时补）——
+    /// 少加一处就会出现"下划收不干净"。
     private func collapseOverlays() {
-        guard isFilterStripExpanded || isSceneStyleExpanded else { return }
+        guard isFilterStripExpanded || isSceneStyleExpanded || isExposurePanelExpanded else {
+            return
+        }
         isFilterStripExpanded = false
         isSceneStyleExpanded = false
+        isExposurePanelExpanded = false
         Haptics.tick()
     }
 

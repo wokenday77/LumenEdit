@@ -3,11 +3,16 @@ import SwiftUI
 /// 参数滑块。
 ///
 /// 相机页的曝光补偿、以及 P2 的 ISO / 快门 / 白平衡全部复用这一个控件，
-/// 所以它必须处理好三件事：
+/// 所以它必须处理好四件事：
 ///   1. **吸附**：EV 按 1/3 档，ISO 按整档，不能让 0.30000000000000004 这种值进硬件；
 ///   2. **归位**：点一下数值就回到默认值（比双击更可靠，也不容易误触）；
 ///   3. **居中填充**：范围是 -2…+2 时，填充条应该从中间的 0 往两边长，
-///      而不是从最左边开始——不然用户看不出当前是加还是减。
+///      而不是从最左边开始——不然用户看不出当前是加还是减；
+///   4. **方向闸门**：只接**横向**拖动。这条是 2026-09-18 按真机反馈补的 ——
+///      原来用 `DragGesture(minimumDistance: 0)`，任何落手（包括想上滑呼出浮层的竖向滑动）
+///      都会被滑条接管，EV 会**跳到手指 x 处对应的值**并写进硬件。
+///      用户的体感就是"曝光补偿条一直在干扰，想上滑却改了 EV"。
+///      现在的行为：落手后先判方向，竖向为主（含斜向但不是横向为主）一律不接管、不改值。
 struct ParameterSlider: View {
 
     let title: String
@@ -22,6 +27,12 @@ struct ParameterSlider: View {
 
     private let trackHeight: CGFloat = 4
     private let thumbDiameter: CGFloat = 20
+
+    /// 本次拖动是否已被判定为"横向接管"。nil = 还没判出来（见 `dragGesture`）。
+    @State private var isHorizontalDrag: Bool?
+
+    /// 判定死区：位移不超过它时不判方向（避免手抖就把一次点按判成拖动）
+    private static let directionDeadZone: CGFloat = 6
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -119,6 +130,17 @@ struct ParameterSlider: View {
         DragGesture(minimumDistance: 0)
             .onChanged { gesture in
                 guard isEnabled, width > 0 else { return }
+
+                // 方向闸门（见类型注释第 4 条）：先判方向，横向为主才接管。
+                // 判不出来之前**不改值** —— 否则竖向滑动会被读成"手指 x 处的值"。
+                if isHorizontalDrag == nil {
+                    let dx = abs(gesture.translation.width)
+                    let dy = abs(gesture.translation.height)
+                    if dx < Self.directionDeadZone && dy < Self.directionDeadZone { return }
+                    isHorizontalDrag = dx > dy
+                }
+                guard isHorizontalDrag == true else { return }
+
                 let x = gesture.location.x.clamped(to: 0...width)
                 let travel = max(1, width - thumbDiameter)
                 let ratio = Double((x - thumbDiameter / 2) / travel).clamped(to: 0...1)
@@ -133,6 +155,9 @@ struct ParameterSlider: View {
                 onEditingChanged?(true)
             }
             .onEnded { _ in
+                // 被方向闸门判为竖向的那次拖动：整个生命周期都不碰值，也不发编辑事件
+                defer { isHorizontalDrag = nil }
+                guard isHorizontalDrag == true else { return }
                 onEditingChanged?(false)
                 Haptics.tick()
             }

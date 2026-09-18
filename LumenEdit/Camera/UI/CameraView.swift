@@ -118,21 +118,49 @@ struct CameraView: View {
         viewModel.isFilterStripExpanded && !viewModel.isZoomOn
     }
 
-    /// 手势几何参数 —— 对齐原型 `bindSwipe` 的实测口径，不要凭感觉改：
-    /// `minimumDistance` 24（SwiftUI 侧起手门槛，低于它就是点按对焦）；
-    /// 位移 34 / 时长 0.8s / 起点 55% 以下 / 纵向为主，全是原型踩坑后定的数。
-    private static let swipeActivationDistance: CGFloat = 24
-    private static let swipeMinTravel: CGFloat = 34
-    private static let swipeMaxDuration: TimeInterval = 0.8
-    /// 起点必须在容器下方 45% 区域内（原型 `clientY > height × 0.55`）——
-    /// 上半屏的纵向拖动（比如擦一下画面）不该呼出浮层。
-    private static let swipeStartRegionRatio: CGFloat = 0.55
+    /// 参数排（EV 面板）当前是否真的展开。默认收起（`isExposurePanelExpanded` 初值 false），
+    /// ⤢ 放大态强制隐藏（与滤镜条同规则，原型 `.zoom-on` 把参数排整行归零）。
+    private var isExposurePanelShown: Bool {
+        viewModel.isExposurePanelExpanded && !viewModel.isZoomOn
+    }
+
+    /// 手势几何参数（2026-09-18 按真机反馈放宽过一次，别再照着原型原样抄）。
+    ///
+    /// **为什么放宽**：原型是 24 起手 / 34 位移 / 0.8s / 起点 55% —— 那是浏览器里用鼠标/触屏
+    /// 双环境定的口径，搬到真机上偏严。真机反馈"上滑要很用力 + 只有特定位置能触发"，
+    /// 算完账发现根因不是"力度"，而是**可用起手带只有约 6pt**：
+    ///
+    /// ```
+    /// iPhone 16 Pro：安全区高 778（上 62 / 下 34）
+    ///   顶栏 + 外层 padding ≈ 66
+    ///   底栏栈 ≈ 334（EV 面板 108 + 16 + 图标行 44 + 16 + 焦段条 44 + 16 + 快门排 80 + 内边距 10）
+    ///   → 底栏栈上沿落在安全区 y ≈ 434
+    ///   而起点线 0.55 × 778 = 428
+    ///   → 可用窗口 428 ~ 434 = 6pt
+    /// ```
+    ///
+    /// 现在两处一起动：**参数排默认收起**（底栏栈降到约 210，上沿下移到 ≈ 558）
+    /// + 起点线降到 25%（= 只排除最上面 25%，用来避开顶栏与调试浮层区）。
+    /// 落在底栏控件上的起手仍由**结构**排除（触摸被控件吃掉，到不了这个手势），
+    /// 落在底栏各行之间 16pt 空隙上的起手会被正常接受（那是穿透到取景器的）。
+    private static let swipeActivationDistance: CGFloat = 10
+    private static let swipeMinTravel: CGFloat = 18
+    private static let swipeMaxDuration: TimeInterval = 1.2
+    /// 起点必须在容器下方 75% 区域内（= 只排除上 25%：顶栏 66pt + 调试浮层）。
+    /// 原为 0.55（只允许下 45%），与底栏上沿只差 6pt，是"上滑不灵敏"的直接原因。
+    private static let swipeStartRegionRatio: CGFloat = 0.25
+    /// 横向排除的宽容倍数：|dx| > |dy| × 本值 才算"在横滑条上滑动"。
+    /// 原型是 1.0（斜一点就拒），真机上斜着上滑很常见，放宽到 1.5。
+    private static let swipeHorizontalSlack: CGFloat = 1.5
 
     /// 上划呼出滤镜条（再上划呼出场景·风格）、下划逐级收起。
     ///
     /// ⚠️ 挂在 **previewLayer** 上而不是整个页面：底栏栈是 ZStack 里绘制在上的兄弟视图，
-    /// 从横滑条 / 药丸 / 图标行上起手的拖动根本到不了这个手势 ——
-    /// 原型靠元素排除清单（`.strip` / `.focal-strip` / …）解决的误触，这里结构上就不存在。
+    /// 从**控件**上起手的拖动到不了这个手势（要的就是这个效果 —— 用户在 EV 滑条、横滑条、
+    /// 药丸、快门上的拖动不该被理解成"呼出浮层"）；而底栏**行与行之间的空隙**不挡触摸，
+    /// 起手会穿透到这里并被接受。
+    ///
+    /// ⚠️ 参数值（阈值）见上方常量表，2026-09-18 按真机反馈整体放宽过一次。
     private var viewfinderSwipeGesture: some Gesture {
         DragGesture(minimumDistance: Self.swipeActivationDistance)
             .onChanged { _ in
@@ -142,17 +170,20 @@ struct CameraView: View {
             .onEnded { value in
                 defer { swipeGestureStart = nil }
 
-                // 长按后拖动不算滑动（原型 dt ≤ 800ms）
+                // 时长守卫（原型"长按后拖动不算滑动"）：起点时刻记在**起手门槛之后**，
+                // 所以这里的时间已经偏宽松；1.2s 是放宽后的值，慢滑不再被拒。
                 guard let start = swipeGestureStart,
                       Date().timeIntervalSince(start) <= Self.swipeMaxDuration else { return }
 
-                // 起点必须在取景器下半区（原型同款 55% 线）
+                // 起点必须在取景器下 75% 区（只排除最上面的顶栏/调试浮层区）
                 guard value.startLocation.y > previewHeight * Self.swipeStartRegionRatio else { return }
 
                 let dy = value.translation.height
-                // 位移不够，或**横向为主**（是在横滑条上滑动）→ 不算呼出 / 收起
+                // 位移不够，或**横向为主**（在横滑条上滑动）→ 不算呼出 / 收起
                 guard abs(dy) >= Self.swipeMinTravel,
-                      abs(value.translation.width) <= abs(dy) else { return }
+                      abs(value.translation.width) <= abs(dy) * Self.swipeHorizontalSlack else {
+                    return
+                }
 
                 viewModel.swiped(up: dy < 0)
             }
@@ -161,11 +192,11 @@ struct CameraView: View {
     private var cameraContent: some View {
         ZStack {
             previewLayer
-                // 高度读数（起点 55% 判定用）+ 上划呼出 / 下划收起手势（#7）。
+                // 高度读数（起点判定用）+ 上划呼出 / 下划收起手势（#7）。
                 // ⚠️ simultaneousGesture 而不是 gesture：预览层内部是 UIKit 的
                 // 点按对焦（UITapGestureRecognizer），要两条手势并存，
                 // 点按（tap）与拖动（drag）天然不冲突 —— 原型"拖完补 click 误收浮层"的坑
-                // 在这里结构上不存在（tap 手势不会由一次 34pt 的拖动触发）。
+                // 在这里结构上不存在（tap 手势不会由一次 18pt 的拖动触发）。
                 .background(
                     GeometryReader { proxy in
                         Color.clear.preference(
@@ -313,17 +344,9 @@ struct CameraView: View {
             // ⚠️ 焦段条**不在让位之列** —— 它顺序往下走、正好落在取景器卡片的内底边，
             // 这就是原型 `.zoom-on .row-focal` 的效果（见下方它的注释）。
             if !viewModel.isZoomOn {
-                ExposurePanel(
-                    exposureBias: $viewModel.exposureBias,
-                    range: env.session.exposureBiasRange,
-                    isEnabled: env.session.state == .running && !viewModel.isSaving,
-                    onEditingChanged: { isEditing in
-                        viewModel.exposureEditingChanged(isEditing)
-                    }
-                )
-
-                // 底部图标行：七项（前置/对焦/白平衡/感光/快门速度/曝光补偿/设置），
-                // 全部有反馈 —— 未实现的给 toast 说明，设置真开设置页。
+                // 底部图标行（常驻）：原型 `.params-closed-bar{ order:1 }` → 图标行在上。
+                // 七项（前置/对焦/白平衡/感光/快门速度/曝光补偿/设置）全部有反馈 ——
+                // 未实现的给 toast 说明，设置真开设置页。
                 ToolIconRow(
                     onFrontCamera: { viewModel.frontCameraTapped() },
                     onFocusHint: { viewModel.focusHintTapped() },
@@ -333,6 +356,22 @@ struct CameraView: View {
                     onExposureCompensation: { viewModel.exposureCompensationTapped() },
                     onSettings: { env.showSettings = true }
                 )
+
+                // 参数排（EV 面板）：**默认收起**，点图标行「曝光补偿」展开 / 收起。
+                // 顺序对齐原型 `.strip-panel{ order:2 }` —— 图标行在上、面板紧贴其下。
+                // （2026-09-18 由常驻改为可收起：常驻时既没有关闭入口，又把常态净可见
+                //   压到 50% 以下、还吃掉了上滑手势的起手区，见 `isExposurePanelExpanded` 注释。）
+                if isExposurePanelShown {
+                    ExposurePanel(
+                        exposureBias: $viewModel.exposureBias,
+                        range: env.session.exposureBiasRange,
+                        isEnabled: env.session.state == .running && !viewModel.isSaving,
+                        onEditingChanged: { isEditing in
+                            viewModel.exposureEditingChanged(isEditing)
+                        }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
 
             // 焦段条：**底栈里的普通一行**，位置在「图标行之下、快门排之上」
@@ -385,9 +424,10 @@ struct CameraView: View {
             )
         }
         .padding(.bottom, Theme.Spacing.sm)
-        // 滤镜条的插入 / 移除动画由这两个状态驱动（transition 写在 FilterStripView 上）。
-        // isZoomOn 也要绑：放大态把滤镜条强制隐藏时同样走过渡，而不是瞬移消失。
+        // 滤镜条 / 参数排的插入·移除动画由这三个状态驱动（transition 写在各自组件上）。
+        // isZoomOn 也要绑：放大态把两者强制隐藏时同样走过渡，而不是瞬移消失。
         .animation(.easeInOut(duration: 0.22), value: viewModel.isFilterStripExpanded)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isExposurePanelExpanded)
         .animation(.easeInOut(duration: 0.22), value: viewModel.isZoomOn)
     }
 

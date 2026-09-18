@@ -528,6 +528,113 @@ if (!filterStripFile || !vmFile || !camViewFile || !thumbFile || !themeFile2) {
 }
 
 
+/* ---------- 8. 底部手势与参数排（2026-09-18 真机三问题后补） ---------- */
+// 为什么要这一组：底部这一片同时住着「上滑/下划手势」「常驻参数排」「EV 滑条」，
+// 三者互相吃触摸 —— 出了问题全都表现为"手势不灵 / 被干扰 / 关不掉"，而根因是几何账
+// （可用起手带只剩 6pt），编译器一点提示都没有。这里把口径钉住：
+//   a) 手势阈值只能**更宽松**，不许被谁改回原型那套严口径；
+//   b) 参数排必须默认收起，且图标行「曝光补偿」必须是它的开关；
+//   c) 互斥（含参数排）必须在 collapseOverlays() 一处收口；
+//   d) EV 滑条必须有方向闸门（竖向落手不许改值）。
+console.log('\n[8] 底部手势与参数排');
+
+if (!camViewFile || !vmFile) {
+  bad('找不到 CameraView.swift / CameraViewModel.swift（改名了？自检需要同步）');
+} else {
+  const viewSrc8 = fs.readFileSync(camViewFile, 'utf8');
+  const vmSrc8 = fs.readFileSync(vmFile, 'utf8');
+  const sliderFile = files.find(f => path.basename(f) === 'ParameterSlider.swift');
+
+  // a) 手势阈值：真机反馈"要很用力 + 特定位置"后放宽过一次，不许静默改回
+  const numOf = (src, name) => {
+    const m = new RegExp('\\b' + name + '\\s*:\\s*(?:CGFloat|TimeInterval)\\s*=\\s*([0-9.]+)').exec(src);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const g = {
+    activation: numOf(viewSrc8, 'swipeActivationDistance'),
+    travel: numOf(viewSrc8, 'swipeMinTravel'),
+    duration: numOf(viewSrc8, 'swipeMaxDuration'),
+    startRatio: numOf(viewSrc8, 'swipeStartRegionRatio'),
+    slack: numOf(viewSrc8, 'swipeHorizontalSlack')
+  };
+  const gMissing = Object.keys(g).filter(k => g[k] === null);
+  if (gMissing.length) {
+    bad('读不到手势参数：' + gMissing.join(' / '));
+  } else {
+    let badG = false;
+    const limits = [
+      ['swipeActivationDistance', g.activation, 12, '起手门槛（原 24，真机偏迟钝）'],
+      ['swipeMinTravel', g.travel, 20, '位移阈值（原 34，要求滑过 3.4mm 才算）'],
+      ['swipeStartRegionRatio', g.startRatio, 0.3, '起点线（原 0.55，与底栏上沿只差约 6pt）']
+    ];
+    for (const [name, value, limit, why] of limits) {
+      if (value > limit) { bad(name + ' = ' + value + ' 超过 ' + limit + '（' + why + '）'); badG = true; }
+    }
+    if (g.duration < 1.0) {
+      bad('swipeMaxDuration = ' + g.duration + 's 小于 1.0s（慢滑会被拒，表现为"要很用力"）');
+      badG = true;
+    }
+    if (g.slack < 1.0) {
+      bad('swipeHorizontalSlack = ' + g.slack + ' 小于 1.0（斜着上滑会被误判为横滑）');
+      badG = true;
+    }
+    if (!badG) {
+      ok('手势口径是放宽后的版本（起手 ' + g.activation + ' / 位移 ' + g.travel + 'pt / '
+        + g.duration + 's / 起点 ' + g.startRatio + ' / 横向裕度 ' + g.slack + '）');
+    }
+  }
+
+  // b) 参数排：默认收起 + 图标行「曝光补偿」是它的开关
+  if (!/isExposurePanelExpanded/.test(vmSrc8)) {
+    bad('CameraViewModel 里没有 isExposurePanelExpanded —— 参数排又变回常驻了？');
+  } else if (!/isExposurePanelExpanded\s*(?::\s*[^=\n]+)?=\s*false/.test(vmSrc8)) {
+    bad('isExposurePanelExpanded 没有显式默认 false（参数排应默认收起）');
+  } else if (!/func exposureCompensationTapped[\s\S]{0,400}?isExposurePanelExpanded\.toggle\(\)/.test(vmSrc8)) {
+    bad('图标行「曝光补偿」没有走 toggle —— 那参数排就没有收起入口（用户找不到关闭方式）');
+  } else if (!/isExposurePanelShown/.test(viewSrc8)) {
+    bad('CameraView 没用 isExposurePanelShown 门控参数排（放大态/收起态会漏渲染）');
+  } else {
+    ok('参数排默认收起，且由图标行「曝光补偿」toggle（有收起入口）');
+  }
+
+  // c) 互斥收口：collapseOverlays() 必须同时管三个（新增浮层必须加进来）
+  const collapseBody = /private func collapseOverlays\(\)[\s\S]{0,700}?\n    \}/.exec(vmSrc8);
+  if (!collapseBody) {
+    bad('找不到 collapseOverlays()');
+  } else {
+    const body = collapseBody[0];
+    const needed = ['isFilterStripExpanded', 'isSceneStyleExpanded', 'isExposurePanelExpanded'];
+    const miss = needed.filter(n => !new RegExp(n + '\\s*=\\s*false').test(body));
+    if (miss.length) {
+      bad('collapseOverlays() 没收起：' + miss.join(' / ') + '（下划会收不干净）');
+    } else {
+      ok('collapseOverlays() 一次收起全部扩展浮层（滤镜条 / 场景·风格 / 参数排）');
+    }
+  }
+  // 展开另外两个浮层时也必须收参数排（互斥三方向）
+  const mutex3 = /func toggleSceneStyle[\s\S]{0,500}?isExposurePanelExpanded\s*=\s*false/.test(vmSrc8)
+    && /func swiped[\s\S]{0,1200}?isExposurePanelExpanded\s*=\s*false/.test(vmSrc8);
+  if (mutex3) {
+    ok('展开场景·风格 / 呼出浮层时都会收起参数排（互斥三方向齐全）');
+  } else {
+    bad('互斥不全：展开场景·风格或呼出浮层时没有收起参数排');
+  }
+
+  // d) EV 滑条的方向闸门：竖向落手不许改值（否则"想上滑却改了 EV"）
+  if (!sliderFile) {
+    bad('找不到 ParameterSlider.swift');
+  } else {
+    const sliderSrc = fs.readFileSync(sliderFile, 'utf8');
+    if (!/isHorizontalDrag/.test(sliderSrc) || !/directionDeadZone/.test(sliderSrc)) {
+      bad('ParameterSlider 缺方向闸门（minimumDistance: 0 会把竖向滑动读成"手指 x 处的值"）');
+    } else {
+      ok('ParameterSlider 有方向闸门（竖向落手不改值）');
+    }
+  }
+}
+
+/* ---------- 结论 ---------- */
+
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));
 flush();
 process.exit(failed === 0 ? 0 : 1);
