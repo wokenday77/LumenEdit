@@ -43,6 +43,11 @@ final class CameraViewModel: ObservableObject {
     /// 场景 · 风格条的展开态。**不落盘**：拍摄时的临时手势状态（原型也没存它）。
     @Published private(set) var isSceneStyleExpanded = false
 
+    /// 滤镜条的展开态（#7）。**不落盘**：与场景·风格展开态同为临时手势状态
+    /// （原型 `layout.filterExpanded` 也不进「保留设置」）。
+    /// 状态在 VM，渲染在 `FilterStripView`（⤢ 放大态下强制隐藏，见 `CameraView`）。
+    @Published private(set) var isFilterStripExpanded = false
+
     /// 选中的场景 id（落盘）
     @Published private(set) var sceneId: String =
         UserDefaults.standard.string(forKey: SceneStyleStorageKey.scene)
@@ -485,8 +490,14 @@ final class CameraViewModel: ObservableObject {
     // MARK: - 场景 · 风格（#6）
 
     /// 展开 / 收起场景·风格条。三个入口（胶囊 / 箭头 / 快门排风格方块）都走它。
+    ///
+    /// 互斥（原型 `setSS`）：展开时收起滤镜条 —— 同一时刻只允许一个扩展浮层
+    /// （反向的"呼出滤镜条收场景·风格"在 `swiped(up:)` 里）。
     func toggleSceneStyle() {
         isSceneStyleExpanded.toggle()
+        if isSceneStyleExpanded {
+            isFilterStripExpanded = false
+        }
         Haptics.tick()
     }
 
@@ -514,6 +525,77 @@ final class CameraViewModel: ObservableObject {
         filterId = nil
         Haptics.tick()
         showToast("风格：\(preset.displayName)（滤镜已重置为「无」，可再单独选滤镜叠加）")
+    }
+
+    // MARK: - 滤镜条（#7）
+
+    /// 选滤镜 / 取消滤镜（原型 `buildFilters` 的 click 逻辑）。
+    ///
+    /// **再点已选中的 = 取消回到原片**（`filterId = nil`）。
+    /// ⚠️ **选滤镜不清风格** —— 与"选风格重置滤镜"是**单向**的（原型同款）。
+    /// ⚠️ 滤镜对画面的实际作用在 P4：这里只切选择状态，由「影调预览」同款的
+    /// 边界讲法说明，不假装画面已经变化。
+    func filterTapped(_ preset: FilterDefinition) {
+        if filterId == preset.id {
+            filterId = nil
+            Haptics.tick()
+            showToast("已取消滤镜，回到原片")
+        } else {
+            filterId = preset.id
+            Haptics.tick()
+            showToast("滤镜：\(preset.displayName) · 默认强度 \(Self.intensityText(preset.intensity))")
+        }
+    }
+
+    /// 强度文本：0.75 → "0.75"、1 → "1"（对齐 `ColorGrade.num` 的写法，避免 "1.00"）
+    private static func intensityText(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value)
+    }
+
+    /// 取景器上划 / 下划手势的分层决策（原型 `swipeUp` / `swipeDown`）。
+    ///
+    /// 上划第一段呼出**滤镜条**、第二段呼出**场景与风格**（两级，互斥收起对方）；
+    /// 下划逐级收起。手势的几何判定（起点 55% 以下、位移 ≥34pt、纵向为主、≤0.8s）
+    /// 在 `CameraView.viewfinderSwipeGesture`，这里只管"呼出什么"。
+    ///
+    /// （Swift 侧暂无简易模式 —— 原型里"简易模式下浮层保持隐藏"的分支随模块 #12 补。）
+    func swiped(up: Bool) {
+        if up {
+            if !isFilterStripExpanded && !isSceneStyleExpanded {
+                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格
+                isFilterStripExpanded = true
+                isSceneStyleExpanded = false
+                Haptics.tick()
+                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格")
+            } else if isFilterStripExpanded && !isSceneStyleExpanded {
+                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条
+                isFilterStripExpanded = false
+                isSceneStyleExpanded = true
+                Haptics.tick()
+                showToast("已呼出场景与风格 · 下划收起")
+            } else {
+                showToast("浮层已全部展开 · 下划收起")
+            }
+        } else {
+            if isSceneStyleExpanded {
+                collapseOverlays()
+                showToast("已收起场景与风格，参数排回到平铺")
+            } else if isFilterStripExpanded {
+                collapseOverlays()
+                showToast("已收起滤镜条，参数排回到平铺")
+            } else {
+                showToast("没有更多可收起的浮层")
+            }
+        }
+    }
+
+    /// 收起全部扩展浮层（原型 `collapseAll`）。
+    /// 参数刻度条与 EV 圆盘尚不存在 —— 随 B 组（模块 #8 / #9）落地时补进这里。
+    private func collapseOverlays() {
+        guard isFilterStripExpanded || isSceneStyleExpanded else { return }
+        isFilterStripExpanded = false
+        isSceneStyleExpanded = false
+        Haptics.tick()
     }
 
     // MARK: - 快门排

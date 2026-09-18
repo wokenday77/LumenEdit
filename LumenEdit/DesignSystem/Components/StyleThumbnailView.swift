@@ -66,16 +66,20 @@ struct StyleThumbnailView: View {
            filter.swatches.count >= 2 {
             return filter.swatches.map(color(from:))
         }
-        return Self.fallbackColors
+        return fallbackColors
     }
 
-    /// 中性兜底（纯参数风格用）：三段灰，视觉上"没有明显色调倾向"
-    private static let fallbackColors: [Color] = [
+    /// 中性兜底（纯参数风格用）：三段灰，视觉上"没有明显色调倾向"。
+    /// 滤镜条（#7）的占位渐变也复用它 —— 同一套"无色调倾向"的兜底语言。
+    static let fallbackColors: [Color] = [
         Color(white: 0.30), Color(white: 0.48), Color(white: 0.66)
     ]
 
-    /// `#RRGGBB` → `Color`；解析不出来就退回中性灰，绝不让界面出现空白块
-    private static func color(from hex: String) -> Color {
+    /// `#RRGGBB` → `Color`；解析不出来就退回中性灰，绝不让界面出现空白块。
+    ///
+    /// ⚠️ 全工程只有这一份 hex 解析：滤镜条（#7）的卡缩略图也走这里，
+    /// 不维护第二份（改解析规则时只动这一处）。
+    static func color(from hex: String) -> Color {
         var value: UInt64 = 0
         let trimmed = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard Scanner(string: trimmed).scanHexInt64(&value) else {

@@ -13,6 +13,13 @@ struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
     @State private var isHUDExpanded = false
 
+    // MARK: 上划 / 下划手势状态（#7）
+
+    /// 取景器容器高度（几何判定用，经 PreferenceKey 读出，不参与布局）
+    @State private var previewHeight: CGFloat = 0
+    /// 本次拖动的起点时刻（原型 dt ≤ 800ms 的"长按后拖动不算滑动"守卫）
+    @State private var swipeGestureStart: Date?
+
     var body: some View {
         ZStack {
             Theme.Palette.canvas
@@ -96,6 +103,14 @@ struct CameraView: View {
         viewModel.isZoomOn ? Theme.Size.shutterRowZoomHeight + Theme.Spacing.sm : 0
     }
 
+    /// 滤镜条当前是否真的展开。
+    ///
+    /// ⤢ 放大态**强制隐藏**（原型 `.screen.zoom-on .row-filter{ height:0 }`，否则会
+    /// 在放大卡片上叠出鬼影）：状态保留、只隐藏 —— 退出放大态即恢复，不重置选择。
+    private var isFilterStripShown: Bool {
+        viewModel.isFilterStripExpanded && !viewModel.isZoomOn
+    }
+
     /// 焦段条：**常态贴在快门排上方；放大态脱离底栈、浮进卡片内底边**
     /// （原型 `.zoom-on .row-focal{ position:absolute; bottom:136px }` = 卡底偏移 + 12）
     ///
@@ -119,14 +134,72 @@ struct CameraView: View {
         return Theme.Size.shutterRowHeight + Theme.Spacing.sm + Theme.Spacing.md
     }
 
+    // MARK: - 上划 / 下划手势（#7）
+
+    /// 手势几何参数 —— 对齐原型 `bindSwipe` 的实测口径，不要凭感觉改：
+    /// `minimumDistance` 24（SwiftUI 侧起手门槛，低于它就是点按对焦）；
+    /// 位移 34 / 时长 0.8s / 起点 55% 以下 / 纵向为主，全是原型踩坑后定的数。
+    private static let swipeActivationDistance: CGFloat = 24
+    private static let swipeMinTravel: CGFloat = 34
+    private static let swipeMaxDuration: TimeInterval = 0.8
+    /// 起点必须在容器下方 45% 区域内（原型 `clientY > height × 0.55`）——
+    /// 上半屏的纵向拖动（比如擦一下画面）不该呼出浮层。
+    private static let swipeStartRegionRatio: CGFloat = 0.55
+
+    /// 上划呼出滤镜条（再上划呼出场景·风格）、下划逐级收起。
+    ///
+    /// ⚠️ 挂在 **previewLayer** 上而不是整个页面：底栏栈是 ZStack 里绘制在上的兄弟视图，
+    /// 从横滑条 / 药丸 / 图标行上起手的拖动根本到不了这个手势 ——
+    /// 原型靠元素排除清单（`.strip` / `.focal-strip` / …）解决的误触，这里结构上就不存在。
+    private var viewfinderSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: Self.swipeActivationDistance)
+            .onChanged { _ in
+                // 记一次起点时刻；同一次拖动只记一次
+                if swipeGestureStart == nil { swipeGestureStart = Date() }
+            }
+            .onEnded { value in
+                defer { swipeGestureStart = nil }
+
+                // 长按后拖动不算滑动（原型 dt ≤ 800ms）
+                guard let start = swipeGestureStart,
+                      Date().timeIntervalSince(start) <= Self.swipeMaxDuration else { return }
+
+                // 起点必须在取景器下半区（原型同款 55% 线）
+                guard value.startLocation.y > previewHeight * Self.swipeStartRegionRatio else { return }
+
+                let dy = value.translation.height
+                // 位移不够，或**横向为主**（是在横滑条上滑动）→ 不算呼出 / 收起
+                guard abs(dy) >= Self.swipeMinTravel,
+                      abs(value.translation.width) <= abs(dy) else { return }
+
+                viewModel.swiped(up: dy < 0)
+            }
+    }
+
     private var cameraContent: some View {
         ZStack {
             previewLayer
+                // 高度读数（起点 55% 判定用）+ 上划呼出 / 下划收起手势（#7）。
+                // ⚠️ simultaneousGesture 而不是 gesture：预览层内部是 UIKit 的
+                // 点按对焦（UITapGestureRecognizer），要两条手势并存，
+                // 点按（tap）与拖动（drag）天然不冲突 —— 原型"拖完补 click 误收浮层"的坑
+                // 在这里结构上不存在（tap 手势不会由一次 34pt 的拖动触发）。
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: ViewfinderHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                )
+                .onPreferenceChange(ViewfinderHeightKey.self) { previewHeight = $0 }
+                .simultaneousGesture(viewfinderSwipeGesture)
 
             // 焦段条（浮层，不参与底栏布局）。
-            // ⚠️ 场景·风格展开时**收起**（原型 `.ss-on .row-focal`）：那一行要占 147pt，
-            // 焦段条再叠上去会把底部栈撑得过高；放大态（⤢）反过来要**保留**它 —— 它浮进卡片里。
-            if !viewModel.isSceneStyleExpanded {
+            // ⚠️ 场景·风格展开**或**滤镜条展开时**收起**（原型 `.ss-on/.filter-on .row-focal`）：
+            // 滤镜条占 144pt、场景·风格展开占 147pt，焦段条再叠上去会把底部栈撑得过高；
+            // 放大态（⤢）反过来要**保留**它 —— 它浮进卡片里。
+            if !viewModel.isSceneStyleExpanded && !isFilterStripShown {
                 floatingFocalStrip
             }
 
@@ -234,6 +307,21 @@ struct CameraView: View {
 
     private var bottomArea: some View {
         VStack(spacing: Theme.Spacing.md) {
+            // 滤镜条（#7）：底栏最上方（场景·风格条之上），上划取景器呼出。
+            // ⚠️ 用**条件插入**而不是"常驻 + height 0"：VStack 的 spacing 在 0 高的
+            // 子视图上依然生效，会留一条 16pt 的幽灵空隙顶起场景·风格条。
+            // ⤢ 放大态下整条强制隐藏（原型 `.screen.zoom-on .row-filter{ height:0 }`）；
+            // 状态保留，退出放大态即恢复 —— 与原型"只隐藏不重置"一致。
+            if isFilterStripShown {
+                FilterStripView(
+                    selectedId: viewModel.filterId,
+                    onTap: { viewModel.filterTapped($0) }
+                )
+                // 插入 = 从底栏栈后面滑上来（bottom-anchored，面板从控件身后升起）；
+                // 移除 = 滑回去并淡出。原型是 height 0→144 + opacity，观感同类。
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             // 场景 · 风格条（#6）：原型里它排在**参数排之上**，
             // 是"选场景直接拍"这条主线的入口（一级视觉权重）。
             SceneStyleStrip(
@@ -295,6 +383,10 @@ struct CameraView: View {
             )
         }
         .padding(.bottom, Theme.Spacing.sm)
+        // 滤镜条的插入 / 移除动画由这两个状态驱动（transition 写在 FilterStripView 上）。
+        // isZoomOn 也要绑：放大态把滤镜条强制隐藏时同样走过渡，而不是瞬移消失。
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isFilterStripExpanded)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isZoomOn)
     }
 
     private func toastView(_ message: String) -> some View {
@@ -311,6 +403,17 @@ struct CameraView: View {
                 Capsule().stroke(Theme.Palette.stroke, lineWidth: 0.5)
             )
             .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+// MARK: - 取景器高度读数（#7 手势用）
+
+/// 把取景器容器高度传给手势判定（起点 55% 判定），不参与布局。
+/// 手势挂在 previewLayer 上，其坐标空间就是容器的坐标空间，两处天然同系。
+private struct ViewfinderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

@@ -411,7 +411,110 @@ for (const [prefix, ownerName] of Object.entries(stateOwners)) {
   }
 }
 
-/* ---------- 结论 ---------- */
+/* ---------- 7. 滤镜条（#7，2026-09-18 新增） ---------- */
+// 为什么要有这一组：滤镜条与场景·风格条一样是"高度账 + 互斥规则"两个高危区 ——
+// 内容深度超了会压到下面的行（原型第 5 轮翻过车）、互斥只做单方向会出现
+// "两个扩展浮层同时展开"把净可见压破 50%。这类问题编译器看不见，只能静态查。
+console.log('\n[7] 滤镜条');
+
+const filterStripFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'FilterStripView.swift')));
+const vmFile = files.find(f => path.basename(f) === 'CameraViewModel.swift');
+const camViewFile = files.find(f => path.basename(f) === 'CameraView.swift');
+const thumbFile = files.find(f => f.endsWith(path.join('DesignSystem', 'Components', 'StyleThumbnailView.swift')));
+const themeFile2 = files.find(f => f.endsWith(path.join('DesignSystem', 'Theme.swift')));
+
+if (!filterStripFile || !vmFile || !camViewFile || !thumbFile || !themeFile2) {
+  bad('找不到 FilterStripView / CameraViewModel / CameraView / StyleThumbnailView / Theme（文件被改名或挪位置了？）');
+} else {
+  const stripSrc = fs.readFileSync(filterStripFile, 'utf8');
+  const vmSrc = fs.readFileSync(vmFile, 'utf8');
+  const viewSrc = fs.readFileSync(camViewFile, 'utf8');
+  const thumbSrc = fs.readFileSync(thumbFile, 'utf8');
+  const themeSrc2 = fs.readFileSync(themeFile2, 'utf8');
+
+  // ① 展开态内容深度 ≤ 行高 144（与第 5 组场景·风格那条同一条理由：
+  //    只校验行高拦不住内容溢出 —— 原型第 5 轮就是"行高够、内容溢出 39px"）
+  const readTok = name => {
+    const m = new RegExp('\\b' + name + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc2);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const ft = {
+    height: readTok('filterStripExpandedHeight'),
+    topPad: readTok('filterStripTopPadding'),
+    title: readTok('ssBlockTitleHeight'),
+    gap: readTok('filterStripCardTopGap'),
+    card: readTok('filterCardSide'),
+    inner: readTok('filterCardInnerSpacing'),
+    name: readTok('filterNameHeight')
+  };
+  const ftMissing = Object.keys(ft).filter(k => ft[k] === null);
+  if (ftMissing.length) {
+    bad('读不到滤镜条令牌：' + ftMissing.join(' / ') + '（改名了？自检需要同步）');
+  } else {
+    // 深度 = 顶内边距 7 + 标题 14 + 标题↔卡间距 9 + 卡 84 + 卡内距 4 + 名字 11
+    const depth = ft.topPad + ft.title + ft.gap + ft.card + ft.inner + ft.name;
+    const label = '滤镜条展开态内容深度 ' + depth.toFixed(1) + 'pt vs 行高 ' + ft.height.toFixed(1) + 'pt';
+    if (depth > ft.height + 0.01) {
+      bad(label + ' —— 内容会溢出压到下面的行');
+    } else {
+      ok(label + '，余 ' + (ft.height - depth).toFixed(1) + 'pt');
+    }
+    // 高度本身不许松：144 是"净可见 ≥ 50%"卡出来的上限（原型注释），放大它前先重算布局账
+    if (ft.height > 150) {
+      bad('滤镜条展开高度 ' + ft.height + 'pt 超过 150 —— 原型实测 150 时净可见只剩 49.9%，破 50% 底线');
+    } else {
+      ok('滤镜条展开高度 ' + ft.height + 'pt ≤ 150（净可见底线守住了）');
+    }
+  }
+
+  // ② 互斥两方向都要在（单方向会出现两个扩展浮层同时展开）
+  const mutexOK =
+    // 展开场景·风格 → 收起滤镜条（toggleSceneStyle，原型 setSS）
+    /func toggleSceneStyle[\s\S]{0,400}?isFilterStripExpanded\s*=\s*false/.test(vmSrc)
+    // 上划呼出滤镜条 → 收起场景·风格（swiped(up:)，原型 setFilter(true)）
+    && /isFilterStripExpanded\s*=\s*true/.test(vmSrc)
+    && /isSceneStyleExpanded\s*=\s*false/.test(vmSrc);
+  if (mutexOK) {
+    ok('浮层互斥两方向齐全（toggleSceneStyle ⇄ swiped(up:)）');
+  } else {
+    bad('浮层互斥不全：展开一个浮层时必须收起另一个（对照原型 setSS / setFilter）');
+  }
+
+  // ③ CameraView 接线：滤镜条渲染 + 焦段条互斥都要引用同一份展开状态
+  const viewRefs = (viewSrc.match(/isFilterStripExpanded|isFilterStripShown/g) || []).length;
+  if (!/FilterStripView\(/.test(viewSrc)) {
+    bad('CameraView 没有渲染 FilterStripView');
+  } else if (viewRefs < 2) {
+    bad('CameraView 对滤镜条状态的引用只有 ' + viewRefs + ' 处（至少要：渲染 + 焦段条互斥）');
+  } else {
+    ok('CameraView 已接线滤镜条渲染与焦段条互斥（' + viewRefs + ' 处引用）');
+  }
+
+  // ④ 卡片数据驱动 + 缩略图同源：卡来自 FilterCatalog.all，
+  //    swatches hex 解析复用 StyleThumbnailView.color(from:)（全工程一份，不维护第二份）
+  if (!/FilterCatalog\.all/.test(stripSrc)) {
+    bad('FilterStripView 没有从 FilterCatalog.all 取数（滤镜数据必须单一真源）');
+  } else if (!/StyleThumbnailView\.color\(from:/.test(stripSrc)) {
+    bad('FilterStripView 没有复用 StyleThumbnailView.color(from:)（hex 解析不许抄第二份）');
+  } else if (/private\s+static\s+func\s+color\(from/.test(thumbSrc)) {
+    bad('StyleThumbnailView.color(from:) 又被改回 private 了（滤镜卡要复用它）');
+  } else {
+    ok('滤镜卡数据驱动 + hex 解析同源（FilterCatalog.all + StyleThumbnailView.color(from:)）');
+  }
+
+  // ⑤ 手势几何参数必须成组存在（原型 bindSwipe 的口径：24 起手 / 34 位移 / 0.8s / 55%）
+  const gesture = ['swipeActivationDistance', 'swipeMinTravel', 'swipeMaxDuration', 'swipeStartRegionRatio'];
+  const gestureMissing = gesture.filter(g => !new RegExp('\\b' + g + '\\b').test(viewSrc));
+  if (gestureMissing.length) {
+    bad('上划手势参数缺失：' + gestureMissing.join(' / '));
+  } else if (!/simultaneousGesture/.test(viewSrc)) {
+    bad('取景器手势没用 simultaneousGesture（会吞掉 UIKit 的点按对焦）');
+  } else {
+    ok('上划/下划手势参数齐全，且与点按对焦并存（simultaneousGesture）');
+  }
+}
+
+
 console.log('\n' + (failed === 0 ? '全部通过：结构自检无问题' : '有 ' + failed + ' 项未通过，需要修'));
 flush();
 process.exit(failed === 0 ? 0 : 1);

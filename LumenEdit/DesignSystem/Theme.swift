@@ -50,6 +50,25 @@ enum Theme {
 
         /// 风格预览方块的内层底色（原型 `.style-thumb .inner{ background:#1a1d21 }`）
         static let styleThumbInner = Color(red: 0.102, green: 0.114, blue: 0.129)
+
+        // MARK: 滤镜条（2026-09-18 #7）
+
+        /// 滤镜条面板的渐变底两端（原型
+        /// `linear-gradient(180deg, rgba(17,19,23,.94) 0%, rgba(17,19,23,.82) 100%)`）。
+        /// 一层深色面板底是必须的：没有它，标题字直接压在取景画面上会发虚（原型注释）。
+        static let filterPanelTop = Color(
+            red: 17.0 / 255, green: 19.0 / 255, blue: 23.0 / 255
+        ).opacity(0.94)
+        static let filterPanelBottom = Color(
+            red: 17.0 / 255, green: 19.0 / 255, blue: 23.0 / 255
+        ).opacity(0.82)
+
+        /// 滤镜卡未选中态的细描边（原型 `.filter-swatch{ box-shadow:0 0 0 1px rgba(255,255,255,.12) }`）
+        static let filterCardStroke = Color.white.opacity(0.12)
+
+        /// 滤镜条面板顶部描边（原型 `border-top:.5px solid rgba(255,255,255,.08)`）。
+        /// 与场景·风格块的 `ssBlockBorder`（.07）数值不同，是两笔账，别合并。
+        static let filterPanelTopBorder = Color.white.opacity(0.08)
     }
 
     // MARK: - 间距
@@ -138,6 +157,30 @@ enum Theme {
         /// 这 1pt 上下的误差就可能把徽标顶出行外。钉死后整行是确定值，
         /// `tools/check_swift.js` 第 5 组按同一批令牌复算，恒等式不再漂。
         static let styleNameHeight: CGFloat = 13
+
+        // MARK: 滤镜条（原型 `.row-filter`：展开 144px）—— 2026-09-18 #7
+
+        /// 展开态整行高度（原型 `.screen.filter-on .row-filter{ height:144px }`）。
+        ///
+        /// ⚠️ **144 不是随便定的**（原型注释）：150px 时滤镜展开态的净可见取景只有
+        /// 49.9%、破 50% 底线（自检抓的），144 → 50.6% ✓。别再往上加内容。
+        ///
+        /// 内容深度账（自检第 7 组按同批令牌复算）：
+        /// `顶内边距 7 + 标题 14 + 间距 9 + 卡 84 + 卡内距 4 + 名字 11 = 129 ≤ 144`（余 15）。
+        static let filterStripExpandedHeight: CGFloat = 144
+        /// 面板顶部内边距（原型 `.row-filter .ss-block-title{ padding-top:7px }`）
+        static let filterStripTopPadding: CGFloat = 7
+        /// 标题行与卡条的间距（原型 `.row-filter .strip{ margin-top:9px }`）
+        static let filterStripCardTopGap: CGFloat = 9
+        /// 滤镜卡：缩略面 84×84、圆角 12（原型 `.filter-swatch{ 84px; radius:12px }`）
+        static let filterCardSide: CGFloat = 84
+        static let filterCardCornerRadius: CGFloat = 12
+        /// 卡内：缩略面与名字的间距（原型 `.filter-card{ gap:4px }`）
+        static let filterCardInnerSpacing: CGFloat = 4
+
+        /// 滤镜名字的**钉死行高**（原型 `.filter-name{ font-size:10px; line-height:1.1 }` = 11px）。
+        /// 钉死理由与 `styleNameHeight` 相同：144 的深度账不交给字体度量浮动。
+        static let filterNameHeight: CGFloat = 11
 
         /// ⤢ 放大态的「前置 / 设置」镜像按钮（原型 `.icon-item.mirror{ 50×44 }`，图标 19px）
 
@@ -396,5 +439,10 @@ enum Theme {
         static let styleName = Font.system(size: 10.5, weight: .semibold, design: .rounded)
         /// 风格卡参数徽标（原型 `8.5px` → **10**）
         static let styleBadge = Font.system(size: 10, weight: .regular, design: .rounded)
+
+        // MARK: 滤镜条（2026-09-18 #7）
+
+        /// 滤镜卡名字（原型 `.filter-name{ font-size:10px }`；选中态由调用点 `.fontWeight(.semibold)`）
+        static let filterName = Font.system(size: 10, weight: .regular, design: .rounded)
     }
 }
