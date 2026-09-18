@@ -631,6 +631,44 @@ if (!camViewFile || !vmFile) {
       ok('ParameterSlider 有方向闸门（竖向落手不改值）');
     }
   }
+
+  // e) 手势挂载点必须在整页 ZStack 上（第二轮真机反馈"上划两次只能呼出一个"）
+  //    挂在 previewLayer 上时，滤镜条一出现就占掉用户上次起手的那块区域，
+  //    第二次上划的触摸被滤镜条吃掉 → 手势收不到。这条断言防它被改回去。
+  const previewBlock = /private var previewLayer: some View \{[\s\S]*?\n    \}/.exec(viewSrc8);
+  const zstackGesture = /\.simultaneousGesture\(viewfinderSwipeGesture\)/.test(viewSrc8);
+  if (!zstackGesture) {
+    bad('找不到 .simultaneousGesture(viewfinderSwipeGesture) —— 手势没了？');
+  } else if (previewBlock && /simultaneousGesture/.test(previewBlock[0])) {
+    bad('手势又被挂回 previewLayer 了 —— 那样滤镜条一展开，第二次上划就会被它吃掉');
+  } else {
+    ok('上划/下划手势挂在整页 ZStack 上（滤镜条/场景条展开后仍能从它们上面起手）');
+  }
+
+  // f) 提前触发（滑够阈值立刻生效，不等松手）—— "上滑僵硬、要用力"的根因之一
+  if (!/swipeDidTrigger/.test(viewSrc8) || !/shouldTriggerSwipe/.test(viewSrc8)) {
+    bad('手势缺"提前触发"实现（swipeDidTrigger / shouldTriggerSwipe）—— 只在松手时判定会显得僵硬');
+  } else if (!/onChanged[\s\S]{0,700}?shouldTriggerSwipe/.test(viewSrc8)) {
+    bad('判定没放在 onChanged 里（必须滑够阈值即生效，不能只在 onEnded 判定）');
+  } else {
+    ok('手势提前触发（滑够 16pt 立刻生效，不等松手）');
+  }
+
+  // g) EV 滑条范围：必须用「UI 范围 ∩ 设备范围」，不许直接给设备范围
+  //    iPhone 报 -8…+8 = 48 档 → 每档 7pt，1/3 档吸附完全感觉不到
+  const clampFile = files.find(f => path.basename(f) === 'Numeric+Clamp.swift');
+  if (!clampFile) {
+    bad('找不到 Numeric+Clamp.swift');
+  } else {
+    const clampSrc = fs.readFileSync(clampFile, 'utf8');
+    if (!/static let evUIRange/.test(clampSrc)) {
+      bad('Numeric+Clamp 里没有 evUIRange（EV 滑条的 UI 范围常量）');
+    } else if (!/intersected\(with: Float\.evUIRange\)/.test(viewSrc8)) {
+      bad('EV 滑条没有取「UI 范围 ∩ 设备范围」—— 设备报 -8…+8 时 1/3 档会变成每档 7pt');
+    } else {
+      ok('EV 滑条范围 = UI(±2) ∩ 设备范围（13 档 / 每档约 28pt，吸附可感知）');
+    }
+  }
 }
 
 /* ---------- 结论 ---------- */

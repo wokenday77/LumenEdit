@@ -19,6 +19,8 @@ struct CameraView: View {
     @State private var previewHeight: CGFloat = 0
     /// 本次拖动的起点时刻（原型 dt ≤ 800ms 的"长按后拖动不算滑动"守卫）
     @State private var swipeGestureStart: Date?
+    /// 本次拖动是否已经触发过（提前触发后手势仍在继续，防止一次长滑连跨两级）
+    @State private var swipeDidTrigger = false
 
     var body: some View {
         ZStack {
@@ -144,7 +146,10 @@ struct CameraView: View {
     /// 落在底栏控件上的起手仍由**结构**排除（触摸被控件吃掉，到不了这个手势），
     /// 落在底栏各行之间 16pt 空隙上的起手会被正常接受（那是穿透到取景器的）。
     private static let swipeActivationDistance: CGFloat = 10
-    private static let swipeMinTravel: CGFloat = 18
+    /// 位移阈值。18 → **16**（第二轮真机反馈"还是要用力"后再降一档；
+    /// 配合"提前触发"（滑够即生效、不等松手），16pt ≈ 1.6mm 已经很跟手，
+    /// 且仍大于点按对焦的容差，不会把点按误判成滑动）
+    private static let swipeMinTravel: CGFloat = 16
     private static let swipeMaxDuration: TimeInterval = 1.2
     /// 起点必须在容器下方 75% 区域内（= 只排除上 25%：顶栏 66pt + 调试浮层）。
     /// 原为 0.55（只允许下 45%），与底栏上沿只差 6pt，是"上滑不灵敏"的直接原因。
@@ -155,48 +160,52 @@ struct CameraView: View {
 
     /// 上划呼出滤镜条（再上划呼出场景·风格）、下划逐级收起。
     ///
-    /// ⚠️ 挂在 **previewLayer** 上而不是整个页面：底栏栈是 ZStack 里绘制在上的兄弟视图，
-    /// 从**控件**上起手的拖动到不了这个手势（要的就是这个效果 —— 用户在 EV 滑条、横滑条、
-    /// 药丸、快门上的拖动不该被理解成"呼出浮层"）；而底栏**行与行之间的空隙**不挡触摸，
-    /// 起手会穿透到这里并被接受。
+    /// **两条关键实现细节**（2026-09-18 两轮真机反馈后定的）：
     ///
-    /// ⚠️ 参数值（阈值）见上方常量表，2026-09-18 按真机反馈整体放宽过一次。
+    /// 1. **提前触发**：判定放在 `onChanged` 里，**滑够阈值立刻生效**，不等松手。
+    ///    原来只在 `onEnded` 判定 → 必须"滑到位并松手"才有反馈，用户滑到一半看不见变化、
+    ///    以为没反应，就会滑得更用力更快 —— 这就是"上滑僵硬、要用力"的体感来源。
+    /// 2. **一次拖动只触发一级**（`swipeDidTrigger`）：提前触发后手势还在继续，
+    ///    没有这个标记会在一次长滑里连续跨两级（滤镜条 → 场景·风格）。
+    ///
+    /// 挂载点在 `cameraContent` 的 ZStack 上（原因见那里的注释）。
     private var viewfinderSwipeGesture: some Gesture {
         DragGesture(minimumDistance: Self.swipeActivationDistance)
-            .onChanged { _ in
+            .onChanged { value in
                 // 记一次起点时刻；同一次拖动只记一次
                 if swipeGestureStart == nil { swipeGestureStart = Date() }
+                guard !swipeDidTrigger, shouldTriggerSwipe(value) else { return }
+                swipeDidTrigger = true
+                viewModel.swiped(up: value.translation.height < 0)
             }
-            .onEnded { value in
-                defer { swipeGestureStart = nil }
-
-                // 时长守卫（原型"长按后拖动不算滑动"）：起点时刻记在**起手门槛之后**，
-                // 所以这里的时间已经偏宽松；1.2s 是放宽后的值，慢滑不再被拒。
-                guard let start = swipeGestureStart,
-                      Date().timeIntervalSince(start) <= Self.swipeMaxDuration else { return }
-
-                // 起点必须在取景器下 75% 区（只排除最上面的顶栏/调试浮层区）
-                guard value.startLocation.y > previewHeight * Self.swipeStartRegionRatio else { return }
-
-                let dy = value.translation.height
-                // 位移不够，或**横向为主**（在横滑条上滑动）→ 不算呼出 / 收起
-                guard abs(dy) >= Self.swipeMinTravel,
-                      abs(value.translation.width) <= abs(dy) * Self.swipeHorizontalSlack else {
-                    return
-                }
-
-                viewModel.swiped(up: dy < 0)
+            .onEnded { _ in
+                // 手势结束只做清理 —— 判定已经在 onChanged 里做完了
+                swipeGestureStart = nil
+                swipeDidTrigger = false
             }
+    }
+
+    /// 是否已达触发条件：起点区 / 时长 / 位移 / 纵向为主，四条全满足。
+    private func shouldTriggerSwipe(_ value: DragGesture.Value) -> Bool {
+        // 时长守卫（原型"长按后拖动不算滑动"）
+        guard let start = swipeGestureStart,
+              Date().timeIntervalSince(start) <= Self.swipeMaxDuration else {
+            return false
+        }
+        // 起点必须在取景器下 75% 区（只排除最上面的顶栏 / 调试浮层区）
+        guard value.startLocation.y > previewHeight * Self.swipeStartRegionRatio else {
+            return false
+        }
+        let dy = value.translation.height
+        // 位移够 + 纵向为主（横向为主 → 是在横滑条上滑动）
+        return abs(dy) >= Self.swipeMinTravel
+            && abs(value.translation.width) <= abs(dy) * Self.swipeHorizontalSlack
     }
 
     private var cameraContent: some View {
         ZStack {
             previewLayer
-                // 高度读数（起点判定用）+ 上划呼出 / 下划收起手势（#7）。
-                // ⚠️ simultaneousGesture 而不是 gesture：预览层内部是 UIKit 的
-                // 点按对焦（UITapGestureRecognizer），要两条手势并存，
-                // 点按（tap）与拖动（drag）天然不冲突 —— 原型"拖完补 click 误收浮层"的坑
-                // 在这里结构上不存在（tap 手势不会由一次 18pt 的拖动触发）。
+                // 高度读数（起点判定用）。手势**不挂在这上面** —— 见 ZStack 末尾的说明。
                 .background(
                     GeometryReader { proxy in
                         Color.clear.preference(
@@ -206,7 +215,6 @@ struct CameraView: View {
                     }
                 )
                 .onPreferenceChange(ViewfinderHeightKey.self) { previewHeight = $0 }
-                .simultaneousGesture(viewfinderSwipeGesture)
 
             VStack(spacing: Theme.Spacing.sm) {
                 TopBarView(
@@ -255,6 +263,21 @@ struct CameraView: View {
             .padding(.vertical, Theme.Spacing.sm)
             .animation(.easeInOut(duration: 0.18), value: viewModel.toast)
         }
+        // ⚠️ **上划 / 下划手势挂在整页 ZStack 上**（2026-09-18 第二次真机反馈后改的）。
+        //
+        // 之前挂在 `previewLayer` 上，有个**结构性缺陷**：底栏栈是在 ZStack 里绘制在上的
+        // 兄弟视图，落在它上面的触摸到不了预览层的手势。第一次上划能呼出滤镜条，
+        // 但**滤镜条一出现，就把用户上次起手的屏幕下部区域占了** —— 第二次在同一位置起手，
+        // 触摸落在滤镜条（标题行 / 横滑卡条）上被吃掉 → 手势收不到 → **第二次上划没反应**，
+        // 于是"上划两次只能呼出一个"（真机反馈 ③）。
+        //
+        // 挂到 ZStack 上后，**落在任何子视图上的拖动都能被同时识别**（`simultaneousGesture`
+        // 的语义就是"与子视图手势并存"）：
+        //   - 横向拖动由 `|dx| ≤ |dy| × 1.5` 排除 → 横滑条的滚动不受影响
+        //   - 落在按钮上的拖动不会触发按钮（移动超过起手门槛后 tap 本来就失败）
+        //   - 落在 EV 滑条上的竖向拖动：滑条的方向闸门不接管，这里接管 → 正是期望行为
+        // 点按对焦（UIKit 的 tap）与拖动天然不冲突，`simultaneousGesture` 保证两者并存。
+        .simultaneousGesture(viewfinderSwipeGesture)
         // 顶部浮层槽位（模式条正下方）：**录制计时** 与 **实况角标** 共用，二者互斥 ——
         // 录制只发生在视频 / Log 实况模式，实况角标只在实况模式。
         // 录制徽标从快门上方挪到这里（2026-09-17：2-3 加焦段条后，原位置会盖住药丸）。
@@ -364,7 +387,11 @@ struct CameraView: View {
                 if isExposurePanelShown {
                     ExposurePanel(
                         exposureBias: $viewModel.exposureBias,
-                        range: env.session.exposureBiasRange,
+                        // ⚠️ 用「UI 范围 ∩ 设备范围」，**不要直接给设备范围**：
+                        // iPhone 报的是 -8…+8（16 EV ÷ 1/3 = 48 档），而滑条可视宽约 338pt
+                        // → 每档 7pt，1/3 档的吸附完全感觉不到（2026-09-18 真机反馈）。
+                        // 取交集后是 ±2（13 档 / 每档约 28pt），硬件侧仍按设备范围 clamp。
+                        range: env.session.exposureBiasRange.intersected(with: Float.evUIRange),
                         isEnabled: env.session.state == .running && !viewModel.isSaving,
                         onEditingChanged: { isEditing in
                             viewModel.exposureEditingChanged(isEditing)
