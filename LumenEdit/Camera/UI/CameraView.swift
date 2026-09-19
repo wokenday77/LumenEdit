@@ -602,6 +602,8 @@ struct CameraView: View {
                         displayValue: viewModel.stripDisplayValue(stripKind),
                         isAuto: viewModel.isAutoStrip(stripKind),
                         unavailableValues: viewModel.unavailableStripValues(for: stripKind),
+                        // 手动开关能力置灰（虚拟多摄不支持手动参数 → 灰但仍可点，点了给原因）
+                        isManualAvailable: viewModel.isManualStripAvailable(stripKind),
                         onToggleAuto: { viewModel.stripAutoToggled(stripKind) },
                         onValueChanged: { value, isEditing in
                             viewModel.stripValueChanged(stripKind, value: value, isEditing: isEditing)

@@ -694,6 +694,20 @@ final class CameraViewModel: ObservableObject {
         kind == .whiteBalance ? isWhiteBalanceAuto : isISOShutterAuto
     }
 
+    /// 手动开关在**当前设备**上是否真的可用（`false` = 刻度条右端开关置灰）。
+    ///
+    /// 数据链：`CaptureCapabilities` 能力探测 → session `@Published` → 这里派生。
+    /// 虚拟多摄不支持手动参数（SDK `AVCaptureDevice.h:538-541`，2026-09-19 白平衡
+    /// 7 连崩的架构级发现，见 `docs/18`）→ 本机（三摄）上恒 `false`，开关**灰但仍可点**
+    /// （点了由 `stripAutoToggled` 给 toast 说明 —— "置灰 + 说明原因"，不做"点了没反应"）。
+    /// 物理镜头架构落地后探测自动变 true。
+    func isManualStripAvailable(_ kind: ParameterStripKind) -> Bool {
+        guard let environment else { return false }
+        return kind == .whiteBalance
+            ? environment.session.isManualWhiteBalanceSupported
+            : environment.session.isManualExposureSupported
+    }
+
     /// 右端「自动 / 手动」开关。
     ///
     /// ⚠️ **ISO 与快门共用一个开关**（原型 `state.auto.isoShutter`）：这是硬件约束 ——
@@ -701,6 +715,24 @@ final class CameraViewModel: ObservableObject {
     /// 白平衡独立（`setWhiteBalanceModeLocked` 与曝光无关）。
     func stripAutoToggled(_ kind: ParameterStripKind) {
         guard let environment else { return }
+
+        // ⚠️ 能力闸门（2026-09-19 白平衡 7 连崩修复的第二道）：设备不支持手动参数时
+        // **不推硬件**（configurator 的守卫是最后一道，但那条路会走"抛错 → 错误 toast"，
+        // 文案是排障视角；这里给的才是用户视角的说明）。灰但仍可点，点了必须留痕。
+        // 开关置灰的样式由 `ParameterStripView.isManualAvailable` 负责。
+        guard isManualStripAvailable(kind) else {
+            let reason = kind == .whiteBalance
+                ? "当前多摄虚拟设备不支持手动白平衡"
+                : "当前多摄虚拟设备不支持手动曝光（ISO / 快门）"
+            DebugLog.shared.warn(
+                "ui",
+                "点 \(kind.displayName) 手动开关被拒：\(reason)（能力探测 = false，"
+                    + "物理镜头架构 docs/18 落地后开放）"
+            )
+            showToast(reason + " · 切物理镜头后开放")
+            return
+        }
+
         let wasAuto = isAutoStrip(kind)
 
         if wasAuto {

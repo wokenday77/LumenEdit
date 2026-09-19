@@ -428,9 +428,33 @@ enum CaptureCapabilities {
         output.isLivePhotoCaptureSupported
     }
 
-    /// 设备是否支持手动白平衡增益（少数外接设备不支持）
+    /// 设备是否支持**手动曝光档**（`.custom`：自定义 ISO / 快门）。
+    ///
+    /// ⚠️ 虚拟多摄**不支持** `.custom` 曝光（SDK 头文件 AVCaptureDevice.h:538-541）
+    /// —— 本机（三摄）上恒 `false`，物理镜头架构（`docs/18`）落地后自动变 true。
+    /// 全靠能力探测、不写机型判断（本文件铁律）。
+    static func supportsManualExposure(_ device: AVCaptureDevice) -> Bool {
+        device.isExposureModeSupported(.custom)
+    }
+
+    /// 设备是否支持**手动白平衡增益锁定**（白平衡手动档的能力探测）。
+    ///
+    /// ⚠️ 必须用 `isLockingWhiteBalanceWithCustomDeviceGainsSupported`
+    /// （AVCaptureDevice.h:1601），**不要**用 `isWhiteBalanceModeSupported(.locked)`：
+    /// 后者在虚拟多摄上**误报 true**，而 SDK 明文（:538-541）虚拟设备只允许锁
+    /// `AVCaptureWhiteBalanceGainsCurrent`，写计算增益即抛 ObjC 异常 ——
+    /// 2026-09-19 真机 7 次同源崩溃的根因（`docs/18` 第一节）。
     static func supportsManualWhiteBalance(_ device: AVCaptureDevice) -> Bool {
-        device.isWhiteBalanceModeSupported(.locked)
+        device.isLockingWhiteBalanceWithCustomDeviceGainsSupported
+    }
+
+    /// 设备是否支持**手动对焦**（锁定到自定义镜头位置）。
+    ///
+    /// ⚠️ 同因同类（Mac 侧 2026-09-19 预警）：必须用
+    /// `isLockingFocusWithCustomLensPositionSupported`（:1110），
+    /// `isFocusModeSupported(.locked)` 在虚拟多摄上同样误报 true。
+    static func supportsManualFocus(_ device: AVCaptureDevice) -> Bool {
+        device.isLockingFocusWithCustomLensPositionSupported
     }
 
     /// 设备是否支持点测光

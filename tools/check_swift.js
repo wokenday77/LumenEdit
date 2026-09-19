@@ -1913,6 +1913,57 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       ok('图标行高亮态齐备（activeItem + 原型绿 + .isSelected 标记，旧 isAccent 已退场）');
     }
   }
+
+  // ⑯ 虚拟多摄诚实边界（2026-09-19 白平衡 7 连崩的修复守卫）
+  //
+  // SDK 明文（AVCaptureDevice.h:538-541）：虚拟设备只允许锁 Current（焦点 / 白平衡增益），
+  // 传计算值即抛 ObjC 异常（Swift catch 不住 → abort）。所以：
+  //   a) 白平衡手动档与预设路径的能力守卫必须是 `isLockingWhiteBalanceWithCustomDeviceGainsSupported`，
+  //      且这两个方法体里**不得再出现** `isWhiteBalanceModeSupported(.locked)`（误报 true 的错探测）；
+  //   b) 手动对焦同因（Mac 同类预警，AVCaptureDevice.h:1110）：守卫必须是
+  //      `isLockingFocusWithCustomLensPositionSupported`；
+  //   c) session 必须发布两个支持位；VM 的开关必须**先问能力再推硬件**（灰但仍可点，点了给原因）。
+  {
+    const wbGuardBody16 = methodBodyOf(cfgCode12, 'setManualWhiteBalance');
+    const wbPresetBody16 = methodBodyOf(cfgCode12, 'applyWhiteBalanceLocked');
+    const focusBody16 = methodBodyOf(cfgCode12, 'setManualFocus');
+    const toggleBody16 = methodBodyOf(vmSrc12, 'stripAutoToggled');
+    const wbGuardOK = !!wbGuardBody16
+      && /isLockingWhiteBalanceWithCustomDeviceGainsSupported/.test(wbGuardBody16)
+      && !/isWhiteBalanceModeSupported\(\.locked\)/.test(wbGuardBody16);
+    const wbPresetOK = !!wbPresetBody16
+      && /isLockingWhiteBalanceWithCustomDeviceGainsSupported/.test(wbPresetBody16)
+      && !/isWhiteBalanceModeSupported\(\.locked\)/.test(wbPresetBody16);
+    const focusGuardOK = !!focusBody16
+      && /isLockingFocusWithCustomLensPositionSupported/.test(focusBody16)
+      && !/isFocusModeSupported\(\.locked\)/.test(focusBody16);
+    const sessSupportOK = /@Published private\(set\) var isManualExposureSupported/.test(sessSrc12)
+      && /@Published private\(set\) var isManualWhiteBalanceSupported/.test(sessSrc12);
+    const vmGateOK = !!toggleBody16
+      && /isManualStripAvailable/.test(toggleBody16)
+      && /showToast/.test(toggleBody16)
+      && /DebugLog\.shared\.warn/.test(toggleBody16);
+    if (!wbGuardOK) {
+      bad('`setManualWhiteBalance` 的能力守卫不是 `isLockingWhiteBalanceWithCustomDeviceGainsSupported`'
+        + '（或还残留 `isWhiteBalanceModeSupported(.locked)`）—— 后者在虚拟多摄上误报 true，'
+        + '写计算增益即崩（7 连崩根因，AVCaptureDevice.h:538-541）');
+    } else if (!wbPresetOK) {
+      bad('预设路径 `applyWhiteBalanceLocked` 的能力守卫没换成 '
+        + '`isLockingWhiteBalanceWithCustomDeviceGainsSupported` —— 预设注入到虚拟设备会以同因崩溃');
+    } else if (!focusGuardOK) {
+      bad('`setManualFocus` 的能力守卫不是 `isLockingFocusWithCustomLensPositionSupported`'
+        + '（或还残留 `isFocusModeSupported(.locked)`）—— 手动对焦在虚拟多摄上会以同因崩溃'
+        + '（Mac 同类预警，AVCaptureDevice.h:1110）');
+    } else if (!sessSupportOK) {
+      bad('session 没有发布 `isManualExposureSupported` / `isManualWhiteBalanceSupported`'
+        + ' —— UI 无法按能力把手动开关置灰');
+    } else if (!vmGateOK) {
+      bad('VM 的 `stripAutoToggled` 缺能力闸门（isManualStripAvailable + toast + warn 留痕）'
+        + ' —— 开关置灰后点了必须给原因（"点了没反应"禁令），更不能把硬件写推出去');
+    } else {
+      ok('虚拟多摄诚实边界齐备（白平衡×2 / 对焦守卫换对 API + session 支持位 + VM 能力闸门）');
+    }
+  }
 }
 
 /* ---------- 结论 ---------- */

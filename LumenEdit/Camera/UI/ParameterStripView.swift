@@ -86,6 +86,9 @@ struct ParameterStripView: View {
     let isAuto: Bool
     /// 这台设备上**不可用**的档位值（置灰；**灰但仍可点** —— 点了由 VM 给 toast 说明）
     let unavailableValues: Set<Double>
+    /// 手动开关在当前设备上是否可用（`false` = 开关**置灰**；仍可点，点了给原因 ——
+    /// 虚拟多摄不支持手动参数，2026-09-19 白平衡 7 连崩后的诚实边界，见 `docs/18`）
+    let isManualAvailable: Bool
     let onToggleAuto: () -> Void
     /// 跨档 / 松手回调：`(值, 是否仍在拖动)`
     let onValueChanged: (Double, Bool) -> Void
@@ -295,15 +298,22 @@ struct ParameterStripView: View {
             Button {
                 onToggleAuto()
             } label: {
+                // 手动不可用 → 开关整体压灰（仍可点，点了由 VM 给 toast 说明原因）
+                let switchOn = isAuto && isManualAvailable
+                let switchOff = !isAuto && isManualAvailable
                 ZStack(alignment: isAuto ? .trailing : .leading) {
                     Capsule()
-                        .fill(isAuto ? Theme.Palette.stripAccent : Theme.Palette.stripSwitchOff)
+                        .fill(
+                            switchOn
+                                ? Theme.Palette.stripAccent
+                                : (switchOff ? Theme.Palette.stripSwitchOff : Theme.Palette.stripInactive)
+                        )
                         .frame(
                             width: Theme.Size.paramStripSwitchWidth,
                             height: Theme.Size.paramStripSwitchHeight
                         )
                     Circle()
-                        .fill(Color.white)
+                        .fill(Color.white.opacity(isManualAvailable ? 1 : 0.75))
                         .frame(
                             width: Theme.Size.paramStripSwitchKnob,
                             height: Theme.Size.paramStripSwitchKnob

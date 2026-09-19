@@ -92,6 +92,22 @@ final class CaptureSessionController: ObservableObject {
     /// 会话就绪 / 切模式 / 每次手动写入后重算 —— 因为设备可用域随 `activeFormat` 变。
     @Published private(set) var unavailableStripValues: [ParameterStripKind: Set<Double>] = [:]
 
+    /// 手动参数档在**当前设备**上是否真的可用（`false` = UI 把手动开关置灰）。
+    ///
+    /// ## 为什么需要这两个位 —— 2026-09-19 架构级发现
+    ///
+    /// SDK 明文（`AVCaptureDevice.h:538-541`）：虚拟多摄（`.builtInTripleCamera` 等）
+    /// **不支持** ① `.custom` 曝光（手动 ISO/快门）、② 非 Current 的白平衡增益锁定。
+    /// 而白平衡那条曾用 `isWhiteBalanceModeSupported(.locked)` 探测 → 虚拟设备上误报 true
+    /// → 写计算增益直接抛 ObjC 异常（真机 7 次同源崩溃，见 `CaptureDeviceConfigurator`）。
+    ///
+    /// 这两个位 = `CaptureCapabilities` 的能力探测结果（不写机型判断），会话就绪 /
+    /// 切模式等时机随 `publishManualState` 一起重算。物理镜头架构（`docs/18`）落地后
+    /// 探测自动变 true，UI 无需改动。会话未就绪时保持 `false`（宁可先灰后开，
+    /// 不装作可用 —— "点了没反应"禁令）。
+    @Published private(set) var isManualExposureSupported = false
+    @Published private(set) var isManualWhiteBalanceSupported = false
+
     /// 设备**当前**的 ISO / 曝光时长（**自动档也有效** —— 取 AE 的收敛值）。
     /// 自动 → 手动切换时用作初值（拍板 ③：切档瞬间画面不跳）。
     @Published private(set) var currentExposure: (iso: Float, seconds: Double) = (100, 1.0 / 125)
@@ -456,6 +472,9 @@ final class CaptureSessionController: ObservableObject {
         for kind in ParameterStripKind.allCases {
             unavailable[kind] = CaptureCapabilities.unavailableStripValues(for: kind, on: device)
         }
+        // 手动参数能力（虚拟多摄不支持，见属性注释）：能力探测一次，随本方法一起发布。
+        let manualExposureOK = CaptureCapabilities.supportsManualExposure(device)
+        let manualWhiteBalanceOK = CaptureCapabilities.supportsManualWhiteBalance(device)
         // 冷启动那几帧白平衡还没初始化（增益无效 → `temperatureAndTintValues(for:)` 会抛异常，
         // 见 `CaptureDeviceConfigurator.temperatureAndTintValues(of:)` 的说明），
         // 此时色温只能给兜底值 5600K。记一笔，等快照轮询发现增益就绪时**补发一次**，
@@ -470,6 +489,8 @@ final class CaptureSessionController: ObservableObject {
             self.currentExposure = (currentISO, currentSeconds)
             self.currentWhiteBalanceKelvin = currentKelvin
             self.unavailableStripValues = unavailable
+            self.isManualExposureSupported = manualExposureOK
+            self.isManualWhiteBalanceSupported = manualWhiteBalanceOK
         }
     }
 
@@ -708,6 +729,13 @@ final class CaptureSessionController: ObservableObject {
                 DebugLog.shared.info(
                     "session",
                     CaptureCapabilities.zoomTopologyDescription(of: device)
+                )
+                // 手动参数能力一行（Mac 复验核法：虚拟多摄上应两个 false；
+                // 物理镜头架构 docs/18 落地后按探测自动变 true）
+                DebugLog.shared.info(
+                    "session",
+                    "手动参数能力：曝光(custom)=\(CaptureCapabilities.supportsManualExposure(device))"
+                        + " / 白平衡(锁定增益)=\(CaptureCapabilities.supportsManualWhiteBalance(device))"
                 )
                 DebugLog.shared.info("session", "会话配置完成，Live Photo 支持=\(livePhotoSupported)")
             }

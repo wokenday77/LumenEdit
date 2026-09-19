@@ -26,9 +26,9 @@ enum CaptureConfigurationError: LocalizedError {
         case .unsupportedManualExposure:
             return "当前设备或采集格式不支持手动曝光（自定义 ISO / 快门）"
         case .unsupportedWhiteBalance:
-            return "当前设备不支持锁定的白平衡"
+            return "当前设备不支持手动白平衡（虚拟多摄不支持锁定增益，需物理镜头）"
         case .unsupportedFocus:
-            return "当前设备不支持手动对焦（锁定焦点）"
+            return "当前设备不支持手动对焦（虚拟多摄不支持自定义镜头位置）"
         }
     }
 }
@@ -222,7 +222,13 @@ final class CaptureDeviceConfigurator {
     ///   - 这个是「把焦点锁死在某个距离」——持续、手动档。
     /// 调用本方法后焦点会一直锁着，直到 `setAutoFocus` 或用户再次点按画面。
     func setManualFocus(lensPosition: Float, on device: AVCaptureDevice) throws {
-        guard device.isFocusModeSupported(.locked) else {
+        // ⚠️ 能力守卫必须用 `isLockingFocusWithCustomLensPositionSupported`（SDK 头文件
+        //    AVCaptureDevice.h:1110），**不能用** `isFocusModeSupported(.locked)` ——
+        //    虚拟多摄上后者为 true，但 SDK 明文（AVCaptureDevice.h:538-541）虚拟设备
+        //    只允许锁 `AVCaptureFocusModeLocked` 的 Current 位置，传自定义 lensPosition
+        //    照样抛 ObjC 异常（Swift catch 不住 → abort）。
+        //    Mac 侧 2026-09-19 同类预警（与白平衡 7 连崩同因，见 `setManualWhiteBalance`）。
+        guard device.isLockingFocusWithCustomLensPositionSupported else {
             throw CaptureConfigurationError.unsupportedFocus
         }
         // 越界写 lensPosition 同样是**抛异常**（不是被忽略），必须先钳。
@@ -315,7 +321,15 @@ final class CaptureDeviceConfigurator {
         tint: Float,
         on device: AVCaptureDevice
     ) throws {
-        guard device.isWhiteBalanceModeSupported(.locked) else {
+        // ⚠️ 能力守卫必须用 `isLockingWhiteBalanceWithCustomDeviceGainsSupported`
+        //    （SDK 头文件 AVCaptureDevice.h:1601），**不能用** `isWhiteBalanceModeSupported(.locked)`
+        //    —— 后者在虚拟多摄上也返回 true，但 SDK 明文（AVCaptureDevice.h:538-541）
+        //    虚拟设备只允许锁 `AVCaptureWhiteBalanceGainsCurrent`，传**计算出来的增益**
+        //    会抛 NSInvalidArgumentException（ObjC 异常，Swift catch 不住 → 全进程 abort）。
+        //    2026-09-19 真机 7 次同源崩溃（点白平衡手动开关即崩，栈落在 :328 一带）的根因
+        //    就是这条守卫选错了探测 API。换用正确探测后，虚拟设备上为 false → 抛
+        //    `unsupportedWhiteBalance` → 上层给诚实边界（置灰 + toast），根本不碰硬件 API。
+        guard device.isLockingWhiteBalanceWithCustomDeviceGainsSupported else {
             throw CaptureConfigurationError.unsupportedWhiteBalance
         }
         try withLock(device) {
@@ -494,12 +508,18 @@ final class CaptureDeviceConfigurator {
 
         switch device.whiteBalanceMode {
         case .locked:
-            let temperatureAndTint = device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains)
-            state.whiteBalanceText = String(
-                format: "手动 %.0fK/%+.0f",
-                temperatureAndTint.temperature,
-                temperatureAndTint.tint
-            )
+            // 手动档读色温也必须走"先验增益有效性"的安全路径（`temperatureAndTintValues(of:)`）
+            // —— 直接调 `temperatureAndTintValues(for:)` 对无效增益会抛 ObjC 异常
+            // （2026-09-19 冷启动崩溃同款 API，见该私有方法的说明）。
+            if let values = temperatureAndTintValues(of: device) {
+                state.whiteBalanceText = String(
+                    format: "手动 %.0fK/%+.0f",
+                    values.temperature,
+                    values.tint
+                )
+            } else {
+                state.whiteBalanceText = "手动（读取中）"
+            }
         case .continuousAutoWhiteBalance:
             state.whiteBalanceText = "AWB"
         case .autoWhiteBalance:
@@ -549,7 +569,10 @@ final class CaptureDeviceConfigurator {
 
     private func applyWhiteBalanceLocked(_ preset: CapturePreset, to device: AVCaptureDevice) throws {
         if let temperature = preset.whiteBalanceTemperature, let tint = preset.whiteBalanceTint {
-            guard device.isWhiteBalanceModeSupported(.locked) else {
+            // 与 `setManualWhiteBalance` 同因同修：能力探测必须用
+            // `isLockingWhiteBalanceWithCustomDeviceGainsSupported`（虚拟多摄上
+            // `isWhiteBalanceModeSupported(.locked)` 误报 true，写计算增益即崩 —— 详见该处注释）
+            guard device.isLockingWhiteBalanceWithCustomDeviceGainsSupported else {
                 throw CaptureConfigurationError.unsupportedWhiteBalance
             }
             var values = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues()
