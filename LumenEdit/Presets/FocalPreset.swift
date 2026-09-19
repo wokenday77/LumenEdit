@@ -9,8 +9,9 @@ import Foundation
 /// 真机上这是**镜头切换 + 变焦**，属于 P2 的硬件活（走 `CaptureDeviceConfigurator`）。
 /// 这里只定义"有哪些档位、顺序如何、默认选哪个"。
 ///
-/// 真源：网页原型 `prototype/index.html` 的 `FOCALS`，由 `tools/check_presets.js` 第 4 组比对；
-/// **Swift 先行扩展**的档位（目前是 35mm）必须标 `isSwiftExtension` —— 见那个字段的说明。
+/// 真源：网页原型 `prototype/index.html` 的 `FOCALS`，由 `tools/check_presets.js` 第 4 组比对
+/// （**当前两边 5 档完全一致，没有先行扩展** —— 原型侧 2026-09-19 已同步，CB `d9cf708`）。
+/// 若将来 Swift 又要先行加档，那个档位必须标 `isSwiftExtension` —— 见那个字段的说明。
 struct FocalPreset: Identifiable, Equatable, Codable {
     let id: String
     /// UI 显示文本（不带单位，单位由 UI 拼）
@@ -29,7 +30,10 @@ struct FocalPreset: Identifiable, Equatable, Codable {
     ///
     /// 这套做法的好处：把"原型没同步"从一个**看不见的差异**，变成**每次自检都会打印、
     /// 且必须显式声明**的状态 —— 既不会被静默放过，也不会因为"等原型"而阻塞 Swift。
-    let isSwiftExtension: Bool = false
+    ///
+    /// ⚠️ **必须是 `var`（不能是 `let`）**：`let` 带默认值的属性**不会**进 memberwise 初始化器，
+    /// 传 `isSwiftExtension:` 会报 "extra argument"（2026-09-19 Mac 侧编译实测，[mac-fix]）。
+    var isSwiftExtension: Bool = false
 
     /// 等效焦距（mm）。
     ///

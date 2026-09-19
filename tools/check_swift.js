@@ -1485,8 +1485,12 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
   }
 
   // ⑭ 声明式扩展字段 + **每档都要能解析出镜头角色**
-  //     （2026-09-19 新增；同日按 CB 反馈修正 —— 去掉"至少一处"的下限）
-  //     a) 字段必须存在且默认 `false`（默认 true 会让"所有档位都算扩展"，等于没声明）；
+  //     （2026-09-19 新增；同日按 CB 与 Mac 的反馈各修正一次）
+  //     a) 字段必须存在、默认 `false`，且**必须是 `var`**：
+  //        `let` 带默认值的属性**不进 memberwise 初始化器** →
+  //        `FocalPreset(..., isSwiftExtension: true)` 会编译报 "extra argument"
+  //        （2026-09-19 Mac 侧编译实测抓到，`[mac-fix]` 7bd53b0）；
+  //        默认 `true` 则会让"所有档位都算扩展"，等于没声明；
   //     b) `isSwiftExtension: true` **只允许出现在 `FocalCatalog` 的档位构造行里**
   //        —— 防止这个标记被当成通用开关用到别处；
   //     c) **每一档都必须能在 `lensRole` 的 switch 里找到 case** —— 这是最要命的一条：
@@ -1500,7 +1504,7 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
   //    已在副本预演里复现）。
   //    「原型有几档、Swift 多出哪几档、标记该不该在」由 `check_presets.js` 第 4 组判定 ——
   //    **只有它两边都能读**。分工写在这里，避免以后又把跨文件的断言塞回来。
-  const hasExtField = /let isSwiftExtension: Bool = false/.test(focalSrc);
+  const hasExtField = /var isSwiftExtension: Bool = false/.test(focalSrc);
   const extLines = focalSrc.match(/^.*isSwiftExtension:\s*true.*$/gm) || [];
   const extMisplaced = extLines.filter(line => !/FocalPreset\(id:/.test(line)).length;
   const extDeclared = extLines.length;
@@ -1508,7 +1512,8 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
     .map(s => /"(\d+)"/.exec(s)[1]);
   const roleLess = catalogIds.filter(id => !roleMap[id]);
   if (!hasExtField) {
-    bad('FocalPreset 缺 `isSwiftExtension: Bool = false` 字段（声明式扩展的载体）');
+    bad('FocalPreset 缺 `var isSwiftExtension: Bool = false` 字段（声明式扩展的载体；'
+      + '必须是 var —— let 带默认值不进 memberwise init，传参会编译报 extra argument）');
   } else if (extMisplaced) {
     bad('有 ' + extMisplaced + ' 处 `isSwiftExtension: true` 不在 FocalCatalog 的档位构造里'
       + ' —— 这个标记只该用来标注档位');
