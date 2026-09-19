@@ -29,7 +29,10 @@ struct FocalPreset: Identifiable, Equatable, Codable {
     ///
     /// 这套做法的好处：把"原型没同步"从一个**看不见的差异**，变成**每次自检都会打印、
     /// 且必须显式声明**的状态 —— 既不会被静默放过，也不会因为"等原型"而阻塞 Swift。
-    let isSwiftExtension: Bool = false
+    ///
+    /// ⚠️ **必须是 `var`（不能是 `let`）**：`let` 带默认值的属性**不会**进 memberwise 初始化器，
+    /// 传 `isSwiftExtension:` 会报 "extra argument"（2026-09-19 Mac 侧编译实测，[mac-fix]）。
+    var isSwiftExtension: Bool = false
 
     /// 等效焦距（mm）。
     ///

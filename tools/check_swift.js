@@ -1486,17 +1486,20 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
 
   // ⑭ 声明式扩展字段 + **每档都要能解析出镜头角色**（2026-09-19 新增）
   //     a) 字段必须存在且默认 `false`（默认 true 会让"所有档位都算扩展"，等于没声明）；
+  //        ⚠️ **必须是 `var`**：`let` 带默认值的属性**不进 memberwise 初始化器**，
+  //        `FocalPreset(..., isSwiftExtension: true)` 会编译报 "extra argument"。
+  //        （2026-09-19 Mac 侧编译实测抓到，[mac-fix]；本行随之从 let 改为 var 匹配）
   //     b) 至少一处显式 `isSwiftExtension: true`，否则 check_presets 第 4 组必 FAIL；
   //     c) **每一档都必须能在 `lensRole` 的 switch 里找到 case** —— 这是最要命的一条：
   //        新加一档却忘了配角色 → `lensRole` 返回 nil → `zoomFactor` 返回 nil →
   //        该档**永远置灰、且点不出原因**（静默的"点了没反应"，本项目明令禁止）。
-  const hasExtField = /let isSwiftExtension: Bool = false/.test(focalSrc);
+  const hasExtField = /var isSwiftExtension: Bool = false/.test(focalSrc);
   const extDeclared = (focalSrc.match(/isSwiftExtension: true/g) || []).length;
   const catalogIds = (focalSrc.match(/FocalPreset\(id: "(\d+)"/g) || [])
     .map(s => /"(\d+)"/.exec(s)[1]);
   const roleLess = catalogIds.filter(id => !roleMap[id]);
   if (!hasExtField) {
-    bad('FocalPreset 缺 `isSwiftExtension: Bool = false` 字段（声明式扩展的载体）');
+    bad('FocalPreset 缺 `var isSwiftExtension: Bool = false` 字段（声明式扩展的载体；注意必须是 var —— let 带默认值不进 memberwise init）');
   } else if (extDeclared < 1) {
     bad('没有任何档位标 `isSwiftExtension: true` —— 若确有先行扩展，check_presets 第 4 组会 FAIL');
   } else if (roleLess.length) {
