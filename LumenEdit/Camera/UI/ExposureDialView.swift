@@ -277,14 +277,17 @@ struct ExposureDialView: View {
         }
 
         return ZStack {
-            Path(tickPath(.minor))
+            // ⚠️ `tickPath` / `litPath` 返回的就是 `Path`（Path 本身就是 Shape，可直接 .stroke）——
+            // 不能再包一层 `Path(...)`：SwiftUICore.Path 没有 `init(Path)` 初始化器
+            // （只有 init(CGPath)/init(CGRect)/init(callback:) 等）。2026-09-19 Mac 侧编译实测。
+            tickPath(.minor)
                 .stroke(Color.white.opacity(0.26), lineWidth: 1.1 * scale)
-            Path(tickPath(.mid))
+            tickPath(.mid)
                 .stroke(Color.white.opacity(0.46), lineWidth: 1.7 * scale)
-            Path(tickPath(.major))
+            tickPath(.major)
                 .stroke(Color.white.opacity(0.88), lineWidth: 2.4 * scale)
             // 当前值附近的高亮段：绿色 + 外发光（原型 .fd-lit）
-            Path(litPath())
+            litPath()
                 .stroke(Theme.Palette.dialAccent, lineWidth: 2.6 * scale)
                 .shadow(color: Theme.Palette.dialAccent.opacity(0.75), radius: 2.5)
 
