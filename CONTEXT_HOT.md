@@ -256,7 +256,11 @@ iOS 26 SDK `AVCaptureDevice.h:538-541` 明文 —— **`builtInTripleCamera` 等
 **用户已拍板按需切换**（自动态虚拟 / 进手动或跨切换点切物理）。排在 **B3a（EV 圆盘）→ B3b（对焦圆盘 UI）**
 之后实施；实施前须先消化 **Mac 纸面预检 7 处**（回切策略 / 搬运顺序放 commit+格式之后 /
 物理档位→zoom 映射表（现 `nativeZoomLadder` 吃虚拟切换点数组、物理设备下失效）/ EV 搬运 /
-对焦档位语义 / 转场改顺序触发 / 自检 +3 条）—— 完整清单见 Mac 快照段
+对焦档位语义 / 转场改顺序触发 / 自检 +3 条）—— 完整清单见 Mac 快照段；
+⑨ **圆盘半透明样式（2026-09-19 用户拍板）**：EV 圆盘盘底透明度已下调（原型旧口径
+0.78/0.84/0.88 → **0.45/0.50/0.55**，色相不变、刻度/数字/指针保持不透明层）；
+**对焦圆盘（B3b）落地时必须同步该样式** —— 两盘目前**不共用视图组件**
+（仅 `EvDialGeometry` 预留 mirror 参数），建议 B3b 抽共享盘底/刻度环，别抄第二份
 
 **Mac 环境备忘（新会话必读）**：
 - **真机截图用 `pymobiledevice3 developer dvt screenshot out.png`**（PATH 加 `$HOME/Library/Python/3.9/bin`；已 pip3 install --user 11.15.1，自动走原生隧道无需 sudo）。`idevicescreenshot` 在 iOS 26 确定性损坏（libimobiledevice issue #1465），重启/重插无效，别再试

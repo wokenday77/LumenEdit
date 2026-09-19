@@ -163,10 +163,14 @@ struct ExposureDialView: View {
             let cy = centerY(containerHeight: proxy.size.height)
 
             ZStack {
+                // ⚠️ **手势必须挂在 `.position` 之前**：`.position` 会把视图包进一个"占满父级"
+                // 的容器，手势挂在其后时 `DragGesture` 的坐标空间变成整页 GeometryReader，
+                // 而传入的 center 是**圆盘局部坐标**（123,123）——两者错位 → 算出的角度几乎
+                // 全部落进无效弧 → 值被钉在 −3.0、怎么拖都不动（2026-09-19 真机实测，[mac-fix]）。
                 dial
-                    .position(x: cx, y: cy)
                     .gesture(dragGesture(center: CGPoint(x: Theme.Size.evDialSize / 2,
                                                          y: Theme.Size.evDialSize / 2)))
+                    .position(x: cx, y: cy)
 
                 valueBox
                     .position(x: valueBoxCenterX(centerX: cx), y: cy)
@@ -201,14 +205,20 @@ struct ExposureDialView: View {
     private var dial: some View {
         let size = Theme.Size.evDialSize
         return ZStack {
-            // 盘底（原型 radial-gradient，中心偏上 45%）
+            // 盘底（原型 radial-gradient，中心偏上 45%）。
+            // ⚠️ **透明度按用户新拍板下调（2026-09-19）**：圆盘要"半透明、能透出背后的取景画面"
+            // （参考飓风相机对焦圆盘的效果）。原型旧口径 0.78/0.84/0.88 是"接近实底"，
+            // 现改为 **0.45/0.50/0.55**（色相不变，只降 alpha）。
+            // 刻度/数字/指针**保持不动**（不透明层，保证可读性）。
+            // ⚠️ **对焦圆盘（B3b）落地时要同步本样式** —— 两盘目前不共用视图组件（只共用
+            // `EvDialGeometry` 的思路/mirror 参数），届时应抽共享盘底，不要抄第二份。
             Circle()
                 .fill(
                     RadialGradient(
                         colors: [
-                            Color(red: 28 / 255, green: 31 / 255, blue: 37 / 255).opacity(0.78),
-                            Color(red: 16 / 255, green: 19 / 255, blue: 23 / 255).opacity(0.84),
-                            Color(red: 10 / 255, green: 12 / 255, blue: 15 / 255).opacity(0.88)
+                            Color(red: 28 / 255, green: 31 / 255, blue: 37 / 255).opacity(0.45),
+                            Color(red: 16 / 255, green: 19 / 255, blue: 23 / 255).opacity(0.50),
+                            Color(red: 10 / 255, green: 12 / 255, blue: 15 / 255).opacity(0.55)
                         ],
                         center: UnitPoint(x: 0.5, y: 0.45),
                         startRadius: 0,
