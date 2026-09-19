@@ -415,23 +415,68 @@ const swiftFocalSrc = readSwift('FocalPreset.swift');
 const swFocals = sliceBlocks(swiftFocalSrc, 'FocalPreset').map(b => ({
   id: str(b, 'id'),
   name: str(b, 'displayName'),
-  on: /isDefault:\s*true/.test(b)
+  on: /isDefault:\s*true/.test(b),
+  // 声明式扩展标记（2026-09-19 用户拍板 · 方案 `docs/17` 第八节）。
+  // ⚠️ 匹配要求带 `: true`，**不能只匹配字段名** —— 档位之间的注释里会出现
+  //    "必须显式标 isSwiftExtension" 这类说明文字，只匹配名字就会被注释绊倒
+  //    （同类坑本项目踩过：负向判据命中注释）。
+  ext: /isSwiftExtension:\s*true/.test(b)
 })).filter(x => x.id);
 
-if (!jsFocals) bad('原型里找不到 FOCALS 数组');
-else if (swFocals.length !== jsFocals.length) bad(`数量不一致：原型 ${jsFocals.length}，Swift ${swFocals.length}`);
-else {
-  ok(`数量一致（${jsFocals.length} 档）`);
-  let badF = 0;
-  jsFocals.forEach((jf, i) => {
-    const sf = swFocals[i];
-    if (!sf) return;
-    if (jf.id !== sf.id) { bad(`第 ${i + 1} 档 id 不一致：${jf.id} vs ${sf.id}`); badF++; return; }
-    if (jf.name !== sf.name) { bad(`[${jf.id}] 显示名不一致`); badF++; }
-    const jOn = jf.on === true;
-    if (jOn !== sf.on) { bad(`[${jf.id}] 默认选中标记不一致：原型 ${jOn} vs Swift ${sf.on}`); badF++; }
-  });
-  if (!badF) ok('档位 id / 显示名 / 默认选中一致');
+if (!jsFocals) {
+  bad('原型里找不到 FOCALS 数组');
+} else {
+  // 口径：**原型必须是 Swift 的"子序列"** ——
+  //   ① 原型里的档位都要在 Swift 里、顺序一致，id / 显示名 / 默认标记逐项一致，
+  //      且这些档位**不得**标 `isSwiftExtension`；
+  //   ② Swift 多出来的档位（原型还没有）**必须显式标** `isSwiftExtension: true`，否则 FAIL；
+  //   ③ 两边一致之后（CB 补完原型 + 去掉标记），本组会**自动**要求完全一致 —— 不需要再改检查。
+  //
+  // 为什么用这套（而不是简单放宽或一律严格）：
+  //   把"原型没同步"从一个**看不见的差异**，变成**每次自检都会打印、且必须显式声明**的状态；
+  //   既不会被静默放过（谁随手加一档都会 FAIL），也不会因为"等原型"而阻塞 Swift。
+  const pending = swFocals.filter(f => !jsFocals.some(j => j.id === f.id));
+  const missing = jsFocals.filter(j => !swFocals.some(f => f.id === j.id));
+  const wronglyMarked = swFocals.filter(f => f.ext && jsFocals.some(j => j.id === f.id));
+
+  if (missing.length) {
+    bad('原型里有的档位在 Swift 里缺失：' + missing.map(j => j.id).join('、'));
+  } else if (pending.some(f => !f.ext)) {
+    bad('Swift 多出的档位没标 `isSwiftExtension: true`：'
+      + pending.filter(f => !f.ext).map(f => f.id).join('、')
+      + ' —— 先行扩展必须显式声明，否则就是静默漂移');
+  } else if (wronglyMarked.length) {
+    bad('这些档位原型里已经有了，却还标着 `isSwiftExtension: true`：'
+      + wronglyMarked.map(f => f.id).join('、')
+      + ' —— 请去掉标记，否则本组会一直对它放宽');
+  } else {
+    let badF = 0;
+    jsFocals.forEach(jf => {
+      const sf = swFocals.find(f => f.id === jf.id);
+      if (!sf) return;
+      if (jf.name !== sf.name) { bad(`[${jf.id}] 显示名不一致`); badF++; }
+      const jOn = jf.on === true;
+      if (jOn !== sf.on) { bad(`[${jf.id}] 默认选中标记不一致：原型 ${jOn} vs Swift ${sf.on}`); badF++; }
+    });
+    // 顺序：原型各档在 Swift 里的下标必须严格递增（档位是"从左到右"的版式，顺序即语义）
+    const idx = jsFocals.map(j => swFocals.findIndex(f => f.id === j.id));
+    const ordered = idx.every((v, i) => i === 0 || v > idx[i - 1]);
+    if (!badF && !ordered) {
+      bad('档位顺序不一致：原型 ' + jsFocals.map(j => j.id).join('/')
+        + '，它们在 Swift 里的下标是 ' + idx.join('/'));
+      badF++;
+    }
+    if (!badF) {
+      ok(`原型 ${jsFocals.length} 档逐项一致（id / 显示名 / 默认标记 / 顺序）`);
+    }
+    if (pending.length) {
+      console.log('  WARN 原型尚未同步以下档位（Swift 侧已声明为扩展）：'
+        + pending.map(f => f.id).join('、')
+        + ' —— CB 往 FOCALS 补上后，去掉 FocalPreset 上的 isSwiftExtension 即可，本组会自动收紧');
+    } else {
+      ok('两边档位完全一致（无先行扩展）');
+    }
+  }
 }
 
 /* --- 3.5 视频格式码率表（#11） --- */

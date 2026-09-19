@@ -1171,45 +1171,54 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
   const capCode = capSrc.replace(/\/\/[^\n]*/g, '');
 
   const roleMap = {};
-  // ⚠️ 选项**长的在前** + 结尾加 `\b`：否则 `wide` 会把 `wideCrop2x` 前缀匹配掉
-  //   （交替匹配按书写顺序尝试，`wide` 先命中，于是 48mm 档被读成 `.wide` →
-  //    复算出的 48 档 = 2.000，与 24 档相等，本检查当场 FAIL。
-  //    这是本检查脚本自己的 bug，被它自己的复算抓出来的 —— 记一笔。）
-  for (const m of focalSrc.matchAll(/case (\d+):\s*return \.(wideCrop2x|ultraWide|telephoto|wide)\b/g)) {
-    roleMap[m[1]] = m[2];
+  // ⚠️ 两处都踩过坑，别再简化：
+  //   ① 选项**长的在前** + 结尾 `\b`：交替匹配按书写顺序尝试，短名会**前缀吃掉**长名
+  //      （`wide` 吃掉 `mainCrop` 之类）→ 解析出的角色是错的，本检查当场 FAIL。
+  //   ② **必须支持 `case 35, 48: return .mainCrop` 这种合并写法**：同一角色的多个档位
+  //      写在一个 case 里是很自然的 Swift 写法，检查脚本要跟着走，**不能让 Swift 迁就正则**
+  //      （这正是"守卫自己写错"的典型：第一版只认单值，于是报了假的 FAIL）。
+  for (const m of focalSrc.matchAll(/case ([0-9,\s]+):\s*return \.([A-Za-z0-9]+)\b/g)) {
+    for (const mm of m[1].split(',').map(s => s.trim()).filter(Boolean)) {
+      roleMap[mm] = m[2];
+    }
   }
   const ladderOk = /\[1\.0\]\s*\+\s*device\.virtualDeviceSwitchOverVideoZoomFactors/.test(capCode);
   const noMmDivision = !/millimeters\s*\/|forFocalMillimeters|baseMillimeters/.test(capCode);
-  const hasRoleLookup = /nativeZoom\(of: \.wide, on: device\)[\s\S]{0,120}?return wide \* 2/
+  // 裁切档（35 / 48）必须走"主摄原生 × FocalPreset.mainCropFactor"，不许写死倍数
+  const hasRoleLookup = /nativeZoom\(of: \.wide, on: device\)[\s\S]{0,160}?return wide \* \(focal\.mainCropFactor \?\? 1\)/
       .test(capCode)
     && /func nativeZoom\(of role: FocalLensRole, on device: AVCaptureDevice\)/.test(capCode);
   const ladderGuard = /guard index < ladder\.count/.test(capCode);
   const mmCount = (focalSrc.match(/FocalPreset\(/g) || []).length;
 
   // 角色映射必须**逐条精确**（只数条数不够）。
-  // 为什么单列这一条：`120mm → .telephoto` 是本次修法的命门 —— 第一版把它算成 9.231
-  // 落在 switchOver[1] 之下。若有人把它改回 `.wide`（或任何不到长焦的角色），
-  // 现象是"档位能点、但只有主摄数码放大"，而单调性检查只会报"非递增"、指不到根因。
-  const expectedRoles = { '13': 'ultraWide', '24': 'wide', '48': 'wideCrop2x', '120': 'telephoto' };
+  // 为什么单列这一条：`120mm → .telephoto` 是 B1 那次真机事故的命门（旧算法把它算成 9.231，
+  // 落在 switchOver[1] 之下 → 系统不切长焦，只用主摄数码放大）。
+  // 若有人把它改回 `.wide`（或任何不到长焦的角色），单调性检查只会报"非递增"、指不到根因。
+  const expectedRoles = {
+    '13': 'ultraWide', '24': 'wide', '35': 'mainCrop', '48': 'mainCrop', '120': 'telephoto'
+  };
+  const expectedTierCount = Object.keys(expectedRoles).length;   // 5
   const roleMismatch = Object.keys(expectedRoles)
     .filter(mm => roleMap[mm] !== expectedRoles[mm])
     .map(mm => mm + '→' + (roleMap[mm] || '缺') + '（应 ' + expectedRoles[mm] + '）');
 
-  if (mmCount < 4) {
-    bad('焦段数据只剩 ' + mmCount + ' 档（应为 4）');
-  } else if (Object.keys(roleMap).length !== 4) {
-    bad('焦段角色表不全（应为 13→ultraWide / 24→wide / 48→wideCrop2x / 120→telephoto；'
-      + '实际解析到 ' + Object.keys(roleMap).length + ' 条 ' + JSON.stringify(roleMap) + '）');
+  if (mmCount !== expectedTierCount) {
+    bad('焦段档位数是 ' + mmCount + '（应为 ' + expectedTierCount + '：'
+      + Object.keys(expectedRoles).join('/') + '）');
+  } else if (Object.keys(roleMap).length !== expectedTierCount) {
+    bad('焦段角色表不全（实际解析到 ' + Object.keys(roleMap).length + ' 条 '
+      + JSON.stringify(roleMap) + '）');
   } else if (roleMismatch.length) {
     bad('档位角色映射不对：' + roleMismatch.join('、')
-      + ' —— 120mm 必须是长焦，否则只会主摄数码放大');
+      + ' —— 120mm 必须是长焦，35 / 48 必须是主摄裁切，否则要么不切长焦、要么语义漂移');
   } else if (!ladderOk) {
     bad('原生阶梯不是 `[1.0] + virtualDeviceSwitchOverVideoZoomFactors`');
   } else if (!noMmDivision) {
     bad('还有 `mm ÷ 基准` 的残留（millimeters / forFocalMillimeters / baseMillimeters）—— '
       + '基准是机型相关的（实测 12mm 而非 13mm），除法会让 120mm 档落在切换点之下');
   } else if (!hasRoleLookup) {
-    bad('48mm 档没有按"广角原生视场 × 2"取（角色映射不完整）');
+    bad('裁切档没有按"主摄原生视场 × FocalPreset.mainCropFactor"取（不许写死倍数）');
   } else if (!ladderGuard) {
     bad('缺"角色超出阶梯长度 → 判不可用"的守卫（无长焦机型会把 120mm 档当成可用）');
   } else {
@@ -1217,20 +1226,25 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
     const ladder = [1.0, 2.0, 10.0];                 // = [1.0] + switchOver
     const switchOver = ladder.slice(1);              // 实测 [2.000, 10.000]
     const roleIndex = { ultraWide: 0, wide: 1, telephoto: 2 };
-    const tiers = ['13', '24', '48', '120'].map(mm => {
+    const NOMINAL_MAIN_MM = 24;                      // 标称主摄（与 FocalPreset.mainCropFactor 同源）
+    const tierIds = Object.keys(expectedRoles);
+    const tiers = tierIds.map(mm => {
       const role = roleMap[mm];
-      if (role === 'wideCrop2x') return { mm: mm, value: ladder[roleIndex.wide] * 2 };
+      const nominal = parseFloat(mm);
+      if (role === 'mainCrop') {
+        return { mm: mm, value: ladder[roleIndex.wide] * (nominal / NOMINAL_MAIN_MM) };
+      }
       const i = roleIndex[role];
       return { mm: mm, value: i === undefined || i >= ladder.length ? null : ladder[i] };
     });
     const values = tiers.map(t => t.value);
     const increasing = values.every((v, i) =>
       i === 0 || (v !== null && values[i - 1] !== null && v > values[i - 1]));
-    // 两条核心不变量（都是拿 **switchOver** 当基准，不是阶梯的第 0 级 = 1.0）：
-    //   24mm 档必须 == switchOver[0]（广角原生视场）；120mm 档必须 == switchOver[last]（长焦原生视场）
+    // 两条核心不变量（都拿 **switchOver** 当基准，不是阶梯的第 0 级 = 1.0）：
+    //   24mm == switchOver[0]（广角原生）；120mm == switchOver[last]（长焦原生）
     const wideOK = values[1] !== null && Math.abs(values[1] - switchOver[0]) < 1e-9;
-    const teleOK = values[3] !== null
-      && Math.abs(values[3] - switchOver[switchOver.length - 1]) < 1e-9;
+    const teleOK = values[4] !== null
+      && Math.abs(values[4] - switchOver[switchOver.length - 1]) < 1e-9;
     const text = tiers.map(t => t.mm + '→' + (t.value === null ? '不可用' : t.value.toFixed(3))).join(' / ');
 
     if (!increasing) {
@@ -1240,7 +1254,7 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
         + values[1].toFixed(3) + '）—— 没落在广角原生视场上');
     } else if (!teleOK) {
       bad('120mm 档没落在长焦原生视场（应 switchOver[last] = '
-        + switchOver[switchOver.length - 1].toFixed(3) + '，实际 ' + String(values[3])
+        + switchOver[switchOver.length - 1].toFixed(3) + '，实际 ' + String(values[4])
         + '）—— 系统不会切长焦，只会主摄数码放大');
     } else {
       ok('档位映射按镜头角色从设备读（三摄 [2.0, 10.0] 复算：' + text + '）');
@@ -1288,7 +1302,7 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
   } else if (!topologyLogged) {
     bad('会话启动路径没有打印变焦拓扑 —— Mac 侧就没法"读一次冷启动日志"核对档位映射');
   } else {
-    ok('变焦拓扑在会话启动时打一行日志（角色 + switchOver + 阶梯 + 四档解析值 + 不可用档）');
+    ok('变焦拓扑在会话启动时打一行日志（角色 + switchOver + 阶梯 + 各档解析值 + 不可用档）');
   }
 
   // ② 必须用 ramp（硬设 = 直接跳，失去本件的意义）
@@ -1385,6 +1399,112 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
       + ' —— 会话刚建起来不需要"过程"');
   } else {
     ok('双来源守卫：applyZoomRamp ⇄ applyZoomLocked 无互相调用，配置期仍是硬设');
+  }
+
+  // ⑪ 裁切档系数同源（2026-09-19 加 35mm 档时新增）
+  //     35 与 48 都是"主摄内部的数码裁切"，比例必须由 `mm ÷ 24` **一条式子**给 ——
+  //     不许一处写 ×2、另一处写 1.46（那种"两个来源"必然只改一处）。
+  const cropFactorSource = /var mainCropFactor: CGFloat\? \{[\s\S]{0,200}?return mm \/ 24/
+    .test(focalSrc);
+  const cropUseInCap = /focal\.mainCropFactor/.test(capCode);
+  if (!cropFactorSource) {
+    bad('FocalPreset.mainCropFactor 不是 `return mm / 24` —— 裁切比例必须只有这一处真源');
+  } else if (!cropUseInCap) {
+    bad('CaptureCapabilities 的裁切档没有用 `focal.mainCropFactor`（又写死倍数了？）');
+  } else {
+    ok('裁切档系数同源（mm / 24 ⇒ 35→' + (35 / 24).toFixed(4) + ' / 48→'
+      + (48 / 24).toFixed(4) + '）');
+  }
+
+  // ⑫ 焦段条宽度预算（2026-09-19 加 35mm 档时新增）
+  //     为什么要有：加了档位才有横向溢出风险，而**此前自检里一条焦段条宽度检查都没有**
+  //     （第 5 组只管顶栏与图标行）。做法与第 5 组一致：令牌**真读**、四机型逐档复算，
+  //     并把"最窄机型上的档数硬上限"也算出来 —— 免得以后有人想加到第 7 档时才发现。
+  //     水平内缩来自 `CameraView` 外层 VStack 的 `.padding(.horizontal, Theme.Spacing.md)`。
+  const themeSrc11 = fs.readFileSync(themeFile2, 'utf8');
+  const spacingBlock = /enum Spacing \{[\s\S]*?\n    \}/.exec(themeSrc11);
+  const tok11 = n => {
+    const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc11);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const mdTok = spacingBlock ? /\bmd\s*:\s*CGFloat\s*=\s*([0-9.]+)/.exec(spacingBlock[0]) : null;
+  const pillW = tok11('focalPillWidth');
+  const gap = tok11('focalStripSpacing');
+  const mdInset = mdTok ? parseFloat(mdTok[1]) : null;
+  const outerInsetOk = /\.padding\(\.horizontal,\s*Theme\.Spacing\.md\)/.test(
+    fs.readFileSync(camViewFile, 'utf8')
+  );
+
+  if (pillW === null || gap === null || mdInset === null) {
+    bad('读不到 focalPillWidth / focalStripSpacing / Spacing.md（改名了？自检需要同步）');
+  } else if (!outerInsetOk) {
+    bad('CameraView 里找不到外层 VStack 的 `.padding(.horizontal, Theme.Spacing.md)`'
+      + ' —— 焦段条的"可用宽"假设变了，宽度预算必须重算');
+  } else {
+    const need = mmCount * pillW + (mmCount - 1) * gap;
+    const screens = [
+      { name: 'iPhone 16 Pro（402）', w: 402 },
+      { name: 'iPhone 16 / 15（393）', w: 393 },
+      { name: 'iPhone 14（390）', w: 390 },
+      { name: 'iPhone SE / mini（375）', w: 375 }
+    ];
+    const availMin = screens[screens.length - 1].w - 2 * mdInset;
+    const maxTiers = Math.floor((availMin + gap) / (pillW + gap));
+    const over = screens.filter(d => need > d.w - 2 * mdInset);
+    if (over.length) {
+      bad('焦段条 ' + mmCount + ' 档需 ' + need + 'pt，以下机型放不下：'
+        + over.map(d => d.name + '（可用 ' + (d.w - 2 * mdInset) + 'pt）').join('、'));
+    } else if (mmCount > maxTiers) {
+      bad('焦段条 ' + mmCount + ' 档超过最窄机型（375）的硬上限 ' + maxTiers + ' 档'
+        + '（可用 ' + availMin + 'pt ⇒ 44n + 9(n−1) ≤ ' + availMin + '）');
+    } else {
+      const margins = screens.map(d => (d.w - 2 * mdInset - need) / 2);
+      ok('焦段条 ' + mmCount + ' 档 = ' + need + 'pt（' + pillW + '×' + mmCount + ' + ' + gap
+        + '×' + (mmCount - 1) + '），四机型两侧余量 ' + margins.map(m => m.toFixed(1)).join(' / ')
+        + 'pt；375 机型档数上限 ' + maxTiers);
+    }
+  }
+
+  // ⑬ 35mm 档必须严格落在 24 与 48 之间，且**不跨 switchOver[0]**（2026-09-19 新增）
+  //     语义：35mm 是"主摄内部的数码裁切"。若有人把比例改大到 ≥ switchOver[1]/switchOver[0]，
+  //     它就会跨到长焦那颗上 —— 那一档的标签与语义就都不成立了。
+  const s0 = 2.0;                                    // 真机实测 switchOver [2.000, 10.000]
+  const s1 = 10.0;
+  const z24 = s0;
+  const z35 = s0 * (35 / 24);
+  const z48 = s0 * (48 / 24);
+  if (!(z24 < z35 && z35 < z48)) {
+    bad('35mm 档没落在 24 与 48 之间（' + z24.toFixed(3) + ' / ' + z35.toFixed(3) + ' / '
+      + z48.toFixed(3) + '）');
+  } else if (!(z35 > s0 && z35 < s1)) {
+    bad('35mm 档（' + z35.toFixed(3) + '）跨出了主摄那一段（应在 switchOver[0]=' + s0
+      + ' 与 switchOver[1]=' + s1 + ' 之间）—— 那会变成换镜头，不再是数码裁切');
+  } else {
+    ok('35mm 档在 24 与 48 之间且不跨切换点（' + z35.toFixed(3) + ' ∈ (' + z24.toFixed(3)
+      + ', ' + z48.toFixed(3) + ') ⊂ (' + s0 + ', ' + s1 + '））');
+  }
+
+  // ⑭ 声明式扩展字段 + **每档都要能解析出镜头角色**（2026-09-19 新增）
+  //     a) 字段必须存在且默认 `false`（默认 true 会让"所有档位都算扩展"，等于没声明）；
+  //     b) 至少一处显式 `isSwiftExtension: true`，否则 check_presets 第 4 组必 FAIL；
+  //     c) **每一档都必须能在 `lensRole` 的 switch 里找到 case** —— 这是最要命的一条：
+  //        新加一档却忘了配角色 → `lensRole` 返回 nil → `zoomFactor` 返回 nil →
+  //        该档**永远置灰、且点不出原因**（静默的"点了没反应"，本项目明令禁止）。
+  const hasExtField = /let isSwiftExtension: Bool = false/.test(focalSrc);
+  const extDeclared = (focalSrc.match(/isSwiftExtension: true/g) || []).length;
+  const catalogIds = (focalSrc.match(/FocalPreset\(id: "(\d+)"/g) || [])
+    .map(s => /"(\d+)"/.exec(s)[1]);
+  const roleLess = catalogIds.filter(id => !roleMap[id]);
+  if (!hasExtField) {
+    bad('FocalPreset 缺 `isSwiftExtension: Bool = false` 字段（声明式扩展的载体）');
+  } else if (extDeclared < 1) {
+    bad('没有任何档位标 `isSwiftExtension: true` —— 若确有先行扩展，check_presets 第 4 组会 FAIL');
+  } else if (roleLess.length) {
+    bad('这些档位在 lensRole 里没有对应角色：' + roleLess.join('、')
+      + ' —— 它们会**永远置灰且点不出原因**（静默的"点了没反应"）');
+  } else {
+    ok('声明式扩展齐备（' + extDeclared + ' 档标为 Swift 扩展），且 ' + catalogIds.length
+      + ' 档都能解析出镜头角色');
   }
 }
 

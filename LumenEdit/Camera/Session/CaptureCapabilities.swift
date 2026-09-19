@@ -134,9 +134,15 @@ enum CaptureCapabilities {
     /// | 档位 | 角色 | 取值 |
     /// |---|---|---|
     /// | 13mm  | 超广角 | 原生视场（阶梯第 0 级 = `1.0`） |
-    /// | 24mm  | 广角   | 原生视场（= `switchOver[0]`） |
-    /// | 48mm  | 广角×2 | 广角原生视场 × 2（传感器 2× 裁切，**不是独立镜头**） |
-    /// | 120mm | 长焦   | 原生视场（= `switchOver[last]`） |
+    /// | 24mm  | 广角 | 原生视场（= `switchOver[0]`） |
+    /// | 35mm  | 主摄裁切 | 广角原生视场 × `35/24` ≈ **×1.458**（**纯数码裁切**） |
+    /// | 48mm  | 主摄裁切 | 广角原生视场 × `48/24` = **×2**（48MP 传感器的 2× 裁切点） |
+    /// | 120mm | 长焦 | 原生视场（= `switchOver[last]`） |
+    ///
+    /// 35 与 48 **共用同一条式子**："主摄原生 × 标称比例"（比例见 `FocalPreset.mainCropFactor`）——
+    /// 比在一处写死 `×2` 更难被改坏，48 的值也一分不变。
+    /// 35mm 档因此落在 `switchOver[0]`（主摄原生）与 `switchOver[0] × 2` 之间：
+    /// **不跨系统切换点、不换镜头**，就是主摄上的数码裁切。
     ///
     /// ## 为什么**不再**用 `mm ÷ 基准`
     ///
@@ -155,9 +161,11 @@ enum CaptureCapabilities {
     static func zoomFactor(forFocal focal: FocalPreset, of device: AVCaptureDevice) -> CGFloat? {
         guard let role = focal.lensRole else { return nil }
         switch role {
-        case .wideCrop2x:
+        case .mainCrop:
+            // 主摄内部的数码裁切（35 / 48 档）：比例来自 `FocalPreset.mainCropFactor`（= 标称 mm ÷ 24）。
+            // ⚠️ **不再写死 `* 2`**：加了 35mm 档之后，"×2"只对 48 成立，两处硬编码容易只改一处。
             guard let wide = nativeZoom(of: .wide, on: device) else { return nil }
-            return wide * 2
+            return wide * (focal.mainCropFactor ?? 1)
         case .ultraWide, .wide, .telephoto:
             return nativeZoom(of: role, on: device)
         }
@@ -231,7 +239,7 @@ enum CaptureCapabilities {
     ///    卡在边界上的档位不该被误判）。
     ///
     /// ⚠️ 这里**只判"能不能表达"，不判"是不是光学变焦"** ——
-    /// 48mm 档本来就是广角的 2× 裁切（数字），它算"能表达"（画质降级是另一回事）。
+    /// 35 / 48 两档本来就是主摄内部的数码裁切，它们算"能表达"（画质降级是另一回事，不在置灰范围）。
     static func unavailableFocalIds(for device: AVCaptureDevice) -> Set<String> {
         let range = zoomRange(of: device)
         var unavailable: Set<String> = []
