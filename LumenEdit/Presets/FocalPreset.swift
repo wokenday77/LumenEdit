@@ -151,10 +151,9 @@ enum FocalCatalog {
     static let all: [FocalPreset] = [
         FocalPreset(id: "13",  displayName: "13",  isDefault: false),
         FocalPreset(id: "24",  displayName: "24",  isDefault: true),
-        // 35mm 是 **Swift 先行扩展**（原型 `FOCALS` 仍是 4 档）→ 必须显式标 `isSwiftExtension`。
-        // 见 `FocalPreset.isSwiftExtension` 的说明与 `tools/check_presets.js` 第 4 组。
-        // 映射 = 主摄原生视场 × 35/24（**纯数码裁切**，不跨系统切换点、不换镜头）。
-        FocalPreset(id: "35",  displayName: "35",  isDefault: false, isSwiftExtension: true),
+        // 35mm：映射 = 主摄原生视场 × 35/24（**纯数码裁切**，不跨系统切换点、不换镜头）。
+        // 原型侧已于 2026-09-19 同步（CB `d9cf708`）→ **不再标 `isSwiftExtension`**，两边档位完全一致。
+        FocalPreset(id: "35",  displayName: "35",  isDefault: false),
         FocalPreset(id: "48",  displayName: "48",  isDefault: false),
         FocalPreset(id: "120", displayName: "120", isDefault: false)
     ]

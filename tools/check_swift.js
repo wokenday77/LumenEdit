@@ -1484,27 +1484,42 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
       + ', ' + z48.toFixed(3) + ') ⊂ (' + s0 + ', ' + s1 + '））');
   }
 
-  // ⑭ 声明式扩展字段 + **每档都要能解析出镜头角色**（2026-09-19 新增）
+  // ⑭ 声明式扩展字段 + **每档都要能解析出镜头角色**
+  //     （2026-09-19 新增；同日按 CB 反馈修正 —— 去掉"至少一处"的下限）
   //     a) 字段必须存在且默认 `false`（默认 true 会让"所有档位都算扩展"，等于没声明）；
-  //     b) 至少一处显式 `isSwiftExtension: true`，否则 check_presets 第 4 组必 FAIL；
+  //     b) `isSwiftExtension: true` **只允许出现在 `FocalCatalog` 的档位构造行里**
+  //        —— 防止这个标记被当成通用开关用到别处；
   //     c) **每一档都必须能在 `lensRole` 的 switch 里找到 case** —— 这是最要命的一条：
   //        新加一档却忘了配角色 → `lensRole` 返回 nil → `zoomFactor` 返回 nil →
   //        该档**永远置灰、且点不出原因**（静默的"点了没反应"，本项目明令禁止）。
+  //
+  // ⚠️ **本组只做"本地一致性"，不判断"标记该不该在"。**
+  //    "0 个扩展"（原型已同步、标记全部去掉）是**健康状态**，不是错误。
+  //    曾经这里写的是 `extDeclared < 1 → bad`（"至少要有一处"），CB 补完原型后
+  //    会把健康的 0 扩展状态误判成 FAIL —— **两边自检会打架**（CB 2026-09-19 读两边自检时发现，
+  //    已在副本预演里复现）。
+  //    「原型有几档、Swift 多出哪几档、标记该不该在」由 `check_presets.js` 第 4 组判定 ——
+  //    **只有它两边都能读**。分工写在这里，避免以后又把跨文件的断言塞回来。
   const hasExtField = /let isSwiftExtension: Bool = false/.test(focalSrc);
-  const extDeclared = (focalSrc.match(/isSwiftExtension: true/g) || []).length;
+  const extLines = focalSrc.match(/^.*isSwiftExtension:\s*true.*$/gm) || [];
+  const extMisplaced = extLines.filter(line => !/FocalPreset\(id:/.test(line)).length;
+  const extDeclared = extLines.length;
   const catalogIds = (focalSrc.match(/FocalPreset\(id: "(\d+)"/g) || [])
     .map(s => /"(\d+)"/.exec(s)[1]);
   const roleLess = catalogIds.filter(id => !roleMap[id]);
   if (!hasExtField) {
     bad('FocalPreset 缺 `isSwiftExtension: Bool = false` 字段（声明式扩展的载体）');
-  } else if (extDeclared < 1) {
-    bad('没有任何档位标 `isSwiftExtension: true` —— 若确有先行扩展，check_presets 第 4 组会 FAIL');
+  } else if (extMisplaced) {
+    bad('有 ' + extMisplaced + ' 处 `isSwiftExtension: true` 不在 FocalCatalog 的档位构造里'
+      + ' —— 这个标记只该用来标注档位');
   } else if (roleLess.length) {
     bad('这些档位在 lensRole 里没有对应角色：' + roleLess.join('、')
       + ' —— 它们会**永远置灰且点不出原因**（静默的"点了没反应"）');
   } else {
-    ok('声明式扩展齐备（' + extDeclared + ' 档标为 Swift 扩展），且 ' + catalogIds.length
-      + ' 档都能解析出镜头角色');
+    ok('声明式扩展规范（' + (extDeclared === 0
+      ? '当前 0 个扩展 —— 原型已同步'
+      : extDeclared + ' 档标为 Swift 扩展')
+      + '），且 ' + catalogIds.length + ' 档都能解析出镜头角色');
   }
 }
 
