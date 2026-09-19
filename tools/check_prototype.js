@@ -458,13 +458,35 @@ if (scriptMatch) {
   if (iconItems === 7) ok('底部图标行 = 7 项');
   else bad('底部图标行应为 7 项，实际 ' + iconItems);
 
-  // 焦段档位 13 / 24 / 48 / 120
+  // 焦段档位 13 / 24 / 35 / 48 / 120（2026-09-19：加 35mm，与 Swift 侧 FocalCatalog 对齐）
   const fi = code.indexOf('var FOCALS = [');
   const fj = fi < 0 ? -1 : code.indexOf('\n  ];', fi);
   const focalBlock = fi < 0 ? '' : code.slice(fi, fj);
   const focalCount = (focalBlock.match(/id:\s*'/g) || []).length;
-  if (focalCount === 4) ok('焦段档位 = 4（13 / 24 / 48 / 120mm）');
-  else bad('焦段档位应为 4，实际 ' + focalCount);
+  if (focalCount === 5) ok('焦段档位 = 5（13 / 24 / 35 / 48 / 120mm）');
+  else bad('焦段档位应为 5，实际 ' + focalCount);
+
+  // 焦段条宽度预算（2026-09-19 新增）：档位一多就有溢出风险，而这条以前没人守
+  // （`docs/17` 指出的原型侧盲区；Swift 侧同款检查是第 11 组 ⑫）。
+  // 药丸宽 / 间距 / 条内边距**全部从 CSS 真读** —— 改尺寸这里自动跟着变，不抄第二份数。
+  // 现在：5 档 = 5×44 + 4×9 = 256 ≤ 可用 344（屏内宽 372 − 2×14），余 88px。
+  const fPillW = (html.match(/\.focal-pill\{[^}]*width:(\d+)px/) || [])[1];
+  const fGap   = (html.match(/\.focal-strip\{[^}]*gap:(\d+)px/) || [])[1];
+  const fPad   = (html.match(/\.focal-strip\{[^}]*padding:0 (\d+)px/) || [])[1];
+  if (fPillW === undefined || fGap === undefined || fPad === undefined) {
+    bad('读不到焦段药丸尺寸（.focal-pill 的 width / .focal-strip 的 gap、padding）—— 改名了？宽度预算要跟着改');
+  } else {
+    const stripW = focalCount * +fPillW + (focalCount - 1) * +fGap;
+    const availW = 372 - 2 * +fPad;
+    if (stripW > availW) {
+      bad('焦段条放不下：' + focalCount + ' 档 = ' + focalCount + '×' + fPillW + ' + '
+        + (focalCount - 1) + '×' + fGap + ' = ' + stripW + 'px > 可用 ' + availW
+        + 'px（超 ' + (stripW - availW) + 'px）—— 减档 / 缩间距 / 改横向滚动，三选一');
+    } else {
+      ok('焦段条宽度预算：' + focalCount + ' 档 = ' + stripW + 'px ≤ 可用 ' + availW
+        + 'px（余 ' + (availW - stripW) + 'px）');
+    }
+  }
 
   // 参考图里出现过的元素，都得在原型里找得到
   const need = [

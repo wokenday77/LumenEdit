@@ -628,12 +628,47 @@ async page => {
     通过: Math.abs(tbPhoto.偏) <= 1 && Math.abs(tbVideo.偏) <= 1 && Math.abs(tbLog.偏) <= 10
   };
 
+  // ---- 20 焦段条 5 档（13/24/35/48/120，2026-09-19 加 35mm）----
+  // 断言口径：档数 5 · 条内总宽 ≤ 可用宽（不溢出）· 点 35 能选中并 toast。
+  // 宽度从渲染结果真量（自检那边是从 CSS 推算，两边互为印证）。
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const focalProbe = () => page.evaluate(() => {
+    const scr = document.getElementById('screen').getBoundingClientRect();
+    const strip = document.getElementById('focalStrip');
+    const pills = Array.from(strip.querySelectorAll('.focal-pill'));
+    const r0 = pills[0].getBoundingClientRect();
+    const rN = pills[pills.length - 1].getBoundingClientRect();
+    return {
+      档数: pills.length,
+      文字: pills.map((b) => b.textContent.trim()),
+      条内总宽: Math.round(rN.right - r0.left),
+      可用宽: Math.round(scr.width - 2 * parseFloat(getComputedStyle(strip).paddingLeft)),
+      选中: pills.filter((b) => b.classList.contains('on')).map((b) => b.textContent.trim()),
+      内容中心X: +(((r0.left + rN.right) / 2) - scr.left).toFixed(1),
+      屏中心: +(scr.width / 2).toFixed(1)
+    };
+  });
+  const focalDefault = await focalProbe();
+  await page.locator('.phone').screenshot({ path: OUT + '35-focal-5.png' });
+  await page.locator('#focalStrip .focal-pill', { hasText: '35' }).click();
+  await page.waitForTimeout(350);
+  const focal35 = await focalProbe();
+  report.焦段条 = {
+    出厂: focalDefault,
+    点35后: focal35,
+    通过: focalDefault.档数 === 5
+      && focalDefault.条内总宽 <= focalDefault.可用宽
+      && focal35.选中.length === 1 && focal35.选中[0] === '35 mm'   // 药丸文字带单位
+  };
+
   report.截图 = ['01-normal', '02-dial', '03-settings', '04-filter(真实鼠标·现场证据)',
                  '05-filter', '06-scenestyle', '07-keep-settings', '08-switches-effect',
                  '09-tone-off', '10-simple-bare', '11-fn-panel', '12-video-fmt', '13-fmt-menu',
                  '18-zoom-normal', '19-zoom-on',
                  '20-import-entry', '21-import-editor', '22-import-applied',
-                 '28-focus-new', '29-ev-mirrored', '31-shutter-reversed'];
+                 '28-focus-new', '29-ev-mirrored', '31-shutter-reversed', '35-focal-5'];
   if (missing.length) report.量不到 = missing;
 
   return JSON.stringify(report, null, 2);
