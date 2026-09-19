@@ -249,6 +249,49 @@ final class CaptureDeviceConfigurator {
         }
     }
 
+    /// 读回手动对焦档的**实际值**（`nil` = 当前不是锁定档）。
+    ///
+    /// 与 `manualExposure(of:)` / `manualWhiteBalance(of:)` 同构（B3b 补齐对焦的回读三件套）：
+    /// `focusMode` 是同一个 device 实例上的真值 —— 本地记账必然出现
+    /// "UI 说手动、设备是自动"（点按对焦/换设备都会打回自动）。
+    func manualFocus(of device: AVCaptureDevice) -> Float? {
+        guard device.focusMode == .locked else { return nil }
+        return device.lensPosition
+    }
+
+    /// **只测光、不动焦**（拍板 ③：手动对焦锁定期间，点按取景器仅更新测光点）。
+    ///
+    /// 与 `setFocusAndExposurePoint` 的分工：那个是对焦+测光一起（对焦自动档）；
+    /// 这个在用户已锁定手动对焦时用 —— **不碰 `focusPointOfInterest` / `focusMode`**。
+    ///
+    /// ⚠️ 测光点（`exposurePointOfInterest`）只在**自动曝光族**下被系统采纳：
+    ///    - 当前是自动曝光 → 顺带切连续自动（让测光立即生效）；
+    ///    - 当前是手动曝光档（`.custom`）→ POI 被系统忽略，**且绝不把手动曝光打回自动**
+    ///      （"只测光、不动别的"）。
+    func setExposurePointOnly(_ point: CGPoint, on device: AVCaptureDevice) throws {
+        let target = CGPoint(
+            x: point.x.sanitized(or: 0.5).clamped(to: 0...1),
+            y: point.y.sanitized(or: 0.5).clamped(to: 0...1)
+        )
+
+        try withLock(device) {
+            if device.isExposurePointOfInterestSupported {
+                device.exposurePointOfInterest = target
+                if device.exposureMode != .custom,
+                   device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
+                }
+            } else {
+                DebugLog.shared.warn("device", "设备不支持测光点，忽略点按测光：\(device.localizedName)")
+            }
+        }
+
+        DebugLog.shared.debug(
+            "device",
+            "点按测光（对焦已锁定，不动焦）→ (\(String(format: "%.2f", target.x)), \(String(format: "%.2f", target.y)))"
+        )
+    }
+
     // MARK: - 手动曝光档（B2 · ISO / 快门刻度条驱动）
 
     /// 切到**手动曝光档**：ISO 与曝光时长**必须同时给**。

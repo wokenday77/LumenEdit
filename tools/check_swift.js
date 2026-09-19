@@ -2055,6 +2055,162 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       }
     }
   }
+
+  // ⑱ 对焦圆盘（#8 后半 · B3b）—— 共用唯一 / 差异分派 / 回读三件套 / 能力分派 / 点按分流
+  //
+  // 为什么守：Mac 架构指示"抽共享盘底，不要抄第二份"（盘底/拖拽/字号三约定改一处两盘同步）；
+  // 对焦此前没有回读链（曝光/白平衡有），本地记账必出"UI 说手动、设备是自动"；
+  // 拍板 ③（手动锁定期间点按只测光不动焦）要落成可执行断言。
+  {
+    const dialFile18 = files.find(f => path.basename(f) === 'DialView.swift');
+    const cfgFile18 = files.find(f => path.basename(f) === 'CaptureDeviceConfigurator.swift');
+    if (!dialFile18 || !cfgFile18) {
+      bad('找不到 DialView.swift / CaptureDeviceConfigurator.swift');
+    } else {
+      const dialSrc18 = fs.readFileSync(dialFile18, 'utf8');
+      const cfgSrc18 = fs.readFileSync(cfgFile18, 'utf8');
+
+      // a) 盘底唯一来源：RadialGradient 全仓只允许出现在 DialView.swift（剥注释后匹配，
+      //    防止"注释里提 RadialGradient"误报——MEMORY 坑①）
+      const radialOwners = files
+        .filter(f => {
+          const code = fs.readFileSync(f, 'utf8').replace(/\/\/[^\n]*/g, '');
+          return /RadialGradient\(/.test(code);
+        })
+        .map(f => path.basename(f));
+      const radialOK = radialOwners.length === 1 && radialOwners[0] === 'DialView.swift';
+      if (!radialOK) {
+        bad('盘底渐变出现在 ' + radialOwners.join(' / ') + ' —— 两盘必须共用 DialView 的盘底，'
+          + '抄第二份 = 三条交互约定从此各改各的');
+      }
+
+      // b) 三条约定唯一份（都在 DialView.swift）：相对位移拖拽锚点 / 字号乘 scale / 半透明盘底
+      const convOK = /dragAnchor/.test(dialSrc18)
+        && /13 \* scale/.test(dialSrc18)
+        && /\.opacity\(0\.45\)/.test(dialSrc18);
+      if (!convOK) {
+        bad('三条交互约定不在 DialView.swift（dragAnchor 相对位移 / 13×scale 字号 / 0.45 盘底）'
+          + ' —— 它们是两盘共用的单一真源');
+      }
+
+      // c) mirror 分派：对焦工厂（mirror:false / 90° / 51 档 / 0~1）与 EV 工厂（true / 270° / 61 档 / ±3）
+      const focusCfgOK = /mirror: false/.test(dialSrc18)
+        && /pointerDeg: 90/.test(dialSrc18)
+        && /count: 51/.test(dialSrc18)
+        && /minValue: 0,/.test(dialSrc18)
+        && /maxValue: 1,/.test(dialSrc18);
+      const evCfgOK = /mirror: true/.test(dialSrc18)
+        && /pointerDeg: 270/.test(dialSrc18)
+        && /count: 61/.test(dialSrc18)
+        && /minValue: -3,/.test(dialSrc18);
+      if (!focusCfgOK || !evCfgOK) {
+        bad('DialConfig 两盘工厂的差异不齐（对焦 mirror:false/90°/51 档/0~1；EV mirror:true/270°/61 档/±3）'
+          + ' —— 指针角或值域分派错了，盘会画反');
+      }
+
+      // d) 对焦写硬件唯一入口（铁律 2 延伸）：setFocusModeLocked 只在 CaptureDeviceConfigurator
+      const focusWriters = files
+        .filter(f => {
+          const code = fs.readFileSync(f, 'utf8').replace(/\/\/[^\n]*/g, '');
+          return /setFocusModeLocked\(/.test(code);
+        })
+        .map(f => path.basename(f));
+      const focusWriterOK = focusWriters.length === 1
+        && focusWriters[0] === 'CaptureDeviceConfigurator.swift';
+      if (!focusWriterOK) {
+        bad('`setFocusModeLocked` 出现在 ' + focusWriters.join(' / ')
+          + ' —— 手动对焦写硬件只允许走 CaptureDeviceConfigurator（铁律 2）');
+      }
+
+      // e) 入口能力分派（拍板 ①·A）：虚拟多摄 toast 不开盘 + 留痕
+      const vmFocusEntry = methodBodyOf(vmSrc12, 'focusDialTapped');
+      const entryOK = !!vmFocusEntry
+        && /isManualFocusSupported/.test(vmFocusEntry)
+        && /showToast\(/.test(vmFocusEntry)
+        && /DebugLog\.shared\.warn/.test(vmFocusEntry)
+        && !/dismissTransientPopovers\(\)/.test(vmFocusEntry);
+      if (!entryOK) {
+        bad('`focusDialTapped` 缺能力分派（isManualFocusSupported + toast + warn 留痕）'
+          + '，或误调 dismissTransientPopovers（展开者会收掉自己）');
+      }
+
+      // f) 回读三件套（对焦此前没有）：configurator.manualFocus(of:) → session 发布 → VM 派生
+      const cfgReaderFocus = /func manualFocus\(of device: AVCaptureDevice\)[\s\S]{0,200}?focusMode == \.locked/
+        .test(cfgSrc18);
+      const sessFocusOK = /@Published private\(set\) var manualFocus:/.test(sessSrc12)
+        && /@Published private\(set\) var currentLensPosition:/.test(sessSrc12)
+        && /@Published private\(set\) var isManualFocusSupported/.test(sessSrc12);
+      if (!cfgReaderFocus) {
+        bad('configurator 缺 `manualFocus(of:)` 真值回读（focusMode == .locked）'
+          + ' —— 没有它对焦只能本地记账');
+      } else if (!sessFocusOK) {
+        bad('session 没有发布 manualFocus / currentLensPosition / isManualFocusSupported'
+          + ' —— 对焦回读三件套不齐');
+      }
+
+      // g) 闸门同构：focusDialValueChanged → focusEditingChanged（含 lastPushedLensPosition + setManualFocus）
+      const vmFocusChange = methodBodyOf(vmSrc12, 'focusDialValueChanged');
+      const vmFocusGate = methodBodyOf(vmSrc12, 'focusEditingChanged');
+      const focusGateOK = !!vmFocusChange && /focusEditingChanged\(/.test(vmFocusChange)
+        && !!vmFocusGate
+        && /lastPushedLensPosition/.test(vmFocusGate)
+        && /setManualFocus\(lensPosition:/.test(vmFocusGate)
+        && /isFocusAuto/.test(vmFocusGate);
+      if (!focusGateOK) {
+        bad('对焦拖动没走 `focusEditingChanged`（或闸门缺 lastPushedLensPosition / '
+          + 'setManualFocus / 自动档拦截）—— docs/14 环路会在对焦盘复发');
+      }
+
+      // h) 点按分流（拍板 ③）：手动对焦锁定期间点取景器 → 只测光（setExposurePointOnly）
+      const vmTapBody = methodBodyOf(vmSrc12, 'focusTapped');
+      const tapSplitOK = !!vmTapBody
+        && /isFocusManual/.test(vmTapBody)
+        && /setExposurePointOnly/.test(vmTapBody);
+      if (!tapSplitOK) {
+        bad('`focusTapped` 没有"手动锁定 → 只测光"分流（isFocusManual + setExposurePointOnly）'
+          + ' —— 点按会把用户锁定的对焦打回自动（拍板 ③ 违反）');
+      }
+
+      // i) 开关行几何（读 Theme 令牌复算）：盘底 + gap + 开关行 ≤ 圆心 Y + 底栈余量
+      //    （圆心 Y = 容器高 − 186；开关行底 = cy + 123 + gap + h/2 → 距容器底恒 22pt，
+      //    断言余量 ≥ 0 并打印硬数据）
+      const themeSrc18 = fs.readFileSync(themeFile2, 'utf8');
+      const tok18 = n => {
+        const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc18);
+        return m ? parseFloat(m[1]) : null;
+      };
+      const dialSize18 = tok18('dialSize');
+      const aswGap = tok18('dialAutoSwitchGap');
+      const aswH = tok18('dialAutoSwitchHeight');
+      const stackPad18 = tok18('bottomStackBottomPadding');
+      const shutter18 = tok18('shutterRowHeight');
+      const focal18 = tok18('focalStripHeight');
+      const tool18 = tok18('toolRowHeight');
+      if ([dialSize18, aswGap, aswH, stackPad18, shutter18, focal18, tool18]
+        .some(v => v === null || v === undefined)) {
+        bad('对焦开关行几何账读不到令牌（dialSize / dialAutoSwitch* / 底栈行高）');
+      } else {
+        const bottomOfSwitchFromCenter =
+          dialSize18 / 2 + aswGap + aswH;                       // 圆心以下的部分
+        const bottomBudget = stackPad18 + shutter18 + 10 + focal18 + 10 + tool18 / 2; // 圆心到容器底
+        const margin = bottomBudget - bottomOfSwitchFromCenter; // 开关行底到容器底的余量
+        if (margin < 0) {
+          bad('对焦开关行会顶出屏（余量 ' + margin.toFixed(1) + 'pt < 0）—— 压 --fd-gap 或行高');
+        } else {
+          ok('对焦开关行几何（读 Theme 复算）：圆心下方 '
+            + bottomOfSwitchFromCenter.toFixed(1) + 'pt / 预算 '
+            + bottomBudget.toFixed(1) + 'pt，余 ' + margin.toFixed(1) + 'pt');
+        }
+      }
+
+      // j) 汇总
+      if (radialOK && convOK && focusCfgOK && evCfgOK && focusWriterOK && entryOK
+        && cfgReaderFocus && sessFocusOK && focusGateOK && tapSplitOK) {
+        ok('对焦圆盘齐备（共用 DialView 唯一盘底 / 两盘工厂分派 / 对焦写硬件唯一入口 / '
+          + '能力分派 toast 不开盘 / 回读三件套 / docs/14 闸门 / 点按只测光分流）');
+      }
+    }
+  }
 }
 
 /* ---------- 结论 ---------- */

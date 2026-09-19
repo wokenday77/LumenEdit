@@ -136,8 +136,9 @@ struct CameraView: View {
 
     /// 图标行当前该点亮哪一格（原型 `.icon-item.active`）。
     ///
-    /// 规则：展开刻度条 → 对应那一格；展开 EV 圆盘 → 「曝光补偿」那一格；都没展开 → `nil`。
-    /// ⚠️ EV 圆盘与刻度条**不可能同时展开**（互斥由 VM 状态保证），所以这里不用处理优先级冲突。
+    /// 规则：展开刻度条 → 对应那一格；展开 EV 圆盘 → 「曝光补偿」格；
+    /// 展开对焦圆盘 → 「对焦」格；都没展开 → `nil`。
+    /// ⚠️ 各浮层不可能同时展开（互斥由 VM 状态保证），所以这里不用处理优先级冲突。
     private var activeToolRowItem: ToolIconRowItem? {
         if let kind = viewModel.paramStrip {
             switch kind {
@@ -146,6 +147,7 @@ struct CameraView: View {
             case .whiteBalance: return .whiteBalance
             }
         }
+        if viewModel.isFocusDialShown { return .focus }
         return viewModel.isEvDialShown ? .exposureCompensation : nil
     }
 
@@ -285,7 +287,8 @@ struct CameraView: View {
 
                 guard !swipeDidTrigger,
                       !viewModel.isExposureEditing,      // 闸门①
-                      !viewModel.isEvDialShown,          // 闸门③：EV 圆盘是模态，打开期间手势整体禁言
+                      !viewModel.isEvDialShown,          // 闸门③：圆盘是模态，打开期间手势整体禁言
+                      !viewModel.isFocusDialShown,       // 闸门③（对焦盘同款）
                       swipeAxis == .vertical,            // 闸门②
                       shouldTriggerSwipe(value) else {
                     return
@@ -381,8 +384,9 @@ struct CameraView: View {
 
                 Spacer(minLength: 0)
 
-                if let toast = viewModel.toast, !viewModel.isEvDialShown {
-                    // EV 圆盘打开期间这条 toast 由圆盘层接管（原位会被盘体盖住）
+                if let toast = viewModel.toast,
+                   !viewModel.isEvDialShown && !viewModel.isFocusDialShown {
+                    // 任一圆盘打开期间这条 toast 由圆盘层接管（原位会被盘体盖住）
                     toastView(toast)
                 }
 
@@ -454,9 +458,27 @@ struct CameraView: View {
                     onAutoToggled: nil
                 )
                 .transition(.opacity)
+            } else if viewModel.isFocusDialShown {
+                // 对焦圆盘（#8 后半 · B3b）：与 EV 盘**共用 DialView**（差异在 DialConfig），
+                // 三条交互约定（半透明盘底 / 字号缩放 / 相对位移拖拽）自动继承。
+                // 读数 = focusLensPosition（自动/手动都跟硬件回写走）；
+                // 「自动对焦」开关状态 = isFocusAuto（硬件真值回读，不本地记账）。
+                DialView(
+                    config: .focus,
+                    value: viewModel.focusLensPosition,
+                    autoMode: viewModel.isFocusAuto,
+                    toastText: viewModel.toast,
+                    onValueChanged: { value, isEditing in
+                        viewModel.focusDialValueChanged(value, isEditing: isEditing)
+                    },
+                    onValueBoxTapped: nil,
+                    onAutoToggled: { viewModel.focusAutoToggled() }
+                )
+                .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.22), value: viewModel.isEvDialShown)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isFocusDialShown)
         // 顶部浮层槽位（模式条正下方）：**录制计时** 与 **实况角标** 共用，二者互斥 ——
         // 录制只发生在视频 / Log 实况模式，实况角标只在实况模式。
         // 录制徽标从快门上方挪到这里（2026-09-17：2-3 加焦段条后，原位置会盖住药丸）。
@@ -576,7 +598,7 @@ struct CameraView: View {
                 // 未实现的给 toast 说明，设置真开设置页。
                 ToolIconRow(
                     onFrontCamera: { viewModel.frontCameraTapped() },
-                    onFocusHint: { viewModel.focusHintTapped() },
+                    onFocusHint: { viewModel.focusDialTapped() },
                     onWhiteBalance: { viewModel.whiteBalanceTapped() },
                     onISO: { viewModel.isoTapped() },
                     onShutterSpeed: { viewModel.shutterSpeedTapped() },
@@ -680,14 +702,15 @@ struct CameraView: View {
         // 刻度条的插入 / 移除动画
         .animation(.easeInOut(duration: 0.22), value: viewModel.paramStrip)
         .animation(.easeInOut(duration: 0.22), value: viewModel.isZoomOn)
-        // ⚠️ **EV 圆盘是模态**（原型 `.screen.ev-on .bottom-stack{display:none}`）：
-        // 圆盘打开时**整条底栈隐藏**（滤镜条 / 场景·风格 / 图标行 / 焦段条 / 快门排全走），
+        // ⚠️ **两颗圆盘都是模态**（原型 `.ev-on / .dial-on .bottom-stack{display:none}`）：
+        // 任一圆盘打开时**整条底栈隐藏**（滤镜条 / 场景·风格 / 图标行 / 焦段条 / 快门排全走），
         // 圆盘下只剩取景器 —— 与功能面板"盖住底栏"不同，这里是"整条收走"。
         // 用 opacity + 禁触摸（而不是条件移除）：布局稳定、过渡顺滑，圆盘圆心
         // 钉的图标行位置也不随布局跳动。
-        .opacity(viewModel.isEvDialShown ? 0 : 1)
-        .allowsHitTesting(!viewModel.isEvDialShown)
+        .opacity((viewModel.isEvDialShown || viewModel.isFocusDialShown) ? 0 : 1)
+        .allowsHitTesting(!(viewModel.isEvDialShown || viewModel.isFocusDialShown))
         .animation(.easeInOut(duration: 0.22), value: viewModel.isEvDialShown)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isFocusDialShown)
     }
 
     private func toastView(_ message: String) -> some View {

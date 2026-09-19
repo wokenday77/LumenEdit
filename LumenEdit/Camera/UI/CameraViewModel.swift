@@ -87,6 +87,27 @@ final class CameraViewModel: ObservableObject {
     /// 2026-09-18 真机踩过的坑）。
     @Published private(set) var isEvDialShown = false
 
+    /// 对焦圆盘（#8 后半 · B3b）的展开态。**不落盘**：临时浮层状态。
+    ///
+    /// 与 EV 圆盘同款**模态**（打开收整条底栈）；差异只在**入口能力分派**（拍板 ①·A）：
+    /// 虚拟多摄不支持手动对焦 → 点「对焦」图标 = **toast 说明、不开盘**
+    /// （`isManualFocusSupported`，与 B2 手动开关同款诚实边界）；物理镜头架构落地后
+    /// 探测自动变 true，盘可开、拖动写硬件，UI 零改动。
+    @Published private(set) var isFocusDialShown = false
+
+    /// 对焦读数（显示状态，0~1）。
+    ///
+    /// **自动/手动都跟硬件走**：session `currentLensPosition` 回写（自动对焦进行中
+    /// 读数"自己会走"）；拖动期由 `focusDialValueChanged` 写入、回写闸门挡住积压旧值
+    /// （`docs/14` 同构，见 `attach()` 里的对焦订阅）。
+    @Published var focusLensPosition: Double = 0.56
+
+    /// 是否处于**手动对焦档**（派生自硬件真值：`manualFocus != nil` = 已锁定）。
+    var isFocusManual: Bool { environment?.session.manualFocus != nil }
+
+    /// 是否处于**自动对焦**（对焦盘「自动对焦」开关的显示状态，派生不记账）。
+    var isFocusAuto: Bool { environment?.session.manualFocus == nil }
+
     // MARK: - 功能面板（#10）
 
     /// 功能面板（⠿）的展开态。**不落盘**：临时浮层状态。
@@ -247,6 +268,13 @@ final class CameraViewModel: ObservableObject {
     /// **切模式 / 会话就绪时必须置 `nil`**（那时硬件值来自设备而非我们推送）。
     private var lastPushedExposureBias: Float?
 
+    /// 最近一次**推送出去**的对焦值（`docs/14` 同构闸门，B3b）。
+    private var lastPushedLensPosition: Float?
+
+    /// 对焦盘**是否正在拖动**（回写闸门；对焦盘开着时整页手势本已禁言，
+    /// 这道闸门挡的是**硬件回写**链路本身）。
+    @Published private(set) var isFocusEditing = false
+
     // MARK: - 装配
 
     /// 由视图在 `onAppear` 时调用。`@StateObject` 无法在初始化时拿到 EnvironmentObject，
@@ -281,6 +309,23 @@ final class CameraViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // 对焦读数回写（B3b）：**自动/手动都跟** —— session `currentLensPosition` 是
+        // "当前镜头位置"（手动锁定时恒定 = 锁定值；自动对焦进行中实时变化，
+        // 对焦盘读数"自己会走"）。闸门与 EV 同构（`docs/14`）：
+        //   ① 拖动期不回写；② 只接受与最后推送值一致的回写。
+        environment.session.$currentLensPosition
+            .receive(on: RunLoop.main)
+            .sink { [weak self] value in
+                guard let self else { return }
+                guard !self.isFocusEditing else { return }
+                if let sent = self.lastPushedLensPosition,
+                   abs(Double(sent) - Double(value)) >= 0.001 {
+                    return
+                }
+                self.focusLensPosition = Double(value)
+            }
+            .store(in: &cancellables)
+
         // 会话侧的模式 → 同步到 UI；**同时清空"最后推送值"记录** ——
         // 切模式会重建会话，之后的硬件值来自设备（不是我们推的），必须允许回写
         environment.session.$mode
@@ -288,6 +333,7 @@ final class CameraViewModel: ObservableObject {
             .sink { [weak self] value in
                 self?.mode = value
                 self?.lastPushedExposureBias = nil
+                self?.lastPushedLensPosition = nil
             }
             .store(in: &cancellables)
 
@@ -308,6 +354,7 @@ final class CameraViewModel: ObservableObject {
             .sink { [weak self] state in
                 guard let self, state == .running else { return }
                 self.lastPushedExposureBias = nil
+                self.lastPushedLensPosition = nil
                 self.reapplyFocalAfterSessionReady()
             }
             .store(in: &cancellables)
@@ -527,7 +574,18 @@ final class CameraViewModel: ObservableObject {
     func focusTapped(viewPoint: CGPoint, devicePoint: CGPoint) {
         // 点取景器 = 对焦 + 收起功能面板（原型 viewport 的 click 处理器同时做这两件事）
         dismissTransientPopovers()
-        environment?.session.focus(atDevicePoint: devicePoint)
+        if isFocusManual {
+            // ⚠️ 拍板 ③（2026-09-19）：手动对焦锁定期间，点按**只测光、不动焦** ——
+            // 用户锁了焦就是不想让它动；测光仍有用（自动曝光档下生效）。
+            // 焦点框照常显示（UI 反馈），日志留痕。
+            environment?.session.setExposurePointOnly(devicePoint)
+            DebugLog.shared.debug(
+                "ui",
+                "手动对焦锁定中 → 点按仅测光（不动焦）"
+            )
+        } else {
+            environment?.session.focus(atDevicePoint: devicePoint)
+        }
         focusPoint = viewPoint
         focusToken &+= 1
         Haptics.focus()
@@ -657,12 +715,14 @@ final class CameraViewModel: ObservableObject {
         // 展开时的连带收起：toast 里要**说清**（本项目"状态改写必须留痕"的纪律）
         let collapsedNames = [
             isEvDialShown ? "EV 圆盘" : nil,
+            isFocusDialShown ? "对焦圆盘" : nil,
             isFilterStripExpanded ? "滤镜条" : nil,
             isSceneStyleExpanded ? "场景·风格" : nil
         ].compactMap { $0 }
 
         if willExpand {
             isEvDialShown = false
+            isFocusDialShown = false
             isFilterStripExpanded = false
             isSceneStyleExpanded = false
         }
@@ -1000,11 +1060,9 @@ final class CameraViewModel: ObservableObject {
         showToast("前后镜头切换要重建会话输入，在 P2 硬件批次交付，当前固定后置")
     }
 
-    /// 第 2 项「对焦」：**对焦本身已可用**（点取景器任意位置），手动对焦圆盘是模块 #8。
-    /// 原型里这个图标开的是圆盘（title 写成提示语是它的历史遗留），这里把两件事都说清。
-    func focusHintTapped() {
-        showToast("对焦：点按取景器任意位置即可 · 手动对焦圆盘在模块 #8 交付")
-    }
+    /// 第 2 项「对焦」：B3b 起走**能力分派**的圆盘入口 `focusDialTapped()`（见对焦圆盘一节）——
+    /// 虚拟多摄 = toast 说明不开盘；物理镜头（架构改造后）= 开对焦圆盘。
+    /// （原 `focusHintTapped` 的提示 toast 已被 `focusDialTapped` 的 toast 吸收，函数删除。）
 
     /// 第 3 项「白平衡」：展开 / 收起**白平衡刻度条**（模块 #9，B 组接线）
     func whiteBalanceTapped() {
@@ -1050,11 +1108,12 @@ final class CameraViewModel: ObservableObject {
 
         // 先记住这一下会连带收起谁（toast 只报真发生的事，不虚报）
         let willCollapseOthers = !isEvDialShown
-            && (isFilterStripExpanded || isSceneStyleExpanded || paramStrip != nil)
+            && (isFilterStripExpanded || isSceneStyleExpanded || paramStrip != nil || isFocusDialShown)
         let collapsedNames = [
             isFilterStripExpanded ? "滤镜条" : nil,
             isSceneStyleExpanded ? "场景·风格条" : nil,
-            paramStrip.map { "\($0.displayName) 刻度条" }
+            paramStrip.map { "\($0.displayName) 刻度条" },
+            isFocusDialShown ? "对焦圆盘" : nil
         ].compactMap { $0 }
 
         isEvDialShown.toggle()
@@ -1065,6 +1124,7 @@ final class CameraViewModel: ObservableObject {
             isFilterStripExpanded = false
             isSceneStyleExpanded = false
             paramStrip = nil
+            isFocusDialShown = false
             isoShutterDraft = nil
             whiteBalanceDraft = nil
             DebugLog.shared.debug(
@@ -1115,6 +1175,120 @@ final class CameraViewModel: ObservableObject {
         showToast("曝光补偿已归零")
     }
 
+    // MARK: - 对焦圆盘（#8 后半 · B3b）
+
+    /// 第 2 项「对焦」：**展开 / 收起对焦圆盘**——但先过**能力分派**（拍板 ①·A）。
+    ///
+    /// 虚拟多摄不支持手动对焦（`isLockingFocusWithCustomLensPositionSupported`，Mac 同类
+    /// 预警已进守卫）→ **toast 说明、不开盘**（与 B2 手动开关同款诚实边界，B3a 先例）；
+    /// 物理镜头架构落地后探测翻 true，本方法自动走开盘分支，UI 零改动。
+    ///
+    /// 互斥与 EV 圆盘同构：展开时收其它扩展浮层（**展开者只收别人**，不调
+    /// `dismissTransientPopovers` —— 会把刚展开的自己收掉，2026-09-18 老坑）。
+    func focusDialTapped() {
+        guard let environment else { return }
+
+        // ⚠️ 能力分派（拍板 ①·A）：不支持手动对焦 → 说明原因、不开盘。
+        // 点按对焦（点取景器）现在就有用，提示里必须说清，不做"功能全没了"的误导。
+        guard environment.session.isManualFocusSupported else {
+            DebugLog.shared.warn(
+                "ui",
+                "点「对焦」手动圆盘被拒：虚拟多摄不支持手动对焦（能力探测 = false，"
+                    + "物理镜头架构 docs/18 落地后开放）"
+            )
+            showToast("手动对焦：当前多摄虚拟设备不支持 · 点取景器任意位置仍可自动对焦")
+            return
+        }
+
+        // 先记住这一下会连带收起谁（toast 只报真发生的事，不虚报）
+        let willCollapseOthers = !isFocusDialShown
+            && (isFilterStripExpanded || isSceneStyleExpanded || paramStrip != nil || isEvDialShown)
+        let collapsedNames = [
+            isFilterStripExpanded ? "滤镜条" : nil,
+            isSceneStyleExpanded ? "场景·风格条" : nil,
+            paramStrip.map { "\($0.displayName) 刻度条" },
+            isEvDialShown ? "EV 圆盘" : nil
+        ].compactMap { $0 }
+
+        isFocusDialShown.toggle()
+        Haptics.tick()
+
+        if isFocusDialShown {
+            // 展开者只收别人（含另一颗盘 —— 两盘同位置互斥，原型"开一个关另一个"）
+            isFilterStripExpanded = false
+            isSceneStyleExpanded = false
+            paramStrip = nil
+            isEvDialShown = false
+            isoShutterDraft = nil
+            whiteBalanceDraft = nil
+            DebugLog.shared.debug(
+                "ui",
+                "对焦圆盘展开（入口：图标行「对焦」）"
+                    + (willCollapseOthers ? " · 连带收起 \(collapsedNames.joined(separator: "、"))" : "")
+            )
+            let suffix = willCollapseOthers
+                ? " · \(collapsedNames.joined(separator: "与"))已收起"
+                : " · 再点收起"
+            showToast("手动对焦：拖动圆盘调焦（0.0 近 → ∞ 远）\(suffix)")
+        } else {
+            DebugLog.shared.debug("ui", "对焦圆盘收起（入口：图标行「对焦」）")
+            showToast("已收起对焦圆盘")
+        }
+    }
+
+    /// 对焦圆盘拖动（**每跨 0.01 一次**；`isEditing` 在拖动开始/结束由控件上报）。
+    ///
+    /// 编辑态闸门与 EV 同构（`docs/14`）：先写显示值，再走 `focusEditingChanged`
+    /// （记 `lastPushedLensPosition` + `setManualFocus`）；硬件回写由 `attach()` 里
+    /// 对焦订阅的两道守卫挡住。
+    func focusDialValueChanged(_ value: Double, isEditing: Bool) {
+        if focusLensPosition != value {
+            focusLensPosition = value
+        }
+        focusEditingChanged(isEditing)
+    }
+
+    /// 对焦编辑态闸门（`docs/14` 同构；另守"自动对焦开着时不推手动对焦"）。
+    func focusEditingChanged(_ isEditing: Bool) {
+        if isFocusEditing != isEditing {
+            isFocusEditing = isEditing
+        }
+        guard !isFocusAuto else {
+            lastPushedLensPosition = nil
+            DebugLog.shared.warn(
+                "ui",
+                "自动对焦开着时收到手动拖动 → 已拦下（盘面本应锁定，出现这条说明拦漏了）"
+            )
+            return
+        }
+        lastPushedLensPosition = Float(focusLensPosition)
+        environment?.session.setManualFocus(lensPosition: Float(focusLensPosition))
+    }
+
+    /// 对焦盘「自动对焦」开关（原型 `#fdAuto`：开=自动找焦点并锁定拖动；关=停在当前值）。
+    ///
+    /// - 开：`setAutoFocusMode()`（连续自动优先）；读数随 `currentLensPosition` 回写
+    ///   实时走（不需要原型的模拟动画 —— 那是"原型没有真硬件"的代偿）。
+    /// - 关：把**当前读数**写成锁定值（`setManualFocus`），数值停在原地恢复拖动
+    ///   （原型同款："关 → 立刻停住，数值停在当前值"）。
+    func focusAutoToggled() {
+        guard let environment else { return }
+        if isFocusAuto {
+            environment.session.setManualFocus(lensPosition: Float(focusLensPosition))
+            Haptics.tick()
+            DebugLog.shared.debug(
+                "ui",
+                "自动对焦已关 → 手动（当前值 \(String(format: "%.2f", focusLensPosition)) 锁定）"
+            )
+            showToast("自动对焦已关：现在可以拖动圆盘手动调焦")
+        } else {
+            environment.session.setAutoFocusMode()
+            Haptics.tick()
+            DebugLog.shared.debug("ui", "自动对焦已开 → 连续自动（手动拖动已锁定）")
+            showToast("自动对焦已开：正在自动找焦点（手动拖动已锁定）")
+        }
+    }
+
     // MARK: - 场景 · 风格（#6）
 
     /// 展开 / 收起场景·风格条。三个入口（折叠胶囊 / 箭头 / 快门排风格方块）都走它。
@@ -1130,10 +1304,11 @@ final class CameraViewModel: ObservableObject {
     func toggleSceneStyle(source: String = "胶囊") {
         // 先记住"这一下会不会连带收起别的浮层"，toast 才说得准
         let willCollapseOthers = !isSceneStyleExpanded
-            && (isFilterStripExpanded || isEvDialShown || paramStrip != nil)
+            && (isFilterStripExpanded || isEvDialShown || isFocusDialShown || paramStrip != nil)
         let collapsedNames = [
             isFilterStripExpanded ? "滤镜条" : nil,
             isEvDialShown ? "EV 圆盘" : nil,
+            isFocusDialShown ? "对焦圆盘" : nil,
             paramStrip.map { "\($0.displayName) 刻度条" }
         ].compactMap { $0 }
 
@@ -1141,6 +1316,7 @@ final class CameraViewModel: ObservableObject {
         if isSceneStyleExpanded {
             isFilterStripExpanded = false
             isEvDialShown = false
+            isFocusDialShown = false
             paramStrip = nil
             isoShutterDraft = nil
             whiteBalanceDraft = nil
@@ -1226,25 +1402,27 @@ final class CameraViewModel: ObservableObject {
         dismissTransientPopovers()
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格、EV 圆盘与刻度条
+                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格、两颗圆盘与刻度条
                 // 连带收起时在提示里说明（同一类"状态被改写要留痕"，2026-09-18）
-                let dialNote = isEvDialShown ? "（EV 圆盘已收起）" : ""
+                let dialNote = (isEvDialShown || isFocusDialShown) ? "（圆盘已收起）" : ""
                 let stripNote = paramStrip.map { "（\($0.displayName) 刻度条已收起）" } ?? ""
                 isFilterStripExpanded = true
                 isSceneStyleExpanded = false
                 isEvDialShown = false
+                isFocusDialShown = false
                 paramStrip = nil
                 isoShutterDraft = nil
                 whiteBalanceDraft = nil
                 Haptics.tick()
                 showToast("已呼出滤镜条 · 再上划一次呼出场景与风格\(dialNote)\(stripNote)")
             } else if isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条、EV 圆盘与刻度条
-                let dialNote = isEvDialShown ? "（EV 圆盘已收起）" : ""
+                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条、两颗圆盘与刻度条
+                let dialNote = (isEvDialShown || isFocusDialShown) ? "（圆盘已收起）" : ""
                 let stripNote = paramStrip.map { "（\($0.displayName) 刻度条已收起）" } ?? ""
                 isFilterStripExpanded = false
                 isSceneStyleExpanded = true
                 isEvDialShown = false
+                isFocusDialShown = false
                 paramStrip = nil
                 isoShutterDraft = nil
                 whiteBalanceDraft = nil
@@ -1260,29 +1438,30 @@ final class CameraViewModel: ObservableObject {
             } else if isFilterStripExpanded {
                 collapseOverlays()
                 showToast("已收起滤镜条")
-            } else if isEvDialShown || paramStrip != nil {
+            } else if isEvDialShown || isFocusDialShown || paramStrip != nil {
                 collapseOverlays()
-                showToast("已收起 EV 圆盘 / 刻度条")
+                showToast("已收起 EV 圆盘 / 对焦圆盘 / 刻度条")
             } else {
                 showToast("没有更多可收起的浮层")
             }
         }
     }
 
-    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / **EV 圆盘** / 参数刻度条。
+    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / **EV 圆盘** /
+    /// **对焦圆盘** / 参数刻度条。
     ///
-    /// ✅ **原型 `collapseAll` 的 4 样至此一一对应**
-    ///（场景·风格 / 滤镜条 / 刻度条区 / EV 圆盘 —— 第 4 样 B3a 落地，替换掉退场的参数排）。
+    /// ✅ 与原型 `collapseAll` 一致（场景·风格 / 滤镜条 / 刻度条区 / 两颗圆盘）。
     /// ⚠️ 功能面板（#10）**不在这里**：它是模态浮层，不是"扩展浮层"（原型 `collapseAll` 也不碰
     /// `fnOpen`）；它是**反向**关系 —— 开面板时收起这些（见 `toggleFunctionPanel()`）。
     private func collapseOverlays() {
         guard isFilterStripExpanded || isSceneStyleExpanded
-            || isEvDialShown || paramStrip != nil else {
+            || isEvDialShown || isFocusDialShown || paramStrip != nil else {
             return
         }
         isFilterStripExpanded = false
         isSceneStyleExpanded = false
         isEvDialShown = false
+        isFocusDialShown = false
         paramStrip = nil
         // 收起刻度条时草稿一并作废（否则下次展开会先闪一下旧草稿值）
         isoShutterDraft = nil
@@ -1333,6 +1512,7 @@ final class CameraViewModel: ObservableObject {
         dismissFormatSelectorIfNeeded()
         dismissParamStripIfNeeded()
         dismissEvDialIfNeeded()
+        dismissFocusDialIfNeeded()
     }
 
     /// 点别处收起 **EV 圆盘**（原型全局 pointerdown 3037：排除 `evWrap` / `iconEV`，
@@ -1343,6 +1523,16 @@ final class CameraViewModel: ObservableObject {
         guard isEvDialShown else { return }
         DebugLog.shared.debug("ui", "EV 圆盘收起（点别处）")
         isEvDialShown = false
+    }
+
+    /// 点别处收起**对焦圆盘**（原型全局 pointerdown 3488：排除 `focusDial` / `btnFocusHint`）
+    /// —— 与 EV 盘同款"逐点接线"。
+    ///
+    /// ⚠️ **展开者（`focusDialTapped`）不能调本函数**（老坑同上）。
+    func dismissFocusDialIfNeeded() {
+        guard isFocusDialShown else { return }
+        DebugLog.shared.debug("ui", "对焦圆盘收起（点别处）")
+        isFocusDialShown = false
     }
 
     /// 点别处收起**参数刻度条**（与 #10 / #11 同款"逐点接线"）

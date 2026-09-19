@@ -87,6 +87,20 @@ final class CaptureSessionController: ObservableObject {
     /// 手动白平衡档的当前值（`nil` = 自动档）。同样从设备回读。
     @Published private(set) var manualWhiteBalance: (temperature: Float, tint: Float)?
 
+    /// 手动对焦档的当前值（`nil` = 自动档；锁定时 = `lensPosition` 0~1）。从设备回读。
+    ///
+    /// B3b 补齐对焦回读三件套（此前只有曝光/白平衡有）：本地记账必然出现
+    /// "UI 说手动、设备是自动"（点按对焦/换设备都会打回自动）。
+    @Published private(set) var manualFocus: Float?
+
+    /// 设备**当前**的镜头位置（0~1；**自动档也有效** —— 自动对焦进行中实时跟随）。
+    /// 对焦圆盘的读数源：手动锁定时它就是锁定值（恒定），自动对焦时读数"自己会走"。
+    @Published private(set) var currentLensPosition: Float = 0.5
+
+    /// 手动对焦在这台设备上是否可用（虚拟多摄不支持 → `false` = 对焦盘入口 toast 不开盘）。
+    /// 与 `isManualExposureSupported` / `isManualWhiteBalanceSupported` 同款能力探测。
+    @Published private(set) var isManualFocusSupported = false
+
     /// 三条刻度条在这台设备上**不可用**的档位值（UI 置灰用；空字典 = 还没算过）。
     ///
     /// 会话就绪 / 切模式 / 每次手动写入后重算 —— 因为设备可用域随 `activeFormat` 变。
@@ -449,6 +463,56 @@ final class CaptureSessionController: ObservableObject {
         }
     }
 
+    // MARK: - 手动对焦（B3b · 对焦圆盘接线）
+
+    /// 手动对焦（对焦圆盘拖动写硬件；虚拟多摄不支持 —— UI 已按能力分派，这里是最后防线）。
+    func setManualFocus(lensPosition: Float) {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.configurator.setManualFocus(lensPosition: lensPosition, on: device)
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "手动对焦失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// 切到**自动对焦**（对焦盘「自动对焦」开关打开时）
+    func setAutoFocusMode() {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.configurator.setAutoFocus(on: device)
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "切自动对焦失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// **只测光、不动焦**（拍板 ③：手动对焦锁定期间，点按取景器仅更新测光点）。
+    func setExposurePointOnly(_ point: CGPoint) {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.configurator.setExposurePointOnly(point, on: device)
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "点按测光失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
     /// **一次刷新**"手动档真值 + 刻度条可用域"并发布给 UI。
     ///
     /// 调用点（每一处设备可能改变曝光/白平衡档位的地方都要调）：
@@ -468,6 +532,8 @@ final class CaptureSessionController: ObservableObject {
         let currentISO = device.iso
         let currentSeconds = device.exposureDuration.safeSeconds
         let currentKelvin = configurator.currentTemperature(of: device)
+        let currentLens = device.lensPosition
+        let focus = configurator.manualFocus(of: device)
         var unavailable: [ParameterStripKind: Set<Double>] = [:]
         for kind in ParameterStripKind.allCases {
             unavailable[kind] = CaptureCapabilities.unavailableStripValues(for: kind, on: device)
@@ -475,6 +541,7 @@ final class CaptureSessionController: ObservableObject {
         // 手动参数能力（虚拟多摄不支持，见属性注释）：能力探测一次，随本方法一起发布。
         let manualExposureOK = CaptureCapabilities.supportsManualExposure(device)
         let manualWhiteBalanceOK = CaptureCapabilities.supportsManualWhiteBalance(device)
+        let manualFocusOK = CaptureCapabilities.supportsManualFocus(device)
         // 冷启动那几帧白平衡还没初始化（增益无效 → `temperatureAndTintValues(for:)` 会抛异常，
         // 见 `CaptureDeviceConfigurator.temperatureAndTintValues(of:)` 的说明），
         // 此时色温只能给兜底值 5600K。记一笔，等快照轮询发现增益就绪时**补发一次**，
@@ -491,6 +558,10 @@ final class CaptureSessionController: ObservableObject {
             self.unavailableStripValues = unavailable
             self.isManualExposureSupported = manualExposureOK
             self.isManualWhiteBalanceSupported = manualWhiteBalanceOK
+            // 对焦（B3b 补齐回读三件套）
+            self.manualFocus = focus
+            self.currentLensPosition = currentLens
+            self.isManualFocusSupported = manualFocusOK
         }
     }
 
@@ -730,12 +801,13 @@ final class CaptureSessionController: ObservableObject {
                     "session",
                     CaptureCapabilities.zoomTopologyDescription(of: device)
                 )
-                // 手动参数能力一行（Mac 复验核法：虚拟多摄上应两个 false；
+                // 手动参数能力一行（Mac 复验核法：虚拟多摄上应三个 false；
                 // 物理镜头架构 docs/18 落地后按探测自动变 true）
                 DebugLog.shared.info(
                     "session",
                     "手动参数能力：曝光(custom)=\(CaptureCapabilities.supportsManualExposure(device))"
                         + " / 白平衡(锁定增益)=\(CaptureCapabilities.supportsManualWhiteBalance(device))"
+                        + " / 对焦(锁定位置)=\(CaptureCapabilities.supportsManualFocus(device))"
                 )
                 DebugLog.shared.info("session", "会话配置完成，Live Photo 支持=\(livePhotoSupported)")
             }
