@@ -140,6 +140,21 @@ struct CameraView: View {
         viewModel.isExposurePanelExpanded && !viewModel.isZoomOn
     }
 
+    /// 图标行当前该点亮哪一格（原型 `.icon-item.active`）。
+    ///
+    /// 规则：展开刻度条 → 对应那一格；展开参数排 → 「曝光补偿」那一格；都没展开 → `nil`。
+    /// ⚠️ 参数排（EV）与刻度条**不可能同时展开**（同槽互斥），所以这里不用处理优先级冲突。
+    private var activeToolRowItem: ToolIconRowItem? {
+        if let kind = viewModel.paramStrip {
+            switch kind {
+            case .iso: return .iso
+            case .shutter: return .shutterSpeed
+            case .whiteBalance: return .whiteBalance
+            }
+        }
+        return viewModel.isExposurePanelExpanded ? .exposureCompensation : nil
+    }
+
     // MARK: - 功能面板（#10）
 
     /// 功能面板的 7 格（**顺序即版式**，见 `docs/12` 第三节）。
@@ -548,13 +563,20 @@ struct CameraView: View {
                     onISO: { viewModel.isoTapped() },
                     onShutterSpeed: { viewModel.shutterSpeedTapped() },
                     onExposureCompensation: { viewModel.exposureCompensationTapped() },
-                    onSettings: { env.showSettings = true }
+                    onSettings: { env.showSettings = true },
+                    // 当前展开的那一格点亮（原型 `.icon-item.active`）——
+                    // 用户一眼能看出"这条浮层是从哪一格开的"
+                    activeItem: activeToolRowItem
                 )
 
                 // 参数排（EV 面板）：**默认收起**，点图标行「曝光补偿」展开 / 收起。
                 // 顺序对齐原型 `.strip-panel{ order:2 }` —— 图标行在上、面板紧贴其下。
                 // （2026-09-18 由常驻改为可收起：常驻时既没有关闭入口，又把常态净可见
                 //   压到 50% 以下、还吃掉了上滑手势的起手区，见 `isExposurePanelExpanded` 注释。）
+                // ⚠️ **参数排（EV 面板）与刻度条区占的是同一个槽位**（图标行之下那一行），
+                // 所以用 **if / else if** 收口 —— 不写两个独立 `if`。
+                // 两个独立 `if` 在状态竞争下会**同时为真**（本项目在浮层互斥上翻过车），
+                // 而且两块加起来 88 + 16 + 72 = 176pt 会当场顶破净可见底线。
                 if isExposurePanelShown {
                     ExposurePanel(
                         exposureBias: $viewModel.exposureBias,
@@ -564,8 +586,25 @@ struct CameraView: View {
                         // 取交集后是 ±2（13 档 / 每档约 28pt），硬件侧仍按设备范围 clamp。
                         range: env.session.exposureBiasRange.intersected(with: Float.evUIRange),
                         isEnabled: env.session.state == .running && !viewModel.isSaving,
+                        // 手动 ISO/快门 档下整块禁用 + 说明（EV 与手动档互斥，见 `ExposurePanel` 注释）
+                        isManualExposureActive: viewModel.isISOShutterAuto == false,
                         onEditingChanged: { isEditing in
                             viewModel.exposureEditingChanged(isEditing)
+                        }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let stripKind = viewModel.paramStrip {
+                    // 参数刻度条（#9 / B2）：三条一次只显示一条（`paramStrip` 单值寄存保证）
+                    ParameterStripView(
+                        kind: stripKind,
+                        steps: ParameterStripCatalog.steps(for: stripKind),
+                        // 显示值：拖动期是本地草稿（跟手）、其余时刻是**硬件真值** —— 见 VM
+                        displayValue: viewModel.stripDisplayValue(stripKind),
+                        isAuto: viewModel.isAutoStrip(stripKind),
+                        unavailableValues: viewModel.unavailableStripValues(for: stripKind),
+                        onToggleAuto: { viewModel.stripAutoToggled(stripKind) },
+                        onValueChanged: { value, isEditing in
+                            viewModel.stripValueChanged(stripKind, value: value, isEditing: isEditing)
                         }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -588,11 +627,18 @@ struct CameraView: View {
             // 代价（如实记录）：放大态下它与卡片底边的间隙是 16pt（底栈统一行距），
             // 原型写的是 12pt；差 4pt，为此再引入一层绝对定位不划算。
             //
-            // ⚠️ 场景·风格展开**或**滤镜条展开时**整行收起**（#6 / #7，原型
-            // `.ss-on/.filter-on .row-focal`）：那两条要占 147 / 144pt，
-            // 焦段条再占一行会把底部栈撑得过高。放大态下滤镜条本来就隐藏
-            //（`isFilterStripShown` 为 false），焦段条照常落进卡片内底边。
-            if !viewModel.isSceneStyleExpanded && !isFilterStripShown {
+            // ⚠️ **扩展浮层展开时焦段条整行让位**（统一规则，原型 `.ss-on/.filter-on .row-focal`）：
+            //   · 场景·风格（147pt）/ 滤镜条（144pt）—— #6 / #7 既有
+            //   · **参数排（EV 面板 72pt）与刻度条区（88pt）—— B2b 补上**（`docs/16` 拍板 ②）
+            //
+            // 为什么参数排/刻度条也要让位：不让位的话底栏栈 = 内边距 + 快门排 80 + 焦段条 44
+            // + 图标行 44 + 面板 + 行距，844 机型上**任何面板高度都过不了 50%**（`docs/16` 第三.2 节
+            // 逐机型复算过：让位后 874/852/844 的余量都 ≥5pp）。
+            // 放大态下这些本来就都隐藏，焦段条照常落进取景卡片的内底边。
+            if !viewModel.isSceneStyleExpanded
+                && !isFilterStripShown
+                && !isExposurePanelShown
+                && viewModel.paramStrip == nil {
                 FocalStripView(
                     selection: viewModel.focal,
                     // B1：设备覆盖不到的档位置灰（仍可点 —— 点了给 toast 说明原因）
@@ -630,6 +676,8 @@ struct CameraView: View {
         // isZoomOn 也要绑：放大态把两者强制隐藏时同样走过渡，而不是瞬移消失。
         .animation(.easeInOut(duration: 0.22), value: viewModel.isFilterStripExpanded)
         .animation(.easeInOut(duration: 0.22), value: viewModel.isExposurePanelExpanded)
+        // 刻度条的插入 / 移除动画（与参数排同一个槽位、同一套过渡）
+        .animation(.easeInOut(duration: 0.22), value: viewModel.paramStrip)
         .animation(.easeInOut(duration: 0.22), value: viewModel.isZoomOn)
     }
 

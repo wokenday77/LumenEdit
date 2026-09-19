@@ -1735,6 +1735,184 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
   } else {
     ok('刻度条显示值：拖动期取草稿（跟手）+ 其余取硬件真值（无本地镜像状态，环路结构性不存在）');
   }
+
+  // ⑥ 参数排（EV 面板）与刻度条区**同槽互斥**（`docs/16` 第四.2 节）
+  //
+  // 为什么必须守：两者占的是**同一行**（图标行之下）。写成两个独立 `if`，
+  // 状态竞争下会**同时为真** —— 两块加起来 88 + 16 + 72 = 176pt，当场顶破净可见底线，
+  // 而且"同槽"的版式语义也破了。本项目在浮层互斥上翻过车，所以这里用结构守死。
+  {
+    const view12 = fs.readFileSync(camViewFile, 'utf8');
+    // ⚠️ 窗口要盖得住 `ExposurePanel(…)` 那一整块（含它的注释，约 1.6k 字符）——
+    //    窗口太窄会**误判成"不是 else if"** 而不是"两个独立 if"，报错指不到根因
+    //    （2026-09-19 变异测试 M30 第一次就撞上这个：FAIL 报了，但文案对不上）。
+    const sameSlot = /if isExposurePanelShown \{[\s\S]{0,2500}?\} else if let \w+ = viewModel\.paramStrip \{[\s\S]{0,1600}?ParameterStripView\(/
+      .test(view12);
+    const twoIndependentIfs = /if isExposurePanelShown \{[\s\S]{0,2500}?\}\s*if let \w+ = viewModel\.paramStrip/
+      .test(view12);
+    const stripRendered = /ParameterStripView\(/.test(view12);
+    if (!stripRendered) {
+      bad('CameraView 没有渲染 ParameterStripView —— 刻度条数据层建好了但界面上出不来');
+    } else if (twoIndependentIfs) {
+      bad('参数排与刻度条被写成了**两个独立 if** —— 会同时展开（同槽互斥破了，净可见也破了）');
+    } else if (!sameSlot) {
+      bad('参数排与刻度条不是 `if … else if …` 收口的同槽互斥');
+    } else {
+      ok('参数排与刻度条同槽互斥（`if … else if …` 收口，不会同时展开）');
+    }
+  }
+
+  // ⑩ 净可见账（B2-0 的成果 · **分母取安全区高**，用户 2026-09-19 拍板 ①）
+  //
+  // 算式（与 `docs/16` 第三.2 节一字不差）：
+  //   底栏块 = 底内边距 + Σ行高 + 行距 × 间隙数
+  //   净可见 = 安全区高 − (上内边距 + 顶栏) − 底栏块
+  //   约束   = 净可见 ≥ 50% × 安全区高
+  // 行高**全部从 `Theme` 真读**；EV 面板高从 `ParameterSlider` 的
+  // 标题行 `minHeight` + 轨道 `thumbDiameter` + 两个间距推导（面板高是内容算出来的，没有令牌）。
+  // ⚠️ 为什么必须"逐机型复算"：`docs/11` 那套旧算式（分母取整屏高 + 漏掉常驻的场景·风格条）
+  // 在 844 机型上会把常态算成 50.2%（只剩 2pt 余量），口径一改结论就翻。
+  {
+    const themeSrcAll = fs.readFileSync(themeFile2, 'utf8');
+    const tok = n => {
+      const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrcAll);
+      return m ? parseFloat(m[1]) : null;
+    };
+    const spacingBlockAll = /enum Spacing \{[\s\S]*?\n    \}/.exec(themeSrcAll);
+    const spacingTok = n => {
+      if (!spacingBlockAll) return null;
+      const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(spacingBlockAll[0]);
+      return m ? parseFloat(m[1]) : null;
+    };
+
+    const sliderFile = files.find(f => path.basename(f) === 'ParameterSlider.swift');
+    const sliderSrcAll = sliderFile ? fs.readFileSync(sliderFile, 'utf8') : '';
+    const titleRowMatch = /frame\(minWidth: 56, minHeight: ([0-9.]+)\)/.exec(sliderSrcAll);
+    const thumbMatch = /thumbDiameter: CGFloat = ([0-9.]+)/.exec(sliderSrcAll);
+
+    const gap = spacingTok('md');
+    const pad = spacingTok('sm');
+    const rowScene = tok('sceneStyleCollapsedHeight');
+    const rowSceneOpen = tok('sceneStyleExpandedHeight');
+    const rowTool = tok('toolRowHeight');
+    const rowFocal = tok('focalStripHeight');
+    const rowShutter = tok('shutterRowHeight');
+    const rowFilter = tok('filterStripExpandedHeight');
+    const rowStrip = tok('paramStripHeight');
+    const topBar = tok('topBarHeight');
+
+    const missing = Object.entries({
+      gap, pad, rowScene, rowSceneOpen, rowTool, rowFocal, rowShutter, rowFilter,
+      rowStrip, topBar, titleRow: titleRowMatch ? parseFloat(titleRowMatch[1]) : null,
+      thumb: thumbMatch ? parseFloat(thumbMatch[1]) : null
+    }).filter(([, v]) => v === null).map(([k]) => k);
+
+    if (missing.length) {
+      bad('净可见账读不到这些令牌：' + missing.join(' / ') + '（改名了？自检需要同步）');
+    } else {
+      const titleRow = parseFloat(titleRowMatch[1]);
+      const thumb = parseFloat(thumbMatch[1]);
+      // EV 面板高 = 标题行 + 间距 + 轨道 + 上下内边距；手动档多一行说明（**按一行算**）
+      const evPanel = titleRow + (spacingTok('xs') || 6) + thumb + 2 * pad;
+
+      // ⚠️ 手动档那句说明**必须短到一行**：每多一行面板就高 12pt，
+      //    而 844 机型在 EV 面板态只剩 0.8pp 余量（下面这张账就是证据）。
+      //    所以这里核一下它的长度（≤ 20 字）—— 改长了当场报出来。
+      const panelFile = files.find(f => path.basename(f) === 'ExposurePanel.swift');
+      const panelSrc = panelFile ? fs.readFileSync(panelFile, 'utf8') : '';
+      const noteMatch = /Text\("(手动[^"]*)"\)/.exec(panelSrc);
+      const noteText = noteMatch ? noteMatch[1] : null;
+      const noteChars = noteText ? Array.from(noteText).length : 0;
+      const noteOneLine = noteChars > 0 && noteChars <= 20;
+      const evPanelManual = evPanel + 12;   // 多一行 10pt 文案 ≈ 12pt
+
+      if (!noteText) {
+        bad('ExposurePanel 里找不到"手动档"的说明文案（改措辞了？自检需要同步）');
+      } else if (!noteOneLine) {
+        bad('ExposurePanel 的手动档说明有 ' + noteChars + ' 字（> 20）—— 会折成两行、'
+          + '面板高 12pt，844 机型的净可见会掉到 50% 以下');
+      }
+      const topBlock = pad + topBar;
+
+      const devices = [
+        { name: 'iPhone 16 Pro（874）', screen: 874, safe: 778 },
+        { name: 'iPhone 16 / 15（852）', screen: 852, safe: 756 },
+        { name: 'iPhone 14（844）', screen: 844, safe: 748 }
+      ];
+      // 每一态 = 底栏里从上到下的行高（不含底内边距与行距，下面按 rows 数自动算）
+      const states = [
+        { key: '常态', rows: [rowScene, rowTool, rowFocal, rowShutter], mustPass: true },
+        { key: '刻度条展开', rows: [rowScene, rowTool, rowStrip, rowShutter], mustPass: true },
+        { key: 'EV 面板展开（自动档）', rows: [rowScene, rowTool, evPanel, rowShutter], mustPass: true },
+        { key: 'EV 面板展开（手动档）', rows: [rowScene, rowTool, evPanelManual, rowShutter], mustPass: true },
+        { key: '场景·风格展开', rows: [rowSceneOpen, rowTool, rowShutter], mustPass: false },
+        { key: '滤镜条展开', rows: [rowFilter, rowScene, rowTool, rowShutter], mustPass: false }
+      ];
+
+      const lines = [];
+      let brokeMust = false;
+      let brokeOther = [];
+      for (const st of states) {
+        const stack = pad + st.rows.reduce((a, b) => a + b, 0) + gap * (st.rows.length - 1);
+        const percents = devices.map(d => {
+          const net = d.safe - topBlock - stack;
+          return net / d.safe * 100;
+        });
+        const worst = Math.min(...percents);
+        const flag = worst >= 50 ? '' : ' ⚠️ 低于 50%';
+        lines.push(st.key + ' 底栏块 ' + stack.toFixed(1) + 'pt → '
+          + percents.map(p => p.toFixed(1) + '%').join(' / ') + flag);
+        if (worst < 50) {
+          if (st.mustPass) brokeMust = true;
+          else brokeOther.push(st.key + '（最差 ' + worst.toFixed(1) + '%）');
+        }
+      }
+
+      if (brokeMust) {
+        bad('净可见破 50%（分母取安全区高）：' + lines.join(' ｜ '));
+      } else {
+        ok('净可见 ≥ 50%（分母取安全区高 · 874/852/844）：' + lines.join(' ｜ '));
+      }
+      if (brokeOther.length) {
+        // 既有问题，**不是 FAIL** —— 但必须留痕（不做"悄悄放过"）
+        console.log('  注意  这些**既有**状态仍是 < 50%（不在 B2 范围，需单独拍板）：'
+          + brokeOther.join('、'));
+      }
+    }
+  }
+
+  // ⑮ 图标行高亮态（B2b）：`activeItem` 存在 + 展开的那一格用原型那个绿 + 旧 `isAccent` 已退场
+  //
+  // 为什么守：原来「曝光补偿」恒用 accent（琥珀）高亮，理由是"七项里唯一可用的参数入口"——
+  // B2 之后白平衡/感光/快门都能用了，那个理由不成立。改成"**当前展开的那一格**高亮"
+  // （原型 `.icon-item.active`），并且统一用原型那个绿，避免同一行里两种语义的强调色。
+  {
+    const toolFile = files.find(f => path.basename(f) === 'ToolIconRow.swift');
+    const toolSrc = toolFile ? fs.readFileSync(toolFile, 'utf8') : '';
+    const hasActive = /var activeItem: ToolIconRowItem\?/.test(toolSrc);
+    const itemEnum = /enum ToolIconRowItem: String, CaseIterable \{[\s\S]{0,400}?case settings/
+      .test(toolSrc);
+    const usesOkGreen = /isActive \? Theme\.Palette\.ok/.test(toolSrc);
+    const legacyAccent = /isAccent/.test(toolSrc);
+    const a11y = /accessibilityAddTraits\(isActive \? \[\.isSelected\]/.test(toolSrc);
+    const viewUsesActive = /activeItem: activeToolRowItem/.test(
+      fs.readFileSync(camViewFile, 'utf8')
+    );
+    if (!hasActive || !itemEnum) {
+      bad('ToolIconRow 缺 `activeItem` / `ToolIconRowItem` 枚举 —— 展开态没有高亮，'
+        + '用户看不出"这条浮层是从哪一格开的"');
+    } else if (!usesOkGreen) {
+      bad('图标行的高亮没用 `Theme.Palette.ok`（原型 `.icon-item.active` 用的是绿）');
+    } else if (legacyAccent) {
+      bad('图标行还留着旧的 `isAccent`（"七项里唯一可用的参数入口"那个理由 B2 之后不成立）');
+    } else if (!a11y) {
+      bad('图标行高亮缺无障碍标记（`.isSelected` 特性）');
+    } else if (!viewUsesActive) {
+      bad('CameraView 没有把 `activeToolRowItem` 传给图标行 —— 高亮态永远不亮');
+    } else {
+      ok('图标行高亮态齐备（activeItem + 原型绿 + .isSelected 标记，旧 isAccent 已退场）');
+    }
+  }
 }
 
 /* ---------- 结论 ---------- */

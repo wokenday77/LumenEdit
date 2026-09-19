@@ -102,6 +102,32 @@ enum Theme {
         static let formatOptionFill = Color.white.opacity(0.05)
         /// 选择器底注上方的分隔线（原型 `.fm-note{ border-top:.5px solid rgba(255,255,255,.07) }`）
         static let formatNoteSeparator = Color.white.opacity(0.07)
+
+        // MARK: 参数刻度条（B2 · 模块 #9）
+
+        /// 刻度条背景（原型 `.screen.strip-on .strip-panel` 的深色渐变；只用底部那档色）
+        static let stripPanelBottom = Color(red: 0.039, green: 0.047, blue: 0.059).opacity(0.72)
+
+        /// 普通刻度线（原型 `.sp-tick{ background:rgba(255,255,255,.34) }`）
+        static let stripTick = Color.white.opacity(0.34)
+        /// 主刻度线（原型 `.sp-tick.major{ background:rgba(255,255,255,.82) }`）
+        static let stripTickMajor = Color.white.opacity(0.82)
+        /// 白平衡**预设档**的刻度（原型 `.sp-tick.preset{ background:rgba(242,175,60,.85) }` = `--accent`）
+        static let stripTickPreset = Color(red: 0.949, green: 0.686, blue: 0.235).opacity(0.85)
+        /// 刻度下的数字（原型 `.sp-num{ color:rgba(255,255,255,.62) }`）
+        static let stripNumber = Color.white.opacity(0.62)
+        /// **自动态**下刻度与数字整体压暗（原型 `.screen.strip-auto .sp-num{ color:rgba(255,255,255,.34) }`）
+        static let stripInactive = Color.white.opacity(0.34)
+
+        /// 气泡底 / 指针 / 开关（开）—— **统一用一个令牌**。
+        ///
+        /// ⚠️ 原型这里是**两个不同的绿**（指针 `#3ddc84`、开关 `#30d158`）；
+        /// 肉眼不可辨，不值得为此新增两个色令牌（与本仓既有的取舍一致）。
+        static let stripAccent = ok
+        /// 气泡（绿底）上的文字 —— 深色（复用浅底文字色）
+        static let stripBubbleText = textOnLight
+        /// 开关（关）的底色 —— 与面板底色同族，比它亮一档
+        static let stripSwitchOff = panelElevated
     }
 
     // MARK: - 间距
@@ -444,6 +470,59 @@ enum Theme {
         /// 单元宽 = (370 − 2×6) / 7 ≈ 51.1pt，最长的四字标签「快门速度」「曝光补偿」
         /// 在 10.5pt 下约 42pt —— 放得下，且单元宽本身已 ≥ HIG 的 44pt 下限。
         static let toolRowLabelSize: CGFloat = 10.5
+
+        // MARK: 参数刻度条（B2 · 模块 #9）
+        //
+        // 原型：`.strip-panel` + `.sp-bubble` / `.sp-tick` / `.sp-pointer` / `.sp-auto`（B2b 落地）
+
+        /// 刻度条面板高度。
+        ///
+        /// ⚠️ **84pt，不是原型的 96** —— 净值是**净可见账卡出来的上限**（`docs/16` 第三.2 节，
+        /// 分母取**安全区高**，用户 2026-09-19 拍板 ①）。
+        ///
+        /// 为什么是 84 而不是 88（初稿）：`check_swift` 第 12 组⑩ 逐机型复算后，
+        /// **844 机型**（iPhone 14）在"刻度条展开"态只剩 **50.3%（≈2pt 余量）** ——
+        /// 本项目在 2pt 余量上吃过亏（`docs/11` 那个 50.2%），所以主动压到 84 换 **6pt 余量**。
+        /// 三个机型在刻度条展开态的净可见：874 → 53.7% / 852 → 52.3% / 844 → 51.5%。
+        ///
+        /// 内部按比例上移：气泡 0–22 / 开关 10–39 / 刻度 46–68 / 数字 69–82（不重叠）。
+        static let paramStripHeight: CGFloat = 84
+        /// 气泡高（原型 `.sp-bubble{ height:22px }`）
+        static let paramStripBubbleHeight: CGFloat = 22
+        /// 气泡字号（原型 `font-size:12.5px`）
+        static let paramStripBubbleFontSize: CGFloat = 12.5
+        /// 刻度线宽（原型 `.sp-tick{ width:1.5px }`）
+        static let paramStripTickWidth: CGFloat = 1.5
+        /// 普通刻度线高（原型 `height:10px`）
+        static let paramStripTickHeight: CGFloat = 10
+        /// 主刻度 / 预设刻度高（原型 `.sp-tick.major` / `.preset{ height:22px }`）
+        static let paramStripTickMajorHeight: CGFloat = 22
+        /// 刻度线距面板底部（原型 `bottom:20px`；压到 84 高后取 16）
+        static let paramStripTickBottomInset: CGFloat = 16
+        /// 刻度下的数字：字号（原型 `font-size:10.5px`）+ 距底（原型 `bottom:2px`）
+        static let paramStripNumberFontSize: CGFloat = 10.5
+        static let paramStripNumberBottomInset: CGFloat = 2
+        /// 指针：三角半宽 6 × 高 8（原型 `::before`）+ 竖线 1.5（原型 `::after`）
+        static let paramStripPointerTriangleHalfWidth: CGFloat = 6
+        static let paramStripPointerTriangleHeight: CGFloat = 8
+        static let paramStripPointerLineWidth: CGFloat = 1.5
+        /// 指针三角距面板顶部（原型 `top:24px`；88 高版取 22）
+        static let paramStripPointerTopInset: CGFloat = 22
+        /// 两端渐隐遮罩宽（原型 `mask-image: … 40px …`）
+        static let paramStripEdgeMask: CGFloat = 40
+        /// 刻度条两端留白（原型 `SP.pad = 30`）
+        static let paramStripEdgePadding: CGFloat = 30
+        /// 右端开关：让位槽宽（原型 `.sp-clip{ right:64px }` —— **指针与气泡的定位基准**，别在别处再写一遍）
+        static let paramStripSwitchGutter: CGFloat = 64
+        /// 开关本体（原型 `.sw{ width:47px; height:29px }` + 滑块 `25px`）
+        static let paramStripSwitchWidth: CGFloat = 47
+        static let paramStripSwitchHeight: CGFloat = 29
+        static let paramStripSwitchKnob: CGFloat = 25
+        /// 开关下方标签：字号（原型 `.sp-auto .t{ font-size:10px }`）+ 距顶（原型 `top:18px` → 88 版取 10）
+        static let paramStripSwitchLabelFontSize: CGFloat = 10
+        static let paramStripSwitchTopInset: CGFloat = 10
+        /// 拖动方向闸门死区（与 `ParameterSlider` 同量级）
+        static let paramStripDirectionDeadZone: CGFloat = 6
 
         // MARK: 取景器辅助线（三分构图线）
 

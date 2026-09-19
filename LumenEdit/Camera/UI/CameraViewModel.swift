@@ -674,7 +674,7 @@ final class CameraViewModel: ObservableObject {
         let draftNote = collapsedNames.isEmpty
             ? ""
             : " · \(collapsedNames.joined(separator: "与"))已收起"
-        if isAuto(kind) {
+        if isAutoStrip(kind) {
             showToast("\(kind.displayName)：自动（点右侧开关切手动）\(draftNote)")
         } else if let value = stripDisplayValue(kind) {
             showToast(
@@ -686,8 +686,11 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    /// 某条刻度条当前是否自动档
-    private func isAuto(_ kind: ParameterStripKind) -> Bool {
+    /// 某条刻度条当前是否自动档（**给 UI 用** —— 刻度条视图与图标行都要读它）
+    ///
+    /// ⚠️ ISO 与快门**共用** `isISOShutterAuto`（硬件约束：锁了 ISO 就得接管曝光时长，
+    /// 两者不可能一个自动一个手动），白平衡用独立的 `isWhiteBalanceAuto`。
+    func isAutoStrip(_ kind: ParameterStripKind) -> Bool {
         kind == .whiteBalance ? isWhiteBalanceAuto : isISOShutterAuto
     }
 
@@ -698,7 +701,7 @@ final class CameraViewModel: ObservableObject {
     /// 白平衡独立（`setWhiteBalanceModeLocked` 与曝光无关）。
     func stripAutoToggled(_ kind: ParameterStripKind) {
         guard let environment else { return }
-        let wasAuto = isAuto(kind)
+        let wasAuto = isAutoStrip(kind)
 
         if wasAuto {
             // 自动 → 手动：**初值取设备当前值**（拍板 ③）—— 切档瞬间画面不跳，
@@ -746,7 +749,7 @@ final class CameraViewModel: ObservableObject {
     /// 自动态收到拖动值直接忽略，避免"自动档被拖出个手动档"这种怪状态。
     func stripValueChanged(_ kind: ParameterStripKind, value: Double, isEditing: Bool) {
         guard let environment else { return }
-        guard !isAuto(kind) else {
+        guard !isAutoStrip(kind) else {
             DebugLog.shared.debug("ui", "刻度条 \(kind.displayName) 处于自动态，忽略拖动值")
             return
         }
