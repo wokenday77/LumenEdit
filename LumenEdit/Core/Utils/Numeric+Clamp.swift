@@ -40,17 +40,10 @@ extension Float {
     /// 曝光补偿的常规步进：1/3 EV
     static let evStep: Float = 1.0 / 3.0
 
-    /// EV 滑条在 **UI 上**给用户的范围：±2 EV（也是系统相机的口径）。
-    ///
-    /// ⚠️ **不要直接用设备范围**（`minExposureTargetBias...maxExposureTargetBias`）：
-    /// iPhone 报的是 **-8…+8**，16 EV ÷ (1/3 EV) = **48 档**，而滑条可视宽只有约 338pt
-    /// → 每档约 **7pt**：手指一动就跨好几档，1/3 档的吸附完全感觉不出来
-    /// （2026-09-18 真机反馈"吸附不够明显"的根因；吸附算法本身是对的）。
-    ///
-    /// 收到 ±2 之后是 **13 档、每档约 28pt**，档位感清晰；而且 ±2 EV 之外的区间对拍摄
-    /// 没有意义（±8 时画面早已全白/全黑）。**硬件安全不受影响**：
-    /// `CaptureSessionController.setExposureBias` 里仍按设备真实范围 clamp。
-    static let evUIRange: ClosedRange<Float> = -2...2
+    // ⚠️ `evUIRange`（±2 EV 滑条口径）已随参数排（EV 滑条面板）退场删除 ——
+    // 原型 2026-09-17 第八轮后 EV 的入口是**圆盘**（±3 EV / 0.1 步进，
+    // 圆盘的拖动是连续角度映射，不存在"每档吸附宽度"问题）。
+    // 范围口径见 `EvDialGeometry.minValue/maxValue`（原型 `DIALS.ev`）。
 }
 
 extension ClosedRange where Bound: Comparable {

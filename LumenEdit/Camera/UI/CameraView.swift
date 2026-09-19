@@ -134,16 +134,10 @@ struct CameraView: View {
         viewModel.isFilterStripExpanded && !viewModel.isZoomOn
     }
 
-    /// 参数排（EV 面板）当前是否真的展开。默认收起（`isExposurePanelExpanded` 初值 false），
-    /// ⤢ 放大态强制隐藏（与滤镜条同规则，原型 `.zoom-on` 把参数排整行归零）。
-    private var isExposurePanelShown: Bool {
-        viewModel.isExposurePanelExpanded && !viewModel.isZoomOn
-    }
-
     /// 图标行当前该点亮哪一格（原型 `.icon-item.active`）。
     ///
-    /// 规则：展开刻度条 → 对应那一格；展开参数排 → 「曝光补偿」那一格；都没展开 → `nil`。
-    /// ⚠️ 参数排（EV）与刻度条**不可能同时展开**（同槽互斥），所以这里不用处理优先级冲突。
+    /// 规则：展开刻度条 → 对应那一格；展开 EV 圆盘 → 「曝光补偿」那一格；都没展开 → `nil`。
+    /// ⚠️ EV 圆盘与刻度条**不可能同时展开**（互斥由 VM 状态保证），所以这里不用处理优先级冲突。
     private var activeToolRowItem: ToolIconRowItem? {
         if let kind = viewModel.paramStrip {
             switch kind {
@@ -152,7 +146,7 @@ struct CameraView: View {
             case .whiteBalance: return .whiteBalance
             }
         }
-        return viewModel.isExposurePanelExpanded ? .exposureCompensation : nil
+        return viewModel.isEvDialShown ? .exposureCompensation : nil
     }
 
     // MARK: - 功能面板（#10）
@@ -291,6 +285,7 @@ struct CameraView: View {
 
                 guard !swipeDidTrigger,
                       !viewModel.isExposureEditing,      // 闸门①
+                      !viewModel.isEvDialShown,          // 闸门③：EV 圆盘是模态，打开期间手势整体禁言
                       swipeAxis == .vertical,            // 闸门②
                       shouldTriggerSwipe(value) else {
                     return
@@ -386,7 +381,8 @@ struct CameraView: View {
 
                 Spacer(minLength: 0)
 
-                if let toast = viewModel.toast {
+                if let toast = viewModel.toast, !viewModel.isEvDialShown {
+                    // EV 圆盘打开期间这条 toast 由圆盘层接管（原位会被盘体盖住）
                     toastView(toast)
                 }
 
@@ -439,6 +435,24 @@ struct CameraView: View {
             .timingCurve(0.22, 0.9, 0.3, 1, duration: 0.3),
             value: viewModel.isFunctionPanelExpanded
         )
+        // EV 圆盘（#8 · B3a）：**模态浮层**，盖在预览上、底栈整条隐藏（见 `bottomArea` 尾部）。
+        // 圆心钉在图标行「曝光补偿」格的中心（几何推导在 `ExposureDialView`，全部读 Theme 令牌）。
+        // 拖动值走 `evDialValueChanged` → 复用 `docs/14` 的编辑态闸门，不另起炉灶。
+        .overlay {
+            if viewModel.isEvDialShown {
+                ExposureDialView(
+                    value: viewModel.exposureBias,
+                    onValueChanged: { value, isEditing in
+                        viewModel.evDialValueChanged(value, isEditing: isEditing)
+                    },
+                    onZeroTapped: { viewModel.evDialZeroTapped() },
+                    // 圆盘打开期间的 toast 在圆盘层显示（抬到上半区，原型 `.dial-on .toast{top:38%}`）
+                    toastText: viewModel.toast
+                )
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isEvDialShown)
         // 顶部浮层槽位（模式条正下方）：**录制计时** 与 **实况角标** 共用，二者互斥 ——
         // 录制只发生在视频 / Log 实况模式，实况角标只在实况模式。
         // 录制徽标从快门上方挪到这里（2026-09-17：2-3 加焦段条后，原位置会盖住药丸）。
@@ -562,38 +576,20 @@ struct CameraView: View {
                     onWhiteBalance: { viewModel.whiteBalanceTapped() },
                     onISO: { viewModel.isoTapped() },
                     onShutterSpeed: { viewModel.shutterSpeedTapped() },
-                    onExposureCompensation: { viewModel.exposureCompensationTapped() },
+                    onExposureCompensation: { viewModel.evDialTapped() },
                     onSettings: { env.showSettings = true },
                     // 当前展开的那一格点亮（原型 `.icon-item.active`）——
                     // 用户一眼能看出"这条浮层是从哪一格开的"
                     activeItem: activeToolRowItem
                 )
 
-                // 参数排（EV 面板）：**默认收起**，点图标行「曝光补偿」展开 / 收起。
-                // 顺序对齐原型 `.strip-panel{ order:2 }` —— 图标行在上、面板紧贴其下。
-                // （2026-09-18 由常驻改为可收起：常驻时既没有关闭入口，又把常态净可见
-                //   压到 50% 以下、还吃掉了上滑手势的起手区，见 `isExposurePanelExpanded` 注释。）
-                // ⚠️ **参数排（EV 面板）与刻度条区占的是同一个槽位**（图标行之下那一行），
-                // 所以用 **if / else if** 收口 —— 不写两个独立 `if`。
-                // 两个独立 `if` 在状态竞争下会**同时为真**（本项目在浮层互斥上翻过车），
-                // 而且两块加起来 88 + 16 + 72 = 176pt 会当场顶破净可见底线。
-                if isExposurePanelShown {
-                    ExposurePanel(
-                        exposureBias: $viewModel.exposureBias,
-                        // ⚠️ 用「UI 范围 ∩ 设备范围」，**不要直接给设备范围**：
-                        // iPhone 报的是 -8…+8（16 EV ÷ 1/3 = 48 档），而滑条可视宽约 338pt
-                        // → 每档 7pt，1/3 档的吸附完全感觉不到（2026-09-18 真机反馈）。
-                        // 取交集后是 ±2（13 档 / 每档约 28pt），硬件侧仍按设备范围 clamp。
-                        range: env.session.exposureBiasRange.intersected(with: Float.evUIRange),
-                        isEnabled: env.session.state == .running && !viewModel.isSaving,
-                        // 手动 ISO/快门 档下整块禁用 + 说明（EV 与手动档互斥，见 `ExposurePanel` 注释）
-                        isManualExposureActive: viewModel.isISOShutterAuto == false,
-                        onEditingChanged: { isEditing in
-                            viewModel.exposureEditingChanged(isEditing)
-                        }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let stripKind = viewModel.paramStrip {
+                // 参数刻度条（#9 / B2）：三条一次只显示一条（`paramStrip` 单值寄存保证）。
+                //
+                // ⚠️ **EV 的调节入口已不是这里**：原型 2026-09-17 第八轮后，点「曝光补偿」
+                // 开的是 **EV 圆盘**（模态，`isEvDialShown`，见 `evDialTapped`），
+                // 旧参数排（EV 滑条面板）随原型改版**退场**（原型 `index.html:2376` 明文）。
+                // 本槽位只剩刻度条一族。
+                if let stripKind = viewModel.paramStrip {
                     // 参数刻度条（#9 / B2）：三条一次只显示一条（`paramStrip` 单值寄存保证）
                     ParameterStripView(
                         kind: stripKind,
@@ -631,15 +627,15 @@ struct CameraView: View {
             //
             // ⚠️ **扩展浮层展开时焦段条整行让位**（统一规则，原型 `.ss-on/.filter-on .row-focal`）：
             //   · 场景·风格（147pt）/ 滤镜条（144pt）—— #6 / #7 既有
-            //   · **参数排（EV 面板 72pt）与刻度条区（88pt）—— B2b 补上**（`docs/16` 拍板 ②）
+            //   · **刻度条区（88pt）—— B2b 补上**（`docs/16` 拍板 ②）；
+            //     EV 圆盘（B3a）不需要"让位"—— 它是模态，整条底栈都隐藏（见 `bottomArea` 尾部）。
             //
-            // 为什么参数排/刻度条也要让位：不让位的话底栏栈 = 内边距 + 快门排 80 + 焦段条 44
+            // 为什么刻度条也要让位：不让位的话底栏栈 = 内边距 + 快门排 80 + 焦段条 44
             // + 图标行 44 + 面板 + 行距，844 机型上**任何面板高度都过不了 50%**（`docs/16` 第三.2 节
             // 逐机型复算过：让位后 874/852/844 的余量都 ≥5pp）。
             // 放大态下这些本来就都隐藏，焦段条照常落进取景卡片的内底边。
             if !viewModel.isSceneStyleExpanded
                 && !isFilterStripShown
-                && !isExposurePanelShown
                 && viewModel.paramStrip == nil {
                 FocalStripView(
                     selection: viewModel.focal,
@@ -674,13 +670,20 @@ struct CameraView: View {
             )
         }
         .padding(.bottom, Theme.Spacing.sm)
-        // 滤镜条 / 参数排的插入·移除动画由这三个状态驱动（transition 写在各自组件上）。
+        // 滤镜条 / 刻度条的插入·移除动画由这几个状态驱动（transition 写在各自组件上）。
         // isZoomOn 也要绑：放大态把两者强制隐藏时同样走过渡，而不是瞬移消失。
         .animation(.easeInOut(duration: 0.22), value: viewModel.isFilterStripExpanded)
-        .animation(.easeInOut(duration: 0.22), value: viewModel.isExposurePanelExpanded)
-        // 刻度条的插入 / 移除动画（与参数排同一个槽位、同一套过渡）
+        // 刻度条的插入 / 移除动画
         .animation(.easeInOut(duration: 0.22), value: viewModel.paramStrip)
         .animation(.easeInOut(duration: 0.22), value: viewModel.isZoomOn)
+        // ⚠️ **EV 圆盘是模态**（原型 `.screen.ev-on .bottom-stack{display:none}`）：
+        // 圆盘打开时**整条底栈隐藏**（滤镜条 / 场景·风格 / 图标行 / 焦段条 / 快门排全走），
+        // 圆盘下只剩取景器 —— 与功能面板"盖住底栏"不同，这里是"整条收走"。
+        // 用 opacity + 禁触摸（而不是条件移除）：布局稳定、过渡顺滑，圆盘圆心
+        // 钉的图标行位置也不随布局跳动。
+        .opacity(viewModel.isEvDialShown ? 0 : 1)
+        .allowsHitTesting(!viewModel.isEvDialShown)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.isEvDialShown)
     }
 
     private func toastView(_ message: String) -> some View {

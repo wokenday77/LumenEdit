@@ -105,7 +105,7 @@ Mac 侧：CI 已挂三个自检（`d989240`）、aperture 修复（`4c251d2`）�
 |---|---|---|---|
 | **B1** | **焦段切镜头 + `Ramp` 平滑变焦** | 🔶 **已交付（`78e6242`）+ 诊断日志（`d5494a1`），待 Mac 验证** | 方案 `docs/15`。`applyZoomLocked` 扩成按档位 + ramp 平滑；**不重建会话**；档位不可用则置灰但仍可点 |
 | **B2** | **ISO / 快门 / 白平衡刻度条**（模块 #9） | ⬜ **下一件** | ISO + 快门走 `setExposureModeCustom`；白平衡走 `setWhiteBalanceModeLocked`。⚠️ EV 只在与**自动曝光档**共存时有效（`setExposureTargetBias` 在 `setExposureModeCustom` 下被系统忽略）→ 自动↔手动互斥要设计清楚。**顺带补 Backlog ④**：`collapseOverlays()` 加"收起刻度条" |
-| **B3** | **对焦与 EV 圆盘**（模块 #8） | 🔶 **方案已出稿 `docs/18`，待拍板** | EV 圆盘先行（虚拟设备可用；编辑态接 `docs/14` 同款闸门 + 进 `collapseOverlays()` 第 4 样）；对焦圆盘 UI 随 B3、硬件生效等架构改造（**虚拟多摄不支持手动参数**，SDK `AVCaptureDevice.h:538-541`；能力探测 `isLockingFocusWithCustomLensPositionSupported` 已接守卫）。物理设备 + 参数搬运 + 模糊转场施工图 = `docs/18` 第二、三章 |
+| **B3** | **对焦与 EV 圆盘**（模块 #8） | 🔶 **B3a（EV 圆盘）已交付（2026-09-19 晚，等 Mac 复验）；B3b 对焦圆盘下一件**；方案 `docs/18` **已拍板** | **B3a**：EV 圆盘模态浮层（±3 EV / 0.1 步进 / 点数值框归零 / 打开收整条底栈），**参数排（EV 滑条面板）随原型改版退场**；拖动值复用 `docs/14` 编辑态闸门。**B3b**：对焦圆盘 UI（虚拟设备上置灰态 —— `isLockingFocusWithCustomLensPositionSupported` 已接守卫）；拍板 ③"手动锁定期间点按只测光"随它落地。架构改造（物理设备**按需**挂载 + 参数搬运 + 模糊转场）排 B3 后，施工图 `docs/18` 二、三章 |
 | **B4** | 格式选择器接线（模块 #11） | ⬜ 未开始 | 选完真正重设 `activeFormat`，走已有 `CaptureDeviceConfigurator.applyFormat`；码率表改读设备推荐录制设置（替换 `VideoFormatCatalog` 的占位值） |
 | **B5** | 参数导入链路（模块 #13） | ⬜ 未开始 | `CapturePreset.init(from: EditRecipe)` —— **等 P4**（修图引擎引入 `EditRecipe` 后才有源） |
 

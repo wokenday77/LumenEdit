@@ -688,48 +688,52 @@ if (!camViewFile || !vmFile) {
     }
   }
 
-  // b) 参数排：默认收起 + 图标行「曝光补偿」是它的开关
-  if (!/isExposurePanelExpanded/.test(vmSrc8)) {
-    bad('CameraViewModel 里没有 isExposurePanelExpanded —— 参数排又变回常驻了？');
-  } else if (!/isExposurePanelExpanded\s*(?::\s*[^=\n]+)?=\s*false/.test(vmSrc8)) {
-    bad('isExposurePanelExpanded 没有显式默认 false（参数排应默认收起）');
-  // ⚠️ 这一条原来用**字符窗口**匹配（`func exposureCompensationTapped[\s\S]{0,400}?...toggle()`），
-  //    2026-09-19 B2a 被自己的注释挤爆过一次：在函数开头加了一段守卫说明（EV 与手动档互斥），
-  //    窗口就不够了 → **报了个假的 FAIL**。
-  //    改成**按函数体匹配**（`methodBodyOf`）—— 不再数窗口，加注释/加分支都不会失效。
-  } else if (!/isExposurePanelExpanded\.toggle\(\)/.test(
-    methodBodyOf(vmSrc8, 'exposureCompensationTapped') || ''
+  // b) EV 圆盘（#8 · B3a）：默认收起 + 图标行「曝光补偿」是它的开关
+  //    （2026-09-19 B3a：参数排 EV 滑条面板已随原型改版退场，入口换成模态圆盘）
+  if (!/isEvDialShown/.test(vmSrc8)) {
+    bad('CameraViewModel 里没有 isEvDialShown —— EV 圆盘状态丢了？');
+  } else if (!/isEvDialShown\s*(?::\s*[^=\n]+)?=\s*false/.test(vmSrc8)) {
+    // ⚠️ 这条**单独不够**（"= false" 会被互斥赋值行满足 = 假绿，2026-09-19 变异测试 M6 抓出），
+    //    真正守"默认收起"的是下一条**声明行锚定**；这里只兜"状态存在且被赋过 false"。
+    bad('isEvDialShown 从未被赋过 false（连收起路径都没有）');
+  } else if (!/@Published private\(set\) var isEvDialShown\s*=\s*false/.test(vmSrc8)) {
+    // ⚠️ 必须**锚定声明行**：全文任意 "= false" 会被 collapseOverlays 等互斥赋值满足（假绿）
+    bad('isEvDialShown 没有显式默认 false（圆盘应默认收起）—— 声明行不是 "= false"');
+  // ⚠️ 必须**按函数体匹配**（`methodBodyOf`）：字符窗口会被注释挤爆
+  //    （2026-09-19 B2a 实测：函数开头加守卫说明后窗口不够 → 假 FAIL）。
+  } else if (!/isEvDialShown\.toggle\(\)/.test(
+    methodBodyOf(vmSrc8, 'evDialTapped') || ''
   )) {
-    bad('图标行「曝光补偿」没有走 toggle —— 那参数排就没有收起入口（用户找不到关闭方式）');
-  } else if (!/isExposurePanelShown/.test(viewSrc8)) {
-    bad('CameraView 没用 isExposurePanelShown 门控参数排（放大态/收起态会漏渲染）');
+    bad('图标行「曝光补偿」没有走 toggle —— 那 EV 圆盘就没有收起入口（用户找不到关闭方式）');
+  } else if (!/isEvDialShown/.test(viewSrc8)) {
+    bad('CameraView 没用 isEvDialShown（模态隐藏底栈 / 圆盘渲染会漏）');
   } else {
-    ok('参数排默认收起，且由图标行「曝光补偿」toggle（有收起入口）');
+    ok('EV 圆盘默认收起，且由图标行「曝光补偿」toggle（有收起入口）');
   }
 
-  // c) 互斥收口：collapseOverlays() 必须同时管三个（新增浮层必须加进来）
+  // c) 互斥收口：collapseOverlays() 必须同时管四个（新增浮层必须加进来）
   const collapseBody = methodBodyOf(vmSrc8, 'collapseOverlays');
   if (!collapseBody) {
     bad('找不到 collapseOverlays()');
   } else {
     const body = collapseBody;
-    const needed = ['isFilterStripExpanded', 'isSceneStyleExpanded', 'isExposurePanelExpanded'];
+    const needed = ['isFilterStripExpanded', 'isSceneStyleExpanded', 'isEvDialShown'];
     const miss = needed.filter(n => !new RegExp(n + '\\s*=\\s*false').test(body));
     if (miss.length) {
       bad('collapseOverlays() 没收起：' + miss.join(' / ') + '（下划会收不干净）');
     } else {
-      ok('collapseOverlays() 一次收起全部扩展浮层（滤镜条 / 场景·风格 / 参数排）');
+      ok('collapseOverlays() 一次收起全部扩展浮层（滤镜条 / 场景·风格 / EV 圆盘 / 刻度条）');
     }
   }
-  // 展开另外两个浮层时也必须收参数排（互斥三方向）
+  // 展开另外两个浮层时也必须收 EV 圆盘（互斥两方向）
   const toggleSS8 = methodBodyOf(vmSrc8, 'toggleSceneStyle');
   const swiped8 = methodBodyOf(vmSrc8, 'swiped');
-  const mutex3 = !!toggleSS8 && /isExposurePanelExpanded\s*=\s*false/.test(toggleSS8)
-    && !!swiped8 && /isExposurePanelExpanded\s*=\s*false/.test(swiped8);
+  const mutex3 = !!toggleSS8 && /isEvDialShown\s*=\s*false/.test(toggleSS8)
+    && !!swiped8 && /isEvDialShown\s*=\s*false/.test(swiped8);
   if (mutex3) {
-    ok('展开场景·风格 / 呼出浮层时都会收起参数排（互斥三方向齐全）');
+    ok('展开场景·风格 / 呼出浮层时都会收起 EV 圆盘（互斥两方向齐全）');
   } else {
-    bad('互斥不全：展开场景·风格或呼出浮层时没有收起参数排');
+    bad('互斥不全：展开场景·风格或呼出浮层时没有收起 EV 圆盘');
   }
 
   // d) EV 滑条的方向闸门：竖向落手不许改值（否则"想上滑却改了 EV"）
@@ -814,27 +818,38 @@ if (!camViewFile || !vmFile) {
     ok('手势提前触发（滑够 ' + travelNow + 'pt 立刻生效，不等松手）');
   }
 
-  // g) EV 滑条范围：必须用「UI 范围 ∩ 设备范围」，不许直接给设备范围
-  //    iPhone 报 -8…+8 = 48 档 → 每档 7pt，1/3 档吸附完全感觉不到
+  // g) EV 圆盘 ±3 口径（2026-09-19 B3a：滑条 ±2 口径随参数排退场，圆盘按原型 `DIALS.ev` ±3）
   const clampFile = files.find(f => path.basename(f) === 'Numeric+Clamp.swift');
   if (!clampFile) {
     bad('找不到 Numeric+Clamp.swift');
   } else {
     const clampSrc = fs.readFileSync(clampFile, 'utf8');
-    if (!/static let evUIRange/.test(clampSrc)) {
-      bad('Numeric+Clamp 里没有 evUIRange（EV 滑条的 UI 范围常量）');
-    } else if (!/intersected\(with: Float\.evUIRange\)/.test(viewSrc8)) {
-      bad('EV 滑条没有取「UI 范围 ∩ 设备范围」—— 设备报 -8…+8 时 1/3 档会变成每档 7pt');
+    // ⚠️ 负向判据必须**先剥 // 注释再匹配**：注释里会写"evUIRange 已删除"之类的说明
+    //    （2026-09-19 实测：不剥注释 → 命中自己的删除说明 → 假 FAIL，MEMORY 坑① 原样复发）
+    const clampCode = clampSrc.replace(/\/\/[^\n]*/g, '');
+    const viewCode8 = viewSrc8.replace(/\/\/[^\n]*/g, '');
+    const dialFile8 = files.find(f => path.basename(f) === 'ExposureDialView.swift');
+    const dialSrc8 = dialFile8 ? fs.readFileSync(dialFile8, 'utf8') : '';
+    const rangeOK = /minValue:\s*Double\s*=\s*-3/.test(dialSrc8)
+      && /maxValue:\s*Double\s*=\s*3/.test(dialSrc8)
+      && /static let step:\s*Double\s*=\s*0\.1/.test(dialSrc8);
+    const noLegacy = !/evUIRange/.test(clampCode) && !/evUIRange/.test(viewCode8);
+    if (!dialFile8) {
+      bad('找不到 ExposureDialView.swift（EV 圆盘组件）');
+    } else if (!rangeOK) {
+      bad('EV 圆盘的值域不是原型口径（±3 EV / 0.1 步进，`DIALS.ev`：count 61 / min -3 / max 3）');
+    } else if (!noLegacy) {
+      bad('还残留 evUIRange（±2 是滑条时代口径，参数排已退场 —— 别把旧范围接回圆盘）');
     } else {
-      ok('EV 滑条范围 = UI(±2) ∩ 设备范围（13 档 / 每档约 28pt，吸附可感知）');
+      ok('EV 圆盘值域 = 原型口径 ±3 EV / 0.1 步进（旧 ±2 滑条常量已退场）');
     }
   }
 
   // h) 状态改写必须留痕（2026-09-18 真机教训：静默改写让"上划走到哪个分支"无法对账）
   //    凡是会改写**多个**浮层状态的入口函数，体内必须同时出现 showToast 与 DebugLog。
   const stateToggles = [
-    ['toggleSceneStyle', '场景·风格条（三入口共用，会连带收滤镜条/参数排）'],
-    ['exposureCompensationTapped', '曝光补偿（会连带收滤镜条/场景·风格条）']
+    ['toggleSceneStyle', '场景·风格条（三入口共用，会连带收滤镜条/EV 圆盘/刻度条）'],
+    ['evDialTapped', '曝光补偿（会连带收滤镜条/场景·风格条/刻度条）']
   ];
   let traceBad = false;
   for (const [fn, why] of stateToggles) {
@@ -853,9 +868,9 @@ if (!camViewFile || !vmFile) {
     }
   }
   // 连带收起必须在提示里说清（"已收起"字样），否则用户仍不知道自己的浮层去哪了
-  const evBody = methodBodyOf(vmSrc8, 'exposureCompensationTapped');
+  const evBody = methodBodyOf(vmSrc8, 'evDialTapped');
   if (!evBody || !/已收起/.test(evBody)) {
-    bad('exposureCompensationTapped 的提示没说清连带收起（应出现"已收起"字样）');
+    bad('evDialTapped 的提示没说清连带收起（应出现"已收起"字样）');
     traceBad = true;
   }
   if (!traceBad) {
@@ -1736,29 +1751,34 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     ok('刻度条显示值：拖动期取草稿（跟手）+ 其余取硬件真值（无本地镜像状态，环路结构性不存在）');
   }
 
-  // ⑥ 参数排（EV 面板）与刻度条区**同槽互斥**（`docs/16` 第四.2 节）
+  // ⑥ EV 圆盘（模态）与刻度条的互斥（2026-09-19 B3a 改版）
   //
-  // 为什么必须守：两者占的是**同一行**（图标行之下）。写成两个独立 `if`，
-  // 状态竞争下会**同时为真** —— 两块加起来 88 + 16 + 72 = 176pt，当场顶破净可见底线，
-  // 而且"同槽"的版式语义也破了。本项目在浮层互斥上翻过车，所以这里用结构守死。
+  // 原型第八轮后 EV 的入口是**模态圆盘**（`.ev-on` 收起整条 bottom-stack），
+  // 旧参数排（EV 滑条面板）已退场。互斥不再是"同槽 if/else if"，
+  // 而是状态两方向：① 开圆盘收其它浮层（`evDialTapped` 展开分支，**展开者只收别人**，
+  // 不得调 `dismissTransientPopovers`）；② CameraView 不再渲染已退场的 ExposurePanel。
   {
     const view12 = fs.readFileSync(camViewFile, 'utf8');
-    // ⚠️ 窗口要盖得住 `ExposurePanel(…)` 那一整块（含它的注释，约 1.6k 字符）——
-    //    窗口太窄会**误判成"不是 else if"** 而不是"两个独立 if"，报错指不到根因
-    //    （2026-09-19 变异测试 M30 第一次就撞上这个：FAIL 报了，但文案对不上）。
-    const sameSlot = /if isExposurePanelShown \{[\s\S]{0,2500}?\} else if let \w+ = viewModel\.paramStrip \{[\s\S]{0,1600}?ParameterStripView\(/
-      .test(view12);
-    const twoIndependentIfs = /if isExposurePanelShown \{[\s\S]{0,2500}?\}\s*if let \w+ = viewModel\.paramStrip/
-      .test(view12);
+    const noLegacyPanel = !/ExposurePanel\(/.test(view12);
     const stripRendered = /ParameterStripView\(/.test(view12);
+    const dialRendered = /ExposureDialView\(/.test(view12);
+    const evExpandBody = methodBodyOf(vmSrc12, 'evDialTapped');
+    const evExpandCollapsesOthers = !!evExpandBody
+      && /isFilterStripExpanded\s*=\s*false/.test(evExpandBody)
+      && /isSceneStyleExpanded\s*=\s*false/.test(evExpandBody)
+      && /paramStrip\s*=\s*nil/.test(evExpandBody)
+      && !/dismissTransientPopovers\(\)/.test(evExpandBody);
     if (!stripRendered) {
       bad('CameraView 没有渲染 ParameterStripView —— 刻度条数据层建好了但界面上出不来');
-    } else if (twoIndependentIfs) {
-      bad('参数排与刻度条被写成了**两个独立 if** —— 会同时展开（同槽互斥破了，净可见也破了）');
-    } else if (!sameSlot) {
-      bad('参数排与刻度条不是 `if … else if …` 收口的同槽互斥');
+    } else if (!dialRendered) {
+      bad('CameraView 没有渲染 ExposureDialView —— EV 圆盘建好了但界面上出不来');
+    } else if (!noLegacyPanel) {
+      bad('CameraView 还在渲染 ExposurePanel —— 参数排已随原型改版退场（EV 入口 = 圆盘）');
+    } else if (!evExpandCollapsesOthers) {
+      bad('`evDialTapped` 展开分支没有收起其它浮层（或误调了 dismissTransientPopovers'
+        + ' —— 展开者会把刚展开的自己收掉，2026-09-18 老坑）');
     } else {
-      ok('参数排与刻度条同槽互斥（`if … else if …` 收口，不会同时展开）');
+      ok('EV 圆盘（模态）与其它浮层互斥两方向齐全（展开收别人 / 点别处收自己）');
     }
   }
 
@@ -1768,8 +1788,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
   //   底栏块 = 底内边距 + Σ行高 + 行距 × 间隙数
   //   净可见 = 安全区高 − (上内边距 + 顶栏) − 底栏块
   //   约束   = 净可见 ≥ 50% × 安全区高
-  // 行高**全部从 `Theme` 真读**；EV 面板高从 `ParameterSlider` 的
-  // 标题行 `minHeight` + 轨道 `thumbDiameter` + 两个间距推导（面板高是内容算出来的，没有令牌）。
+  // 行高**全部从 `Theme` 真读**。（EV 面板态已随参数排退场移除，B3a 2026-09-19。）
   // ⚠️ 为什么必须"逐机型复算"：`docs/11` 那套旧算式（分母取整屏高 + 漏掉常驻的场景·风格条）
   // 在 844 机型上会把常态算成 50.2%（只剩 2pt 余量），口径一改结论就翻。
   {
@@ -1785,11 +1804,6 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       return m ? parseFloat(m[1]) : null;
     };
 
-    const sliderFile = files.find(f => path.basename(f) === 'ParameterSlider.swift');
-    const sliderSrcAll = sliderFile ? fs.readFileSync(sliderFile, 'utf8') : '';
-    const titleRowMatch = /frame\(minWidth: 56, minHeight: ([0-9.]+)\)/.exec(sliderSrcAll);
-    const thumbMatch = /thumbDiameter: CGFloat = ([0-9.]+)/.exec(sliderSrcAll);
-
     const gap = spacingTok('md');
     const pad = spacingTok('sm');
     const rowScene = tok('sceneStyleCollapsedHeight');
@@ -1803,35 +1817,12 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
 
     const missing = Object.entries({
       gap, pad, rowScene, rowSceneOpen, rowTool, rowFocal, rowShutter, rowFilter,
-      rowStrip, topBar, titleRow: titleRowMatch ? parseFloat(titleRowMatch[1]) : null,
-      thumb: thumbMatch ? parseFloat(thumbMatch[1]) : null
+      rowStrip, topBar
     }).filter(([, v]) => v === null).map(([k]) => k);
 
     if (missing.length) {
       bad('净可见账读不到这些令牌：' + missing.join(' / ') + '（改名了？自检需要同步）');
     } else {
-      const titleRow = parseFloat(titleRowMatch[1]);
-      const thumb = parseFloat(thumbMatch[1]);
-      // EV 面板高 = 标题行 + 间距 + 轨道 + 上下内边距；手动档多一行说明（**按一行算**）
-      const evPanel = titleRow + (spacingTok('xs') || 6) + thumb + 2 * pad;
-
-      // ⚠️ 手动档那句说明**必须短到一行**：每多一行面板就高 12pt，
-      //    而 844 机型在 EV 面板态只剩 0.8pp 余量（下面这张账就是证据）。
-      //    所以这里核一下它的长度（≤ 20 字）—— 改长了当场报出来。
-      const panelFile = files.find(f => path.basename(f) === 'ExposurePanel.swift');
-      const panelSrc = panelFile ? fs.readFileSync(panelFile, 'utf8') : '';
-      const noteMatch = /Text\("(手动[^"]*)"\)/.exec(panelSrc);
-      const noteText = noteMatch ? noteMatch[1] : null;
-      const noteChars = noteText ? Array.from(noteText).length : 0;
-      const noteOneLine = noteChars > 0 && noteChars <= 20;
-      const evPanelManual = evPanel + 12;   // 多一行 10pt 文案 ≈ 12pt
-
-      if (!noteText) {
-        bad('ExposurePanel 里找不到"手动档"的说明文案（改措辞了？自检需要同步）');
-      } else if (!noteOneLine) {
-        bad('ExposurePanel 的手动档说明有 ' + noteChars + ' 字（> 20）—— 会折成两行、'
-          + '面板高 12pt，844 机型的净可见会掉到 50% 以下');
-      }
       const topBlock = pad + topBar;
 
       const devices = [
@@ -1840,11 +1831,11 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         { name: 'iPhone 14（844）', screen: 844, safe: 748 }
       ];
       // 每一态 = 底栏里从上到下的行高（不含底内边距与行距，下面按 rows 数自动算）
+      // ⚠️ EV 面板两态已删（2026-09-19 B3a：参数排退场，EV 入口 = 模态圆盘，
+      //    圆盘打开时整条底栈隐藏、不占底栈行 → 不进这张账）。
       const states = [
         { key: '常态', rows: [rowScene, rowTool, rowFocal, rowShutter], mustPass: true },
         { key: '刻度条展开', rows: [rowScene, rowTool, rowStrip, rowShutter], mustPass: true },
-        { key: 'EV 面板展开（自动档）', rows: [rowScene, rowTool, evPanel, rowShutter], mustPass: true },
-        { key: 'EV 面板展开（手动档）', rows: [rowScene, rowTool, evPanelManual, rowShutter], mustPass: true },
         { key: '场景·风格展开', rows: [rowSceneOpen, rowTool, rowShutter], mustPass: false },
         { key: '滤镜条展开', rows: [rowFilter, rowScene, rowTool, rowShutter], mustPass: false }
       ];
@@ -1962,6 +1953,104 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + ' —— 开关置灰后点了必须给原因（"点了没反应"禁令），更不能把硬件写推出去');
     } else {
       ok('虚拟多摄诚实边界齐备（白平衡×2 / 对焦守卫换对 API + session 支持位 + VM 能力闸门）');
+    }
+  }
+
+  // ⑰ EV 圆盘（#8 · B3a）—— 闸门 / 归零 / 点别处收起 / 几何账
+  //
+  // 为什么守：圆盘是**模态**（打开时整条底栈隐藏），且拖动值写的是硬件 EV ——
+  // `docs/14` 的回写环教训在圆盘上同样成立（拖动期不回写 + 只接受最后推送值）；
+  // 几何账必须"从 Theme 真读 + 复算"，不许手算表（`docs/11`/`docs/16` 两次漏项的教训）。
+  {
+    const dialFile17 = files.find(f => path.basename(f) === 'ExposureDialView.swift');
+    if (!dialFile17) {
+      bad('找不到 ExposureDialView.swift');
+    } else {
+      const dialSrc17 = fs.readFileSync(dialFile17, 'utf8');
+
+      // a) 编辑态闸门：圆盘值回调必须走 `exposureEditingChanged`（复用 docs/14 机制）
+      const vmChangeBody = methodBodyOf(vmSrc12, 'evDialValueChanged');
+      const gateOK = !!vmChangeBody
+        && /exposureEditingChanged\(/.test(vmChangeBody);
+      if (!gateOK) {
+        bad('`evDialValueChanged` 没走 `exposureEditingChanged` —— 圆盘绕开了 docs/14 '
+          + '编辑态闸门，回写环（拖动期被旧值拽回）会复发');
+      }
+
+      // b) 归零入口：数值框点击归零（原型 `#evVal` click），且走"结束编辑"语义推硬件
+      const vmZeroBody = methodBodyOf(vmSrc12, 'evDialZeroTapped');
+      const zeroOK = !!vmZeroBody
+        && /evDialValueChanged\(0,\s*isEditing:\s*false\)/.test(vmZeroBody)
+        && /showToast\(/.test(vmZeroBody);
+      if (!zeroOK) {
+        bad('`evDialZeroTapped` 缺失或没走 `evDialValueChanged(0, false)` —— '
+          + '归零必须复位编辑态再推硬件，且要留痕');
+      }
+
+      // c) 点别处收起：`dismissTransientPopovers` 必须收 EV 圆盘（逐点接线纪律）
+      const dismissBody17 = methodBodyOf(vmSrc12, 'dismissTransientPopovers');
+      const dismissEv = !!dismissBody17 && /dismissEvDialIfNeeded\(\)/.test(dismissBody17);
+      if (!dismissEv) {
+        bad('`dismissTransientPopovers()` 没有收 EV 圆盘 —— "点别处收起"漏了它（第 4 样）');
+      }
+
+      // d) 几何账（**可执行检查**：从 Theme 真读 + 复算，两台机型都过才绿）
+      //    圆心 X = md + xs + 5.5 × 格宽（iconEV 是第 6 格，与 ToolIconRow 布局同式）；
+      //    圆心 Y = 容器高 − (底内边距账 + 快门排 + 行距 + 焦段条 + 行距 + 图标行/2)。
+      //    断言：右半出屏 > 0（镜像的"裁切感"），数值框左缘 ≥ 横向内边距（完整在屏内）。
+      const themeSrc17 = fs.readFileSync(themeFile2, 'utf8');
+      const tok17 = n => {
+        const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc17);
+        return m ? parseFloat(m[1]) : null;
+      };
+      const dialSize = tok17('evDialSize');
+      const boxW = tok17('evDialValueBoxWidth');
+      const boxGap = tok17('evDialValueBoxGap');
+      const shutter = tok17('shutterRowHeight');
+      const focal = tok17('focalStripHeight');
+      const tool = tok17('toolRowHeight');
+      const stackPad = tok17('bottomStackBottomPadding');
+      const spMd = 16, spXs = 6, spSm = 10;   // Spacing.md / xs / sm（Theme.Spacing 定值）
+      const geoMissing = [dialSize, boxW, boxGap, shutter, focal, tool, stackPad]
+        .some(v => v === null || v === undefined);
+      if (geoMissing) {
+        bad('EV 圆盘几何账读不到令牌（evDialSize / evDialValueBox* / 底栈行高，改名了？）');
+      } else {
+        // 容器高 = 安全区内净高（遮幅守卫同款设备表；h 已扣上下安全区）
+        const devices17 = [
+          { name: '393', w: 393, h: 756 - 66 },
+          { name: '375', w: 375, h: 748 - 66 }
+        ];
+        const geoLines = [];
+        let geoBad = false;
+        for (const d of devices17) {
+          const cell = (d.w - 2 * spMd - 2 * spXs) / 7;
+          const cx = spMd + spXs + 5.5 * cell;
+          const cy = d.h - (stackPad + shutter + spSm + focal + spSm + tool / 2);
+          const overhang = dialSize / 2 + cx - d.w;          // 右半出屏量
+          const boxLeft = cx - (dialSize / 2 + boxGap + boxW); // 数值框左缘
+          if (overhang <= 0) {
+            geoBad = true;
+            geoLines.push(d.name + ':右半未出屏(' + overhang.toFixed(1) + 'pt)');
+          }
+          if (boxLeft < spMd) {
+            geoBad = true;
+            geoLines.push(d.name + ':数值框左缘 ' + boxLeft.toFixed(1) + 'pt 越过内边距');
+          }
+          geoLines.push(d.name + ':圆心(' + cx.toFixed(1) + ',' + cy.toFixed(1)
+            + ') 右裁 ' + overhang.toFixed(1) + 'pt');
+        }
+        if (geoBad) {
+          bad('EV 圆盘几何账不过：' + geoLines.join(' ｜ '));
+        } else {
+          ok('EV 圆盘几何账（读 Theme 复算 · 393/375）：' + geoLines.join(' ｜ '));
+        }
+      }
+
+      // e) 汇总：闸门 / 归零 / 点别处收起三项齐了才给一条总 OK（细项 FAIL 上面已各自报）
+      if (gateOK && zeroOK && dismissEv) {
+        ok('EV 圆盘闸门 / 归零 / 点别处收起齐备（编辑态复用 docs/14，归零走松手语义）');
+      }
     }
   }
 }

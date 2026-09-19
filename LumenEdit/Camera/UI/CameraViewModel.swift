@@ -67,18 +67,25 @@ final class CameraViewModel: ObservableObject {
     /// 状态在 VM，渲染在 `FilterStripView`（⤢ 放大态下强制隐藏，见 `CameraView`）。
     @Published private(set) var isFilterStripExpanded = false
 
-    /// 参数排（曝光补偿面板）的展开态。
+    /// EV 圆盘（#8 · B3a）的展开态。**不落盘**：临时浮层状态。
     ///
-    /// **默认收起** —— 原型的常态就是"图标行 44pt"（`.row-params{height:44px}`），
-    /// 展开是点图标行「曝光补偿」之后的事（`.screen.strip-on .row-params{height:140px}`）。
+    /// ## 为什么参数排（EV 滑条面板）被它取代 —— 原型改版，Swift 对齐
     ///
-    /// ⚠️ Swift 侧此前把 `ExposurePanel` 常驻渲染，这是个真问题（2026-09-18 真机反馈）：
-    ///   1. **没有收起入口**：图标行「曝光补偿」只弹 toast（"在上方参数排调节"），
-    ///      用户找不到关闭方式；
-    ///   2. **常态净可见被压到 50% 以下**（面板约 108pt，底栏栈 334pt → 取景器净可见约 43%）；
-    ///   3. **吃掉上滑手势的起手区**：它把"取景器可见区下沿"往上推了约 124pt，
-    ///      而 #7 的手势起点线是 55%，两者之间只剩几 pt —— 表现为"上滑要很用力 + 特定位置"。
-    @Published private(set) var isExposurePanelExpanded = false
+    /// 原型 2026-09-17 第八轮「圆盘统一 v2」后：EV 的调节入口 = **圆盘**
+    /// （点图标行「曝光补偿」展开，`iconEV` → `layout.evOpen`），旧四列参数排的
+    /// EV 数值位**已随改版删除**（原型 `index.html:2376` 明文）。EV 值由圆盘数值框
+    /// 显示（`renderEv`），归零也在数值框上点。
+    ///
+    /// ## 它是**模态**，不是底栈一行（原型 `.screen.ev-on .bottom-stack{display:none}`）
+    ///
+    /// 打开时**整条底部浮层栈收起**（滤镜条 / 场景·风格 / 焦段条 / 快门排 / 图标行全藏），
+    /// 圆盘下只剩取景器 —— 与功能面板"盖住底栏"同款语义，但**更彻底**（底栈整条走）。
+    /// 所以它的互斥是两方向：
+    ///   ① 开圆盘 → 收其它扩展浮层（`evDialTapped` 展开分支，**展开者只收别人**）；
+    ///   ② 开其它浮层 / 点别处 → 收圆盘（各入口 + `dismissTransientPopovers()`）。
+    /// ⚠️ 展开者自己**不能调** `dismissTransientPopovers()`（会把刚展开的自己收掉，
+    /// 2026-09-18 真机踩过的坑）。
+    @Published private(set) var isEvDialShown = false
 
     // MARK: - 功能面板（#10）
 
@@ -649,13 +656,13 @@ final class CameraViewModel: ObservableObject {
 
         // 展开时的连带收起：toast 里要**说清**（本项目"状态改写必须留痕"的纪律）
         let collapsedNames = [
-            isExposurePanelExpanded ? "参数排" : nil,
+            isEvDialShown ? "EV 圆盘" : nil,
             isFilterStripExpanded ? "滤镜条" : nil,
             isSceneStyleExpanded ? "场景·风格" : nil
         ].compactMap { $0 }
 
         if willExpand {
-            isExposurePanelExpanded = false
+            isEvDialShown = false
             isFilterStripExpanded = false
             isSceneStyleExpanded = false
         }
@@ -1017,22 +1024,24 @@ final class CameraViewModel: ObservableObject {
         stripTapped(.shutter)
     }
 
-    /// 第 6 项「曝光补偿」：**展开 / 收起参数排**（EV 滑块就在它里面）。
+    // MARK: - EV 圆盘（#8 · B3a）
+
+    /// 第 6 项「曝光补偿」：**展开 / 收起 EV 圆盘**（原型 `iconEV` → `layout.evOpen` toggle）。
     ///
-    /// 原型的做法（第二轮定稿）：参数排常态只剩图标行，**只有点「曝光补偿」才展开滑块区**，
-    /// 再点一次收起。Swift 侧此前是"面板常驻 + 这一项只弹 toast"，所以用户**找不到收起入口**
-    /// （2026-09-18 真机反馈"曝光补偿条无法关闭"）。现在这一项就是那个开关。
+    /// ## 互斥（原型 `3551-3557` 逐行同构）
     ///
-    /// 互斥：展开参数排时收起滤镜条 / 场景·风格条（同一时刻只允许一个扩展浮层）。
-    /// ⚠️ **连带收起必须在提示里说清**（2026-09-18 真机教训）：此前这里是静默改写
-    /// 两个浮层的状态，用户与日志都看不见 → "上划为什么走到那个分支"无法对账。
-    func exposureCompensationTapped() {
-        // ⚠️ **手动曝光档下 EV 不生效**（`docs/16` 第五节 ①）：
-        //   `setExposureTargetBias` 会被系统忽略，而 configurator 里那条"回切自动档"的最后防线
-        //   会把 ISO / 快门 的锁定**静默解除** —— 所以这里直接拦住并说明原因，
-        //   不做"点了没反应"，更不做"点了把别处锁定的东西悄悄改掉"。
-        //   已展开时允许收起：否则用户切到手动档之后就关不掉这个面板了。
-        if isManualExposureActive && !isExposurePanelExpanded {
+    /// 展开时收起**其它**扩展浮层（滤镜条 / 场景·风格 / 刻度条）——
+    /// ⚠️ **不能调 `dismissTransientPopovers()`**（那会把刚展开的圆盘自己也收掉，
+    /// 2026-09-18 的老坑）；这里只手动收"别人"，"点别处收起"归 `dismissTransientPopovers()`。
+    ///
+    /// ⚠️ **手动曝光档下 EV 不生效**（`docs/16` 第五节 ①）：
+    ///   `setExposureTargetBias` 会被系统忽略，而 configurator 里那条"回切自动档"的最后防线
+    ///   会把 ISO / 快门 的锁定**静默解除** —— 所以直接拦住并说明原因，
+    ///   不做"点了没反应"，更不做"点了把别处锁定的东西悄悄改掉"。
+    ///   已展开时允许收起：否则用户切到手动档之后就关不掉这个盘了。
+    func evDialTapped() {
+        // ⚠️ 手动档拦截（原 exposureCompensationTapped 的 tapGuard 原样迁移）
+        if isManualExposureActive && !isEvDialShown {
             Haptics.warning()
             DebugLog.shared.debug("ui", "手动曝光档下点「曝光补偿」→ 已拦下并说明 EV 不生效")
             showToast("手动 ISO / 快门 档下 EV 不生效 —— 先点刻度条右端开关切回自动")
@@ -1040,7 +1049,7 @@ final class CameraViewModel: ObservableObject {
         }
 
         // 先记住这一下会连带收起谁（toast 只报真发生的事，不虚报）
-        let willCollapseOthers = !isExposurePanelExpanded
+        let willCollapseOthers = !isEvDialShown
             && (isFilterStripExpanded || isSceneStyleExpanded || paramStrip != nil)
         let collapsedNames = [
             isFilterStripExpanded ? "滤镜条" : nil,
@@ -1048,30 +1057,62 @@ final class CameraViewModel: ObservableObject {
             paramStrip.map { "\($0.displayName) 刻度条" }
         ].compactMap { $0 }
 
-        isExposurePanelExpanded.toggle()
+        isEvDialShown.toggle()
         Haptics.tick()
 
-        DebugLog.shared.debug(
-            "ui",
-            "参数排\(isExposurePanelExpanded ? "展开" : "收起")（入口：图标行「曝光补偿」）"
-                + (willCollapseOthers && isExposurePanelExpanded
-                    ? " · 连带收起 \(collapsedNames.joined(separator: "、"))" : "")
-        )
-
-        if isExposurePanelExpanded {
+        if isEvDialShown {
+            // 展开者只收别人（不调 dismissTransientPopovers —— 见上）
             isFilterStripExpanded = false
             isSceneStyleExpanded = false
             paramStrip = nil
             isoShutterDraft = nil
             whiteBalanceDraft = nil
-            let value = FormatText.exposureBias(Float(exposureBias))
+            DebugLog.shared.debug(
+                "ui",
+                "EV 圆盘展开（入口：图标行「曝光补偿」）"
+                    + (willCollapseOthers ? " · 连带收起 \(collapsedNames.joined(separator: "、"))" : "")
+            )
             let suffix = willCollapseOthers
                 ? " · \(collapsedNames.joined(separator: "与"))已收起"
-                : " · 再点收起参数排"
-            showToast("曝光补偿 \(value) EV\(suffix)")
+                : " · 再点收起"
+            showToast("曝光补偿圆盘：拖动圆盘调 ±3 EV，点数值归零\(suffix)")
         } else {
-            showToast("参数排已收起（点「曝光补偿」可再次展开）")
+            DebugLog.shared.debug("ui", "EV 圆盘收起（入口：图标行「曝光补偿」）")
+            showToast("已收起曝光补偿圆盘")
         }
+    }
+
+    /// EV 圆盘拖动（**每跨 0.1 一次**；`isEditing` 在拖动开始/结束由控件上报）。
+    ///
+    /// ## 编辑态闸门接 `docs/14` 同款 —— 不是另起炉灶
+    ///
+    /// 圆盘的值流与滑条完全同构：拖动 → 更新 `exposureBias` → 推硬件
+    /// （`exposureEditingChanged` 里那两行：记 `lastPushedExposureBias` + `setExposureBias`）；
+    /// 硬件回写由 **`attach()` 里既有的两道守卫**挡住（拖动期不回写 + 只接受最后推送值）。
+    /// 所以这里只需要：先写值、再把编辑态交给 `exposureEditingChanged`。
+    ///
+    /// ⚠️ 手动曝光档下 `exposureEditingChanged` 自带拦截（warn 留痕）——圆盘入口
+    /// `evDialTapped` 已拦"开盘"，这里是拖动中的第二道（开盘后切到手动档的极端时序）。
+    func evDialValueChanged(_ value: Double, isEditing: Bool) {
+        if exposureBias != value {
+            exposureBias = value
+        }
+        exposureEditingChanged(isEditing)
+    }
+
+    /// EV 圆盘数值框**点击归零**（原型 `#evVal` click：`state.ev = 0` + toast「曝光补偿已归零」）。
+    ///
+    /// 走 `evDialValueChanged(0, false)`：编辑态先复位再推硬件 —— 松手语义，
+    /// "松手后以最终值为准同步一次"的既有顺序自然成立（`docs/14` 第六节）。
+    func evDialZeroTapped() {
+        guard exposureBias != 0 else {
+            showToast("曝光补偿已是 0")
+            return
+        }
+        evDialValueChanged(0, isEditing: false)
+        Haptics.tick()
+        DebugLog.shared.debug("ui", "EV 圆盘数值框点击归零（入口：数值框）")
+        showToast("曝光补偿已归零")
     }
 
     // MARK: - 场景 · 风格（#6）
@@ -1089,17 +1130,17 @@ final class CameraViewModel: ObservableObject {
     func toggleSceneStyle(source: String = "胶囊") {
         // 先记住"这一下会不会连带收起别的浮层"，toast 才说得准
         let willCollapseOthers = !isSceneStyleExpanded
-            && (isFilterStripExpanded || isExposurePanelExpanded || paramStrip != nil)
+            && (isFilterStripExpanded || isEvDialShown || paramStrip != nil)
         let collapsedNames = [
             isFilterStripExpanded ? "滤镜条" : nil,
-            isExposurePanelExpanded ? "参数排" : nil,
+            isEvDialShown ? "EV 圆盘" : nil,
             paramStrip.map { "\($0.displayName) 刻度条" }
         ].compactMap { $0 }
 
         isSceneStyleExpanded.toggle()
         if isSceneStyleExpanded {
             isFilterStripExpanded = false
-            isExposurePanelExpanded = false
+            isEvDialShown = false
             paramStrip = nil
             isoShutterDraft = nil
             whiteBalanceDraft = nil
@@ -1185,65 +1226,63 @@ final class CameraViewModel: ObservableObject {
         dismissTransientPopovers()
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格、参数排与刻度条
+                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格、EV 圆盘与刻度条
                 // 连带收起时在提示里说明（同一类"状态被改写要留痕"，2026-09-18）
-                let panelNote = isExposurePanelExpanded ? "（参数排已收起）" : ""
+                let dialNote = isEvDialShown ? "（EV 圆盘已收起）" : ""
                 let stripNote = paramStrip.map { "（\($0.displayName) 刻度条已收起）" } ?? ""
                 isFilterStripExpanded = true
                 isSceneStyleExpanded = false
-                isExposurePanelExpanded = false
+                isEvDialShown = false
                 paramStrip = nil
                 isoShutterDraft = nil
                 whiteBalanceDraft = nil
                 Haptics.tick()
-                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格\(panelNote)\(stripNote)")
+                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格\(dialNote)\(stripNote)")
             } else if isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条、参数排与刻度条
-                let panelNote = isExposurePanelExpanded ? "（参数排已收起）" : ""
+                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条、EV 圆盘与刻度条
+                let dialNote = isEvDialShown ? "（EV 圆盘已收起）" : ""
                 let stripNote = paramStrip.map { "（\($0.displayName) 刻度条已收起）" } ?? ""
                 isFilterStripExpanded = false
                 isSceneStyleExpanded = true
-                isExposurePanelExpanded = false
+                isEvDialShown = false
                 paramStrip = nil
                 isoShutterDraft = nil
                 whiteBalanceDraft = nil
                 Haptics.tick()
-                showToast("已呼出场景与风格 · 下划收起\(panelNote)\(stripNote)")
+                showToast("已呼出场景与风格 · 下划收起\(dialNote)\(stripNote)")
             } else {
                 showToast("浮层已全部展开 · 下划收起")
             }
         } else {
             if isSceneStyleExpanded {
                 collapseOverlays()
-                showToast("已收起场景与风格，参数排回到平铺")
+                showToast("已收起场景与风格")
             } else if isFilterStripExpanded {
                 collapseOverlays()
-                showToast("已收起滤镜条，参数排回到平铺")
-            } else if isExposurePanelExpanded || paramStrip != nil {
+                showToast("已收起滤镜条")
+            } else if isEvDialShown || paramStrip != nil {
                 collapseOverlays()
-                showToast("已收起参数排 / 刻度条")
+                showToast("已收起 EV 圆盘 / 刻度条")
             } else {
                 showToast("没有更多可收起的浮层")
             }
         }
     }
 
-    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / 参数排 / **参数刻度条**。
+    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / **EV 圆盘** / 参数刻度条。
     ///
-    /// ✅ **Backlog ④ 就此关闭**（它记的就是"浮层互斥缺收起刻度条那一半"）：
-    /// 至此这里一共收 **4 样**，与原型 `collapseAll` 的 4 样一一对应
-    ///（原型收：场景·风格 / 滤镜条 / 刻度条区 / EV 圆盘）。
-    /// ⚠️ **#8 的 EV 圆盘落地时继续加进这里**（原型那第 4 样我方还没建）。
+    /// ✅ **原型 `collapseAll` 的 4 样至此一一对应**
+    ///（场景·风格 / 滤镜条 / 刻度条区 / EV 圆盘 —— 第 4 样 B3a 落地，替换掉退场的参数排）。
     /// ⚠️ 功能面板（#10）**不在这里**：它是模态浮层，不是"扩展浮层"（原型 `collapseAll` 也不碰
     /// `fnOpen`）；它是**反向**关系 —— 开面板时收起这些（见 `toggleFunctionPanel()`）。
     private func collapseOverlays() {
         guard isFilterStripExpanded || isSceneStyleExpanded
-            || isExposurePanelExpanded || paramStrip != nil else {
+            || isEvDialShown || paramStrip != nil else {
             return
         }
         isFilterStripExpanded = false
         isSceneStyleExpanded = false
-        isExposurePanelExpanded = false
+        isEvDialShown = false
         paramStrip = nil
         // 收起刻度条时草稿一并作废（否则下次展开会先闪一下旧草稿值）
         isoShutterDraft = nil
@@ -1293,6 +1332,17 @@ final class CameraViewModel: ObservableObject {
         dismissFunctionPanelIfNeeded()
         dismissFormatSelectorIfNeeded()
         dismissParamStripIfNeeded()
+        dismissEvDialIfNeeded()
+    }
+
+    /// 点别处收起 **EV 圆盘**（原型全局 pointerdown 3037：排除 `evWrap` / `iconEV`，
+    /// 其余任意点都关）—— 与 #10 / #11 同款"逐点接线"。
+    ///
+    /// ⚠️ **展开者（`evDialTapped`）不能调本函数**（会把刚展开的自己收掉，老坑）。
+    func dismissEvDialIfNeeded() {
+        guard isEvDialShown else { return }
+        DebugLog.shared.debug("ui", "EV 圆盘收起（点别处）")
+        isEvDialShown = false
     }
 
     /// 点别处收起**参数刻度条**（与 #10 / #11 同款"逐点接线"）
