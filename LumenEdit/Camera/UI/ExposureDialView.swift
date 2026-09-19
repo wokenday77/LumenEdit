@@ -313,8 +313,14 @@ struct ExposureDialView: View {
                     Text(EvDialGeometry.tickNumberText(ev))
                         .font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.85))
-                        .position(x: p.x * scale, y: p.y * scale)
+                        // ⚠️ **自转必须在 `.position` 之前**：`.position` 会把 Text 包进一个
+                        // 占满整个 tickRing 的容器，之后的 `.rotationEffect` 转的是**该容器**
+                        // （绕盘心），不是文字自身 → 每个数字被"摆位角 + 再绕盘心转 θ+180"
+                        // 双重旋转：间距翻倍成 60°、跨度变 360°、−3/+3 在 90° 处重叠
+                        //（2026-09-19 真机实测，[mac-fix]；与拖不动那条同源：`.position`
+                        // 之后挂的修饰器都作用在"占满父级"的容器上）。
                         .rotationEffect(.degrees(deg + EvDialGeometry.numFlip))
+                        .position(x: p.x * scale, y: p.y * scale)
                 }
             }
         }
