@@ -287,7 +287,16 @@ final class CameraViewModel: ObservableObject {
         // 会话就绪（冷启动 / 重建完成）同样清空 —— 那一刻 publish 出来的 EV 来自设备当前值，
         // 不是我们推送的，留着记录会把合法回写误吞掉。
         // 顺带（B1）：**按当前焦段档位对齐一次硬件 zoom**，原因见 `reapplyFocalAfterSessionReady`。
+        //
+        // ⚠️ `removeDuplicates()` 不能省（2026-09-19 真机抓到：同一帧打印两遍"焦段已对齐"）：
+        // `@Published` 是 willSet 语义 —— **赋一个相同的值同样会发通知**；而 `.running`
+        // 在冷启动时会被发两次（`startInternal` 先被 `setVisible(true)` 走一次、
+        // 再被 scenePhase 的 `setAppActive(true)` 走一次）。少了它，下面两件副作用
+        // （清 EV 回写记录 + 按档位对齐 zoom）都会重复执行。
+        // 根因层已在 `CaptureSessionController` 那边加了"同值不重发"守卫，这里是第二道 ——
+        // 它同时兜住任何**将来新增**的重发路径。
         environment.session.$state
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 guard let self, state == .running else { return }

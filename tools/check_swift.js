@@ -1123,9 +1123,11 @@ if (!formatChipFile || !formatCatalogFile || !topBarFile9 || !vmFile) {
   }
 }
 
-/* ---------- 11. 焦段切镜头（B1，2026-09-18） ---------- */
+/* ---------- 11. 焦段切镜头（B1，2026-09-18；2026-09-19 按真机实测改映射） ---------- */
 // 为什么要这一组：
-//   a) 档位 → zoom 的映射写反/漏改会让"点 120mm 反而拉远"；
+//   a) 档位 → zoom 的映射写反/漏改会让"点 120mm 反而拉远"。
+//      ⚠️ 2026-09-19 真机实测把第一版的"mm ÷ 基准"推翻了（基准是机型相关的，实测 12mm），
+//      改成**按镜头角色从设备读**，详见 ① 那段注释；
 //   b) `ramp` 必须在 lockForConfiguration 内（否则抛 NSGenericException）→ 它只允许出现在
 //      CaptureDeviceConfigurator（= 铁律 2"唯一锁"）；
 //   c) **"切镜头不重建会话"是本件的核心不变量** —— 一旦有人在这里 beginConfiguration
@@ -1148,72 +1150,145 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
     files.find(f => path.basename(f) === 'CaptureSessionController.swift'), 'utf8'
   );
 
-  // ① 映射表：4 档焦距解析 + 基准 mm 探测 + zoom 单调递增
-  //    ⚠️ 搜索窗口 400 → 900：`baseMillimeters` 现在把探测委托给 `hasUltraWideLens`
-  //       （2026-09-19 两条互补探测），从函数名到那个 return 的距离变长了。
-  //       窗口放宽只是"别让注释长度影响检查结果"，判据本身没松。
-  const baseLine = /baseMillimeters[\s\S]{0,900}?return hasUltraWide \? (\d+) : (\d+)/.exec(capSrc);
+  // ① 档位映射：**按镜头角色从设备读**（2026-09-19 修订 · 不再做 `mm ÷ 基准`）
+  //
+  // 为什么要重写这条：第一版是"等效焦距 ÷ 基准"的纯算术，真机实测把它的前提推翻了 ——
+  // 某机 `switchOver = [2.000, 10.000]`，而 2.0 / 10.0 正对 24mm / 120mm 两颗镜头
+  // ⇒ 虚拟基准是 **12mm**，不是文档假设的 13mm。整表偏小约 8%；最要命的是 120mm 档
+  // 算出的 9.231 **落在 switchOver[1] = 10.0 之下** → 系统不切长焦、只用主摄数码放大
+  // （画质崩），而 UI 却显示"已切到 120mm"。
+  //
+  // 现在按角色读：13→超广角原生 / 24→广角原生 / 48→广角原生×2 / 120→长焦原生。
+  // 于是这条检查守四件事：
+  //   a) 角色表齐全（13/24/48/120 → 四个角色），且**没有残留 mm 除法**；
+  //   b) 原生阶梯 = `[1.0] + virtualDeviceSwitchOverVideoZoomFactors`；
+  //   c) 在真机实测那个配置（三摄 `[2.0, 10.0]`）上复算：必须严格递增，
+  //      且 24 档 == switchOver[0]、**120 档 == switchOver[last]**（本次修法的核心不变量）；
+  //   d) "角色超出阶梯长度 → 判不可用"的守卫在（无长焦机型要把 120mm 档置灰）。
+  //
+  // ⚠️ 负向判据（"没有残留 mm 除法"）只在**代码**里找，不把注释算进来 ——
+  // 注释里恰恰应该写清"为什么不能用它"（本项目在这上面绊倒过两次，见 `docs/12` 第九轮）。
+  const capCode = capSrc.replace(/\/\/[^\n]*/g, '');
+
+  const roleMap = {};
+  // ⚠️ 选项**长的在前** + 结尾加 `\b`：否则 `wide` 会把 `wideCrop2x` 前缀匹配掉
+  //   （交替匹配按书写顺序尝试，`wide` 先命中，于是 48mm 档被读成 `.wide` →
+  //    复算出的 48 档 = 2.000，与 24 档相等，本检查当场 FAIL。
+  //    这是本检查脚本自己的 bug，被它自己的复算抓出来的 —— 记一笔。）
+  for (const m of focalSrc.matchAll(/case (\d+):\s*return \.(wideCrop2x|ultraWide|telephoto|wide)\b/g)) {
+    roleMap[m[1]] = m[2];
+  }
+  const ladderOk = /\[1\.0\]\s*\+\s*device\.virtualDeviceSwitchOverVideoZoomFactors/.test(capCode);
+  const noMmDivision = !/millimeters\s*\/|forFocalMillimeters|baseMillimeters/.test(capCode);
+  const hasRoleLookup = /nativeZoom\(of: \.wide, on: device\)[\s\S]{0,120}?return wide \* 2/
+      .test(capCode)
+    && /func nativeZoom\(of role: FocalLensRole, on device: AVCaptureDevice\)/.test(capCode);
+  const ladderGuard = /guard index < ladder\.count/.test(capCode);
   const mmCount = (focalSrc.match(/FocalPreset\(/g) || []).length;
-  if (!baseLine) {
-    bad('CaptureCapabilities 里找不到基准焦距探测（baseMillimeters：有超广角 → 13 / 否则 24）');
-  } else if (mmCount < 4) {
+
+  // 角色映射必须**逐条精确**（只数条数不够）。
+  // 为什么单列这一条：`120mm → .telephoto` 是本次修法的命门 —— 第一版把它算成 9.231
+  // 落在 switchOver[1] 之下。若有人把它改回 `.wide`（或任何不到长焦的角色），
+  // 现象是"档位能点、但只有主摄数码放大"，而单调性检查只会报"非递增"、指不到根因。
+  const expectedRoles = { '13': 'ultraWide', '24': 'wide', '48': 'wideCrop2x', '120': 'telephoto' };
+  const roleMismatch = Object.keys(expectedRoles)
+    .filter(mm => roleMap[mm] !== expectedRoles[mm])
+    .map(mm => mm + '→' + (roleMap[mm] || '缺') + '（应 ' + expectedRoles[mm] + '）');
+
+  if (mmCount < 4) {
     bad('焦段数据只剩 ' + mmCount + ' 档（应为 4）');
+  } else if (Object.keys(roleMap).length !== 4) {
+    bad('焦段角色表不全（应为 13→ultraWide / 24→wide / 48→wideCrop2x / 120→telephoto；'
+      + '实际解析到 ' + Object.keys(roleMap).length + ' 条 ' + JSON.stringify(roleMap) + '）');
+  } else if (roleMismatch.length) {
+    bad('档位角色映射不对：' + roleMismatch.join('、')
+      + ' —— 120mm 必须是长焦，否则只会主摄数码放大');
+  } else if (!ladderOk) {
+    bad('原生阶梯不是 `[1.0] + virtualDeviceSwitchOverVideoZoomFactors`');
+  } else if (!noMmDivision) {
+    bad('还有 `mm ÷ 基准` 的残留（millimeters / forFocalMillimeters / baseMillimeters）—— '
+      + '基准是机型相关的（实测 12mm 而非 13mm），除法会让 120mm 档落在切换点之下');
+  } else if (!hasRoleLookup) {
+    bad('48mm 档没有按"广角原生视场 × 2"取（角色映射不完整）');
+  } else if (!ladderGuard) {
+    bad('缺"角色超出阶梯长度 → 判不可用"的守卫（无长焦机型会把 120mm 档当成可用）');
   } else {
-    const base = parseFloat(baseLine[1]);              // 13
-    const fallbackBase = parseFloat(baseLine[2]);      // 24
-    const mms = (focalSrc.match(/FocalPreset\(id: "(\d+)"/g) || [])
-      .map(s => parseFloat(/"(\d+)"/.exec(s)[1]));
-    const zooms = mms.map(mm => mm / base);
-    const increasing = zooms.every((z, i) => i === 0 || z > zooms[i - 1]);
-    if (mms.length !== 4) {
-      bad('焦段档位数不是 4（解析到 ' + mms.length + '）');
-    } else if (!increasing) {
-      bad('档位 zoom 不是严格递增：' + zooms.map(z => z.toFixed(2)).join(' < ') + '（写反了？）');
-    } else if (!(fallbackBase > base)) {
-      bad('基准焦距探测的兜底值应大于超广角基准（无超广角时基准是广角 24mm）');
+    // c) 在真机实测配置上复算（三摄：超广角 / 广角 / 长焦）
+    const ladder = [1.0, 2.0, 10.0];                 // = [1.0] + switchOver
+    const switchOver = ladder.slice(1);              // 实测 [2.000, 10.000]
+    const roleIndex = { ultraWide: 0, wide: 1, telephoto: 2 };
+    const tiers = ['13', '24', '48', '120'].map(mm => {
+      const role = roleMap[mm];
+      if (role === 'wideCrop2x') return { mm: mm, value: ladder[roleIndex.wide] * 2 };
+      const i = roleIndex[role];
+      return { mm: mm, value: i === undefined || i >= ladder.length ? null : ladder[i] };
+    });
+    const values = tiers.map(t => t.value);
+    const increasing = values.every((v, i) =>
+      i === 0 || (v !== null && values[i - 1] !== null && v > values[i - 1]));
+    // 两条核心不变量（都是拿 **switchOver** 当基准，不是阶梯的第 0 级 = 1.0）：
+    //   24mm 档必须 == switchOver[0]（广角原生视场）；120mm 档必须 == switchOver[last]（长焦原生视场）
+    const wideOK = values[1] !== null && Math.abs(values[1] - switchOver[0]) < 1e-9;
+    const teleOK = values[3] !== null
+      && Math.abs(values[3] - switchOver[switchOver.length - 1]) < 1e-9;
+    const text = tiers.map(t => t.mm + '→' + (t.value === null ? '不可用' : t.value.toFixed(3))).join(' / ');
+
+    if (!increasing) {
+      bad('档位 zoom 不是严格递增：' + text);
+    } else if (!wideOK) {
+      bad('24mm 档 != switchOver[0]（应 ' + switchOver[0].toFixed(3) + '，实际 '
+        + values[1].toFixed(3) + '）—— 没落在广角原生视场上');
+    } else if (!teleOK) {
+      bad('120mm 档没落在长焦原生视场（应 switchOver[last] = '
+        + switchOver[switchOver.length - 1].toFixed(3) + '，实际 ' + String(values[3])
+        + '）—— 系统不会切长焦，只会主摄数码放大');
     } else {
-      ok('档位映射单调递增（基准 ' + base + 'mm：'
-        + mms.map((mm, i) => mm + '→' + zooms[i].toFixed(2)).join(' / ') + '）');
+      ok('档位映射按镜头角色从设备读（三摄 [2.0, 10.0] 复算：' + text + '）');
     }
   }
 
   // ①b 置灰判据 + 拓扑日志（2026-09-19 Mac 侧预检要求）
-  //     为什么：`caps.zoom.min` 在单广角回退机型上**也是 1.0**，区分不了 "1.0 = 13mm"
-  //     还是 "1.0 = 24mm"。拿它当判据 → 13mm 档永远"看起来可用" → 点了画面不动。
+  //     为什么：`caps.zoom.min` 在单广角回退机型上**也是 1.0**，区分不了 "1.0 = 最广视场"
+  //     还是 "1.0 = 广角视场"。拿它当判据 → 13mm 档永远"看起来可用" → 点了画面不动。
   //     所以必须是"两条互补探测"，且拓扑要能在日志里读出来（④ 的核法）。
-  const probeBody = methodBodyOf(capSrc, 'hasUltraWideLens');
+  //     ⚠️ 探测的实际实现现在是共用的 `hasLens(_:on:)`（`hasUltraWideLens` / `hasTelephotoLens`
+  //        都委托它），所以这里跟着看那个函数体，而不是看那两个一行的包装。
+  const probeBody = methodBodyOf(capSrc, 'hasLens');
+  const probesDelegated = /hasUltraWideLens[\s\S]{0,240}?hasLens\(\.builtInUltraWideCamera/
+    .test(capCode);
   const probeByConstituents = !!probeBody
-    && /constituentDevices[\s\S]{0,200}?builtInUltraWideCamera/.test(probeBody);
+    && /constituentDevices[\s\S]{0,200}?deviceType == type/.test(probeBody);
   const probeByDiscovery = !!probeBody
-    && /DiscoverySession[\s\S]{0,300}?builtInUltraWideCamera/.test(probeBody);
-  // ⚠️ **只在代码里找，不把注释算进来**：注释里恰恰应当写清"为什么不能用它"
-  //    ——本项目踩过"注释里写了禁用字面量、于是守卫自己把自己绊倒"的坑（`docs/12` 第九轮，
-  //    那次是镜像坐标硬编码守卫）。所以这里先把 `//` 之后的内容剥掉再匹配。
-  const capCode = capSrc.replace(/\/\/[^\n]*/g, '');
+    && /DiscoverySession[\s\S]{0,300}?deviceTypes: \[type\]/.test(probeBody);
+  // `capCode` 已在 ① 里剥好注释（复用，避免重复声明）
   const judgesByZoomMin = /zoom\s*\??\.\s*min/.test(capCode);
-  const hasTopologyDesc = /func zoomTopologyDescription/.test(capSrc)
-    && /virtualDeviceSwitchOverVideoZoomFactors/.test(capSrc);
+  const hasTopologyDesc = /func zoomTopologyDescription/.test(capCode)
+    && /virtualDeviceSwitchOverVideoZoomFactors/.test(capCode)
+    && /档位=/.test(capCode);
   const topologyLogged = /zoomTopologyDescription\(of:/.test(sessionSrc);
 
   if (!probeBody) {
-    bad('找不到 CaptureCapabilities.hasUltraWideLens（基准焦距探测被改成别处了？）');
+    bad('找不到 CaptureCapabilities.hasLens（"有没有这颗镜头"的探测实现）');
+  } else if (!probesDelegated) {
+    bad('hasUltraWideLens 没有委托给 hasLens（探测实现被挪走了？自检需要同步）');
   } else if (!probeByConstituents) {
-    bad('超广角探测缺 constituent 那条（虚拟设备才知道"当前这台设备"能不能到 13mm）');
+    bad('"有没有这颗镜头"缺 constituent 那条（虚拟设备才知道当前设备里到底有哪几颗）');
   } else if (!probeByDiscovery) {
-    bad('超广角探测缺 DiscoverySession 兜底那条 —— constituentDevices 对非虚拟设备可能返回空，'
-      + '漏判会让 13mm 档不置灰（"点了没反应"）');
+    bad('"有没有这颗镜头"缺 DiscoverySession 兜底那条 —— constituentDevices 对非虚拟设备'
+      + '可能返回空，漏判会让该档不置灰（"点了没反应"）');
   } else if (judgesByZoomMin) {
-    bad('拿 caps.zoom.min 当置灰判据了 —— 单广角机型上它同样是 1.0，区分不了 13mm / 24mm 视场');
+    bad('拿 caps.zoom.min 当置灰判据了 —— 单广角机型上它同样是 1.0，区分不了不同视场');
   } else {
     ok('置灰判据是两条互补探测（constituent + DiscoverySession），没拿 zoom.min 当判据');
   }
 
   if (!hasTopologyDesc) {
-    bad('CaptureCapabilities 缺 zoomTopologyDescription（变焦拓扑日志，④ 的核法）');
+    bad('CaptureCapabilities 缺 zoomTopologyDescription，或它没把"档位→zoom"打出来'
+      + '（那行日志是核对档位映射的唯一硬数据，见 ①）');
   } else if (!topologyLogged) {
-    bad('会话启动路径没有打印变焦拓扑 —— Mac 侧就没法"读一次冷启动日志"核对 1.0 = 13mm 的前提');
+    bad('会话启动路径没有打印变焦拓扑 —— Mac 侧就没法"读一次冷启动日志"核对档位映射');
   } else {
-    ok('变焦拓扑在会话启动时打一行日志（switchOver + constituent 数 + 基准 + 区间）');
+    ok('变焦拓扑在会话启动时打一行日志（角色 + switchOver + 阶梯 + 四档解析值 + 不可用档）');
   }
 
   // ② 必须用 ramp（硬设 = 直接跳，失去本件的意义）

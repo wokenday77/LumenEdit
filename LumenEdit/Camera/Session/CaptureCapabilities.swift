@@ -37,83 +37,176 @@ enum CaptureCapabilities {
 
     // MARK: - 焦段 → 变焦倍率（B1）
 
-    /// 设备**最广** constituent 的等效焦距（mm）—— 档位换算 `videoZoomFactor` 的基准。
-    ///
-    /// **靠能力探测，不写机型名**（铁律）：有超广角 → **13mm**；没有（单广角 / 双摄长焦）→ **24mm**。
-    ///
-    /// 为什么基准必须是探测值而不是写死 13：单摄设备上 `videoZoomFactor = 1.0` 代表的是
-    /// **24mm 视场**，此时"13mm 档"要算成 13/24 = 0.54 —— 小于设备的 min（1.0），
-    /// 于是会被 `unavailableFocalIds(for:)` 正确判为**不可用**（而不是装作切过去）。
-    static func baseMillimeters(of device: AVCaptureDevice) -> CGFloat {
-        let hasUltraWide = hasUltraWideLens(reachableFrom: device)
-        return hasUltraWide ? 13 : 24
-    }
-
-    /// 这台设备能不能到超广角视场（决定基准取 13 还是 24）。
+    /// 这台设备上有没有超广角这颗镜头。
     ///
     /// ⚠️ **不能拿 `caps.zoom.min` 判**（Mac 侧 2026-09-19 预检指出）：单广角回退机型上
-    /// 它同样是 `1.0`，区分不了 "1.0 = 13mm" 还是 "1.0 = 24mm"。必须问"有没有超广角"。
+    /// 它同样是 `1.0`，区分不了 "1.0 = 最广视场" 还是 "1.0 = 广角视场"。必须问"有没有这颗镜头"。
     ///
     /// 两条探测互补，**任一命中即可**：
     ///
-    /// 1. **虚拟设备的 constituent 列表** —— 最准：它说的就是"当前这台设备"能不能到 13mm。
-    /// 2. **`DiscoverySession` 直接问系统有没有超广角硬件** —— 兜底。为什么需要：
+    /// 1. **虚拟设备的 constituent 列表** —— 最准：它说的就是"当前这台设备"里有没有它。
+    /// 2. **`DiscoverySession` 直接问系统有没有这颗镜头** —— 兜底。为什么需要：
     ///    `constituentDevices` 只在虚拟设备上有意义，一旦回退到物理设备（或某些系统版本上
-    ///    对非虚拟设备返回空数组），① 会**漏判** → 13mm 档不被置灰 → 用户点了画面不动
+    ///    对非虚拟设备返回空数组），① 会**漏判** → 该档不被置灰 → 用户点了画面不动
     ///    （典型的"点了没反应"，本项目明令禁止）。
     ///    为什么 ② 不会误报：本仓回退链是**虚拟多摄优先**（三摄 → 双摄宽 → 双摄 → 单广角），
-    ///    有超广角的机型必然选到含超广角的虚拟设备；所以 ① 漏判时，② 的结果就是对的。
-    ///    只有"机身有超广角但当前设备用不到"才会误报，而那种情形在本回退链下不存在。
+    ///    机身有这颗镜头的机型必然选到含它的虚拟设备；所以 ① 漏判时，② 的结果就是对的。
+    ///    只有"机身有这颗镜头但当前设备用不到"才会误报，而那种情形在本回退链下不存在。
     static func hasUltraWideLens(reachableFrom device: AVCaptureDevice) -> Bool {
-        if device.constituentDevices.contains(where: { $0.deviceType == .builtInUltraWideCamera }) {
+        hasLens(.builtInUltraWideCamera, on: device)
+    }
+
+    /// 这台设备上有没有长焦那颗镜头（决定 120mm 档可不可用）
+    static func hasTelephotoLens(reachableFrom device: AVCaptureDevice) -> Bool {
+        hasLens(.builtInTelephotoCamera, on: device)
+    }
+
+    /// "有没有某颗镜头"的两条互补探测（原理见 `hasUltraWideLens` 的说明）
+    private static func hasLens(
+        _ type: AVCaptureDevice.DeviceType,
+        on device: AVCaptureDevice
+    ) -> Bool {
+        if device.constituentDevices.contains(where: { $0.deviceType == type }) {
             return true
         }
         let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInUltraWideCamera],
+            deviceTypes: [type],
             mediaType: .video,
             position: .back
         )
         return !discovery.devices.isEmpty
     }
 
+    /// 设备"原生镜头阶梯"上每一级的 `videoZoomFactor`（按视场**从最广到最长**）。
+    ///
+    /// = `[1.0] + virtualDeviceSwitchOverVideoZoomFactors`
+    ///
+    /// 依据（Apple 文档 + 2026-09-19 真机实测互验）：
+    ///   - `videoZoomFactor = 1.0` 是**最广 constituent 的 native 视场**（文档：full field of view）；
+    ///   - 每越过一个 switch-over 点，虚拟设备就换到**下一颗 constituent 的原生视场**。
+    ///
+    /// 所以第 i 项 = 第 i 颗 constituent 的原生 zoom，与 `constituentRoles(of:)` **按下标一一对应**。
+    static func nativeZoomLadder(of device: AVCaptureDevice) -> [CGFloat] {
+        [1.0] + device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat($0.doubleValue) }
+    }
+
+    /// 设备各 constituent 的**镜头角色**，已按"视场从最广到最长"排序。
+    ///
+    /// ⚠️ **显式排序，而不是直接沿用 `constituentDevices` 的顺序**：
+    /// 阶梯（`nativeZoomLadder`）按定义是递增的，只要角色也按最广→最长排好，
+    /// 两者按下标配对就必然正确 —— 这就不依赖"Apple 返回的数组顺序是否也从广到长"
+    /// 这个在本机（无 Xcode）验证不了的前提。
+    ///
+    /// `constituentDevices` 为空时（非虚拟设备，或系统没给这个列表）**按能力探测重建**：
+    /// 只信 `deviceType` 会把"三摄但列表为空"误判成单摄 → 13mm 与 120mm 两档被无谓置灰。
+    static func constituentRoles(of device: AVCaptureDevice) -> [FocalLensRole] {
+        var roles: [FocalLensRole] = device.constituentDevices.map { constituent in
+            switch constituent.deviceType {
+            case .builtInUltraWideCamera: return .ultraWide
+            case .builtInTelephotoCamera: return .telephoto
+            default: return .wide
+            }
+        }
+        if roles.isEmpty {
+            if hasUltraWideLens(reachableFrom: device) { roles.append(.ultraWide) }
+            roles.append(.wide)
+            if hasTelephotoLens(reachableFrom: device) { roles.append(.telephoto) }
+        }
+        roles.sort { $0.canonicalRank < $1.canonicalRank }
+        return roles
+    }
+
+    /// 某颗镜头在这台设备上的原生 `videoZoomFactor`（`nil` = 这台设备没有这颗镜头）
+    static func nativeZoom(of role: FocalLensRole, on device: AVCaptureDevice) -> CGFloat? {
+        let roles = constituentRoles(of: device)
+        guard let index = roles.firstIndex(of: role) else { return nil }
+        let ladder = nativeZoomLadder(of: device)
+        // 阶梯比角色短 = 系统没告诉我们切换点 → 宁可判"不可用"
+        // （灰但仍可点，由 VM 给 toast 说明；不装作切过去了）
+        guard index < ladder.count else { return nil }
+        return ladder[index]
+    }
+
+    /// 档位在**这台设备**上对应的 `videoZoomFactor`（`nil` = 这台设备表达不了该档）。
+    ///
+    /// ## 规则（Mac 侧 2026-09-19 真机实测后给的修法）
+    ///
+    /// | 档位 | 角色 | 取值 |
+    /// |---|---|---|
+    /// | 13mm  | 超广角 | 原生视场（阶梯第 0 级 = `1.0`） |
+    /// | 24mm  | 广角   | 原生视场（= `switchOver[0]`） |
+    /// | 48mm  | 广角×2 | 广角原生视场 × 2（传感器 2× 裁切，**不是独立镜头**） |
+    /// | 120mm | 长焦   | 原生视场（= `switchOver[last]`） |
+    ///
+    /// ## 为什么**不再**用 `mm ÷ 基准`
+    ///
+    /// 设备的虚拟基准是**机型相关**的。实测某机 `switchOver = [2.000, 10.000]`，
+    /// 而 2.0 / 10.0 正对着 24mm / 120mm 两颗镜头的等效焦距
+    /// （2.0 × 12 = 24 ✓、10.0 × 12 = 120 ✓，自洽）⇒ **它的基准是 12mm，不是 13mm**。
+    ///
+    /// 原方案写死 `mm ÷ 13`，后果两层：
+    ///   1. 整表偏小约 **8%**（24 → 1.846 而非 2.0；120 → 9.231 而非 10.0）；
+    ///   2. **最要命的是 120mm**：9.231 落在 `switchOver[1] = 10.0` **之下** →
+    ///      系统根本不会切到长焦，只会继续用主摄数码放大（画质崩），
+    ///      而 UI 却显示"已切到 120mm" —— 属于"装作切过去了"，本项目明令禁止。
+    ///
+    /// 改成按角色读设备之后，**"基准是 12 还是 13mm"这个问题不再需要回答**，
+    /// 而且"哪几档可用"顺带由设备自身的镜头构成决定（没有长焦 → 120mm 档置灰）。
+    static func zoomFactor(forFocal focal: FocalPreset, of device: AVCaptureDevice) -> CGFloat? {
+        guard let role = focal.lensRole else { return nil }
+        switch role {
+        case .wideCrop2x:
+            guard let wide = nativeZoom(of: .wide, on: device) else { return nil }
+            return wide * 2
+        case .ultraWide, .wide, .telephoto:
+            return nativeZoom(of: role, on: device)
+        }
+    }
+
     /// 变焦拓扑一行描述（B1 ④ 的核法：**一次冷启动就能拿到硬数据**）。
     ///
-    /// 打印三件事：设备类型 / constituent 数量 / 系统切换点 + 换算用的基准与可用区间。
+    /// 打印：设备类型 / constituent 数与角色 / switchOver / **原生阶梯** /
+    /// **四个档位实际解析出的 zoom** / 哪些档位不可用 / 可用区间。
     ///
-    /// 怎么用它核对方案第三节那个前提（"虚拟设备的 `1.0` = 最广 constituent 的 native 视场"）
-    /// ——**不用再"设 1.0 拍一张与相册里的 13mm 对比视场"**：
+    /// 为什么把"档位 → zoom"也打出来：B1 第一版按 `mm ÷ 13` 换算，**真机上整体偏小 8%**
+    /// 且 120mm 档落在切换点之下（Mac 侧 2026-09-19 实测发现）。这行日志把那笔账变成
+    /// **可当场核对**的硬数据 —— 拿 24mm / 120mm 档的值与 switchOver 一比就知道对不对，
+    /// 不用拍图、不用人工判断视场。
     ///
-    ///   `virtualDeviceSwitchOverVideoZoomFactors` 是三摄机型上"系统自动换 constituent"的
-    ///   zoom 阈值（通常 ≈ `[2.0, 9.2]`）。若与档位映射表算出的切换点（24mm→1.846、
-    ///   120mm→9.231）**天然接近**，就说明基准 13mm 是对的；若明显不符（比如两个值都翻倍、
-    ///   或只有一个切换点且远大于 2），说明基准该整体平移 —— **只改 4 个常量，其余逻辑不动**。
+    /// 判读口径：
+    ///   - `13mm 档 == 1.000` ✓ 最广 constituent 的原生视场
+    ///   - `24mm 档 == switchOver[0]` ✓ 广角原生视场
+    ///   - `120mm 档 == switchOver[last]` ✓ 长焦原生视场
+    ///     （**必须 ≥ 最后一个切换点**；小于它说明系统不会切长焦，只会数码放大）
     static func zoomTopologyDescription(of device: AVCaptureDevice) -> String {
         let range = zoomRange(of: device)
+        let ladder = nativeZoomLadder(of: device)
+        let roles = constituentRoles(of: device)
         let switchOvers = device.virtualDeviceSwitchOverVideoZoomFactors
             .map { String(format: "%.3f", $0.doubleValue) }
             .joined(separator: ", ")
-        let base = baseMillimeters(of: device)
+
+        let tierText = FocalCatalog.all.map { preset -> String in
+            let value = zoomFactor(forFocal: preset, of: device)
+                .map { String(format: "%.3f", $0) } ?? "不可用"
+            return "\(preset.id)→\(value)"
+        }.joined(separator: " / ")
+
+        let unavailable = unavailableFocalIds(for: device)
+        let unavailableText = unavailable.isEmpty
+            ? "无"
+            : FocalCatalog.all.filter { unavailable.contains($0.id) }
+                .map(\.id).joined(separator: ",")
+
         return "变焦拓扑：deviceType=\(device.deviceType.rawValue)"
             + " · constituents=\(device.constituentDevices.count)"
-            + " · 超广角可达=\(hasUltraWideLens(reachableFrom: device) ? "是" : "否")"
-            + " · 基准=\(Int(base))mm"
+            + " · 角色=[\(roles.map(\.displayName).joined(separator: ","))]"
             + " · switchOver=[\(switchOvers.isEmpty ? "—" : switchOvers)]"
+            + " · 原生阶梯=[\(ladder.map { String(format: "%.3f", $0) }.joined(separator: ", "))]"
+            + " · 档位=\(tierText)"
+            + " · 不可用=\(unavailableText)"
             + " · zoomRange=[\(String(format: "%.2f", range.lowerBound)),"
             + " \(String(format: "%.2f", range.upperBound))]"
-    }
-
-    /// 档位等效焦距 → 虚拟设备的 `videoZoomFactor`（**纯算术**，基准见上）。
-    ///
-    /// 之所以能用纯算术：虚拟多摄设备的 `videoZoomFactor = 1.0` 是"最广 constituent 的 native 视场"
-    /// （Apple 文档：`1.0 (full field of view)`），所以倍率就是焦距比。
-    /// 越过系统切换点（`virtualDeviceSwitchOverVideoZoomFactors`，三摄约 `[2.0, 9.2]`）时
-    /// **系统自动换 constituent 镜头**，画面平滑 —— 这正是回退链选虚拟设备的理由。
-    static func zoomFactor(
-        forFocalMillimeters millimeters: CGFloat,
-        baseMillimeters base: CGFloat
-    ) -> CGFloat? {
-        guard base > 0, millimeters > 0 else { return nil }
-        return millimeters / base
     }
 
     /// 设备的 `[min, max]` 可用 zoom 区间（**下限至少 1.0**）。
@@ -128,23 +221,26 @@ enum CaptureCapabilities {
 
     /// 当前设备上**不可用**的焦段档位 id 集合（B1 置灰用）。
     ///
-    /// 判据：档位换算出的 zoom **落不进** `zoomRange` → 该视场在这台设备上表达不了。
-    /// 典型场景：单摄设备上 13mm 档（13/24 = 0.54 < 1.0）。
+    /// 两条判据，任一命中即不可用：
+    ///
+    /// 1. **设备没有那一档需要的镜头**（`zoomFactor(forFocal:of:)` 返回 `nil`）——
+    ///    例如单摄 / "广角+长焦"双摄上没有超广角 → 13mm 档；没有长焦 → 120mm 档。
+    ///    这条是 2026-09-19 修正后新增的，比老的"算出来落不进区间"**更早也更准**：
+    ///    它直接说的是"镜头不在那儿"，而不是靠算术推出一个够不到的倍率。
+    /// 2. 换算出的 zoom **落不进** `zoomRange`（含容差 0.01：设备能力是浮点，
+    ///    卡在边界上的档位不该被误判）。
     ///
     /// ⚠️ 这里**只判"能不能表达"，不判"是不是光学变焦"** ——
-    /// 数字变焦也算能表达（画质降级是另一回事，不在置灰范围内）。
+    /// 48mm 档本来就是广角的 2× 裁切（数字），它算"能表达"（画质降级是另一回事）。
     static func unavailableFocalIds(for device: AVCaptureDevice) -> Set<String> {
         let range = zoomRange(of: device)
-        let base = baseMillimeters(of: device)
         var unavailable: Set<String> = []
         for preset in FocalCatalog.all {
-            guard let mm = preset.millimeters,
-                  let zoom = zoomFactor(forFocalMillimeters: mm, baseMillimeters: base) else {
-                // 解析不出来的档位按"不可用"处理（宁可灰掉，也不让用户点了没反应）
+            guard let zoom = zoomFactor(forFocal: preset, of: device) else {
+                // 需要的那颗镜头不存在（或档位数据解析不出来）→ 置灰（仍可点，点了给原因）
                 unavailable.insert(preset.id)
                 continue
             }
-            // 容差 0.01：设备能力是浮点，卡在边界上的档位不该被误判
             if zoom < range.lowerBound - 0.01 || zoom > range.upperBound + 0.01 {
                 unavailable.insert(preset.id)
             }

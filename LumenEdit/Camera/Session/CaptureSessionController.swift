@@ -265,26 +265,32 @@ final class CaptureSessionController: ObservableObject {
 
     /// 按焦段档位变焦（B1）。
     ///
-    /// **换算放在这里而不是 ViewModel**：档位 mm → `videoZoomFactor` 需要设备的基准焦距
-    /// （`CaptureCapabilities.baseMillimeters` 靠 constituent 探测得出），那是会话层的知识；
+    /// **换算放在这里而不是 ViewModel**：档位 → `videoZoomFactor` 要读**设备自身**的镜头构成
+    /// 与系统切换点（`CaptureCapabilities.zoomFactor(forFocal:of:)`），那是会话层的知识；
     /// VM 只管"用户点了哪个档"（分层纪律：UI 不碰设备细节）。
     ///
+    /// ⚠️ 换算**不再用 `mm ÷ 基准`**（2026-09-19 Mac 实测：虚拟基准是**机型相关**的，
+    /// 那台机是 12mm 而不是文档假设的 13mm；硬除会让 120mm 档落在 `switchOver[1]` 之下，
+    /// 系统不切长焦、只用主摄数码放大）。
+    ///
     /// - Parameter completion: 回主线程回调 `(实际生效 zoom?, 是否被 clamp)`；
-    ///   解析 / 换算失败时第一个参数为 `nil`
+    ///   这台设备没有该档需要的镜头时第一个参数为 `nil`
     func applyFocal(
         _ preset: FocalPreset,
         animated: Bool = true,
         completion: ((_ applied: CGFloat?, _ wasClamped: Bool) -> Void)? = nil
     ) {
-        guard let device, let millimeters = preset.millimeters else {
+        guard let device else {
             completion?(nil, false)
             return
         }
-        let base = CaptureCapabilities.baseMillimeters(of: device)
-        guard let zoom = CaptureCapabilities.zoomFactor(
-            forFocalMillimeters: millimeters,
-            baseMillimeters: base
-        ) else {
+        guard let zoom = CaptureCapabilities.zoomFactor(forFocal: preset, of: device) else {
+            // 该档在这台设备上表达不了（缺那颗镜头）。正常路径上 UI 已置灰 + 会给 toast；
+            // 万一还是漏到这里，也**不推硬件** —— 不装作切过去了。
+            DebugLog.shared.debug(
+                "session",
+                "焦段 \(preset.displayName)mm 在本机没有对应镜头，未推硬件"
+            )
             completion?(nil, false)
             return
         }
@@ -574,7 +580,20 @@ final class CaptureSessionController: ObservableObject {
         }
 
         publish {
-            self.state = .running
+            // ⚠️ **同值不重发**（`@Published` 是 willSet 语义 —— 赋一个相同的值同样会发通知）。
+            //
+            // 为什么必须防：冷启动时 `startInternal()` 会被走**两次** ——
+            //   ① `onAppear` → `setVisible(true)` → `updateRunState()` → `start()`
+            //   ② scenePhase 变 active → `setAppActive(true)` → `updateRunState()` → `start()`
+            // 第二次时 `configurationSucceeded` 已是 true，重建被跳过，但**仍会走到这里**；
+            // 于是 `.running` 被发两遍 → 订阅方"会话就绪"的副作用（按档位对齐一次 zoom、
+            // 清空 EV 回写记录）跟着跑两遍 —— 真机日志里同一帧打印两遍"焦段已对齐"。
+            //
+            // 修法分两层：这里是**根因层**（状态没变就不该发通知）；
+            // `CameraViewModel` 那边还有一道 `removeDuplicates()` 兜住其它路径。
+            if self.state != .running {
+                self.state = .running
+            }
             self.lastErrorMessage = nil
         }
         refreshSnapshot()
