@@ -553,6 +553,198 @@ if (jsBitrate && Object.keys(swBitrate).length) {
   }
 }
 
+/* --- 3.6 参数刻度条（B2 · 模块 #9） --- */
+
+console.log('\n[6] 参数刻度条 ISO_STRIP / SHUTTER_* / WB_STRIP ⟷ ParameterStripCatalog');
+
+const stripSrc = readSwift('ParameterStripCatalog.swift');
+
+/** 等差数列（含端点）：`seq(2500, 10000, 100)` */
+function seq(start, end, step) {
+  const out = [];
+  for (let v = start; v <= end + 1e-9; v += step) out.push(v);
+  return out;
+}
+
+/** 取 Swift 里 `name: [Double] = [ ... ]`（支持 `1.0 / 125` 这种分数写法） */
+function swiftNumbers(name) {
+  const m = new RegExp(name + '\\s*:\\s*\\[Double\\]\\s*=\\s*\\[([\\s\\S]*?)\\]').exec(stripSrc);
+  if (!m) return null;
+  return m[1].split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(s => {
+      const frac = /^([0-9.]+)\s*\/\s*([0-9.]+)$/.exec(s);
+      return frac ? parseFloat(frac[1]) / parseFloat(frac[2]) : parseFloat(s);
+    });
+}
+
+/** 取 Swift 里 `name: [String] = [ "a", "b" ]` */
+function swiftStrings(name) {
+  const m = new RegExp(name + '\\s*:\\s*\\[String\\]\\s*=\\s*\\[([\\s\\S]*?)\\]').exec(stripSrc);
+  if (!m) return null;
+  return Array.from(m[1].matchAll(/"([^"]*)"/g)).map(x => x[1]);
+}
+
+/** 取 Swift 里 `name: Set<Double> = [...]` 或 `= Set(stride(from:through:by:))` */
+function swiftNumberSet(name) {
+  const lit = new RegExp(name + '\\s*:\\s*Set<Double>\\s*=\\s*\\[([^\\]]*)\\]').exec(stripSrc);
+  if (lit) {
+    return lit[1].split(',').map(s => parseFloat(s.trim())).filter(n => !Number.isNaN(n));
+  }
+  const strided = new RegExp(
+    name + '\\s*:\\s*Set<Double>\\s*=\\s*Set\\(stride\\(from: (\\d+), through: (\\d+), by: (\\d+)\\)'
+  ).exec(stripSrc);
+  return strided ? seq(+strided[1], +strided[2], +strided[3]) : null;
+}
+
+/** 数值数组逐项比对 */
+function compareNumbers(label, js, sw) {
+  if (!js || !sw) {
+    bad(label + '：取不到数据（原型 ' + Boolean(js) + ' / Swift ' + Boolean(sw) + '）');
+    return;
+  }
+  if (js.length !== sw.length) {
+    bad(label + '：档数不一致（原型 ' + js.length + ' / Swift ' + sw.length + '）');
+    return;
+  }
+  const diff = [];
+  js.forEach((v, i) => {
+    if (Math.abs(Number(v) - Number(sw[i])) > 1e-9) diff.push(i + ': ' + v + ' ≠ ' + sw[i]);
+  });
+  if (diff.length) {
+    bad(label + '：有 ' + diff.length + ' 项不一致（' + diff.slice(0, 5).join('、') + '…）');
+  } else {
+    ok(label + '：' + js.length + ' 档逐项一致');
+  }
+}
+
+/** 字符串数组逐项比对 */
+function compareStrings(label, js, sw) {
+  if (!js || !sw) {
+    bad(label + '：取不到数据（原型 ' + Boolean(js) + ' / Swift ' + Boolean(sw) + '）');
+    return;
+  }
+  const diff = [];
+  const n = Math.max(js.length, sw.length);
+  for (let i = 0; i < n; i++) {
+    if (String(js[i]) !== String(sw[i])) diff.push(i + ': ' + js[i] + ' ≠ ' + sw[i]);
+  }
+  if (js.length !== sw.length) {
+    bad(label + '：档数不一致（原型 ' + js.length + ' / Swift ' + sw.length + '）');
+  } else if (diff.length) {
+    bad(label + '：有 ' + diff.length + ' 项不一致（' + diff.slice(0, 5).join('、') + '…）');
+  } else {
+    ok(label + '：' + js.length + ' 档逐项一致');
+  }
+}
+
+/**
+ * 取原型里的 JS 数组字面量（**单行 / 多行都能取**）。
+ *
+ * 为什么不能直接用 `extractJsArray`：那个的正则要求数组以 `\n  ];`（两空格缩进的收尾）结束，
+ * 也就是**只认多行数组**（FOCALS / FILTERS 那种）。而参数刻度条的
+ * `ISO_STRIP` / `SHUTTER_VAL` / `SHUTTER_LABEL` 在原型里都是**单行**的，
+ * 用它会静默取不到（返回 null）—— 2026-09-19 第一版就这么踩了一次。
+ */
+function jsArray(varName) {
+  const m = new RegExp('var\\s+' + varName + '\\s*=\\s*(\\[[\\s\\S]*?\\]);', 'm').exec(html);
+  if (!m) return null;
+  try {
+    return new Function('return ' + m[1])();   // 纯数据字面量，含 `1/2` 这类表达式也能求值
+  } catch (e) {
+    return null;
+  }
+}
+
+// ① ISO：25 档数值
+compareNumbers('ISO 档位值', jsArray('ISO_STRIP'), swiftNumbers('isoValues'));
+
+// ② 快门：15 档秒数 + 15 档标签
+compareNumbers('快门档位（秒数）', jsArray('SHUTTER_VAL'), swiftNumbers('shutterSecondValues'));
+compareStrings('快门档位（标签）', jsArray('SHUTTER_LABEL'), swiftStrings('shutterLabels'));
+
+// ③ 白平衡：原型里是**生成**的（`for k=2500;k<=10000;k+=100`），不是字面量数组 → 按生成规则比对
+const jsWBRule = /WB_STRIP[\s\S]{0,80}?for \(var k=(\d+);k<=(\d+);k\+=(\d+)\)/.exec(html);
+const swWBRule = /\(0\.\.\.(\d+)\)\.map \{ (\d+) \+ Double\(\$0\) \* (\d+) \}/.exec(stripSrc);
+compareNumbers(
+  '白平衡档位（生成规则 2500→10000 步长 100）',
+  jsWBRule ? seq(+jsWBRule[1], +jsWBRule[2], +jsWBRule[3]) : null,
+  swWBRule ? seq(+swWBRule[2], +swWBRule[2] + +swWBRule[1] * +swWBRule[3], +swWBRule[3]) : null
+);
+
+// ④ 可视步进 slot（三条各不相同：46 / 56 / 26）
+{
+  const jsSlot = k => {
+    const m = new RegExp(k + ':\\s*\\{[^}]{0,200}?slot:(\\d+)').exec(html);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const swSlot = k => {
+    const m = new RegExp('case \\.' + k + ':\\s*return (\\d+)').exec(stripSrc);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const kinds = [['iso', 'iso'], ['shutter', 'shutter'], ['wb', 'whiteBalance']];
+  const wrong = kinds
+    .filter(([jsKey, swKey]) => jsSlot(jsKey) !== swSlot(swKey))
+    .map(([jsKey, swKey]) => jsKey + '：原型 ' + jsSlot(jsKey) + ' vs Swift ' + swSlot(swKey));
+  if (wrong.length) {
+    bad('可视步进 slot 不一致（' + wrong.join('；') + '）—— 三条档数差 5 倍，步进错会让某条长得离谱');
+  } else {
+    ok('可视步进 slot 一致（iso 46 / shutter 56 / wb 26）');
+  }
+}
+
+// ⑤ 标签档 & 白平衡预设档
+{
+  const jsISOLabel = /iso:\s*\{[\s\S]{0,220}?labelAt:\[([0-9,]+)\]/.exec(html);
+  compareNumbers(
+    'ISO 标签档',
+    jsISOLabel ? jsISOLabel[1].split(',').map(Number) : null,
+    swiftNumberSet('isoLabelledValues')
+  );
+
+  const jsWBPreset = /preset:\[([0-9,]+)\]/.exec(html);
+  compareNumbers(
+    '白平衡预设档',
+    jsWBPreset ? jsWBPreset[1].split(',').map(Number) : null,
+    swiftNumberSet('whiteBalancePresetValues')
+  );
+
+  const jsWBLabelled = /labelAt:\(function\(\)\{ var a=\[\]; for \(var k=(\d+);k<=(\d+);k\+=(\d+)\)/
+    .exec(html);
+  compareNumbers(
+    '白平衡标签档（每 500K）',
+    jsWBLabelled ? seq(+jsWBLabelled[1], +jsWBLabelled[2], +jsWBLabelled[3]) : null,
+    swiftNumberSet('whiteBalanceLabelledValues')
+  );
+}
+
+// ⑥ 默认档位（原型 `seed`）
+{
+  const jsSeedISO = /iso:\s*\{[\s\S]{0,200}?seed:(\d+)/.exec(html);
+  const jsSeedShutter = /shutter:\s*\{[\s\S]{0,200}?seed:'([^']+)'/.exec(html);
+  const jsSeedWB = /wb:\s*\{[\s\S]{0,200}?seed:'([^']+)'/.exec(html);
+  const swISO = /defaultISO: Double = (\d+)/.exec(stripSrc);
+  const swShutter = /defaultShutterSeconds: Double = ([0-9.]+) \/ ([0-9.]+)/.exec(stripSrc);
+  const swWB = /defaultWhiteBalanceKelvin: Double = (\d+)/.exec(stripSrc);
+
+  const problems = [];
+  if (!jsSeedISO || !swISO || Number(jsSeedISO[1]) !== Number(swISO[1])) problems.push('ISO');
+  const jsShutterDen = jsSeedShutter ? Number(jsSeedShutter[1].split('/')[1]) : null;
+  const swShutterDen = swShutter ? Number(swShutter[2]) : null;
+  if (jsShutterDen === null || swShutterDen === null || jsShutterDen !== swShutterDen) {
+    problems.push('快门');
+  }
+  if (!jsSeedWB || !swWB || Number(jsSeedWB[1].replace('K', '')) !== Number(swWB[1])) {
+    problems.push('白平衡');
+  }
+  if (problems.length) {
+    bad('默认档位不一致：' + problems.join('、') + '（原型 seed vs Swift 的 default* 常量）');
+  } else {
+    ok('默认档位一致（ISO 800 / 快门 1/125 / 白平衡 5600K）');
+  }
+}
+
 /* ============================================================
    结论
    ============================================================ */

@@ -78,6 +78,27 @@ final class CaptureSessionController: ObservableObject {
     @Published private(set) var exposureBias: Float = 0
     @Published private(set) var exposureBiasRange: ClosedRange<Float> = -2...2
 
+    /// 手动曝光档的当前值（`nil` = **自动档**）。**从设备回读**，不是本地记账。
+    ///
+    /// 见 `docs/16` 第六节：`exposureMode` 是同一个 device 实例上的真值，切模式不换 device
+    /// ⇒ 手动档会活下来 —— 本地记账必然出现"UI 说自动、设备是手动"。
+    @Published private(set) var manualExposure: (iso: Float, seconds: Double)?
+
+    /// 手动白平衡档的当前值（`nil` = 自动档）。同样从设备回读。
+    @Published private(set) var manualWhiteBalance: (temperature: Float, tint: Float)?
+
+    /// 三条刻度条在这台设备上**不可用**的档位值（UI 置灰用；空字典 = 还没算过）。
+    ///
+    /// 会话就绪 / 切模式 / 每次手动写入后重算 —— 因为设备可用域随 `activeFormat` 变。
+    @Published private(set) var unavailableStripValues: [ParameterStripKind: Set<Double>] = [:]
+
+    /// 设备**当前**的 ISO / 曝光时长（**自动档也有效** —— 取 AE 的收敛值）。
+    /// 自动 → 手动切换时用作初值（拍板 ③：切档瞬间画面不跳）。
+    @Published private(set) var currentExposure: (iso: Float, seconds: Double) = (100, 1.0 / 125)
+
+    /// 设备**当前**的色温（**自动档也有效** —— 取 AWB 的收敛值）。同上，用作切手动时的初值。
+    @Published private(set) var currentWhiteBalanceKelvin: Float = 5600
+
     /// 当前设备上**不可用**的焦段档位 id 集合（B1 置灰用）。
     ///
     /// 判据在 `CaptureCapabilities.unavailableFocalIds(for:)`：档位换算出的 zoom 落不进
@@ -199,6 +220,11 @@ final class CaptureSessionController: ObservableObject {
 
             self.preparePhotoTemplateIfNeeded(for: newMode)
             self.publish { self.mode = newMode }
+            // 切模式重配了输出、`activeFormat` 可能跟着变 → 手动档真值与刻度条可用域重算一次
+            // （手动档本身会活下来：换的是 output，不是 device）
+            if let device = self.device {
+                self.publishManualState(device)
+            }
             self.refreshSnapshot()
         }
     }
@@ -313,11 +339,121 @@ final class CaptureSessionController: ObservableObject {
             do {
                 try self.configurator.applyExposureBias(safeValue, to: device)
                 self.publish { self.exposureBias = safeValue }
+                // EV 写入可能把设备从手动曝光档**回切到自动档**（configurator 里有这条防线，
+                // 且会打 warn）→ 手动档真值变了，必须重发，否则 UI 会一直显示"手动"。
+                self.publishManualState(device)
                 self.refreshSnapshot()
             } catch {
                 DebugLog.shared.error("session", "设置曝光补偿失败：\(error.localizedDescription)")
                 self.publish { self.lastErrorMessage = error.localizedDescription }
             }
+        }
+    }
+
+    // MARK: - 手动曝光 / 手动白平衡（B2 · 刻度条接线）
+
+    /// 切到**手动曝光档**（ISO 与快门**一起**写 —— 刻度条拖动时每跨一档调一次）。
+    ///
+    /// ⚠️ EV 与手动档互斥：手动档下 `setExposureTargetBias` 会被系统忽略，
+    /// 而 `applyExposureBias` 还会把设备**回切到自动档**（`docs/16` 第五节）。
+    /// UI 侧必须拦住（`CameraViewModel.exposureEditingChanged` 的守卫），这里不再重复判。
+    func setManualExposure(iso: Float, seconds: Double) {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.configurator.setManualExposure(iso: iso, seconds: seconds, on: device)
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "切手动曝光失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// 曝光回到**自动档**（刻度条右端开关切回自动）
+    func setAutoExposure() {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.configurator.setAutoExposure(on: device)
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "切回自动曝光失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// 切到**手动白平衡档**（只给色温；**色调跟随设备当前值**，避免"调色温顺手改了色调"）
+    func setManualWhiteBalance(kelvin: Float) {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let tint = self.configurator.currentTint(of: device)
+                try self.configurator.setManualWhiteBalance(
+                    temperature: kelvin,
+                    tint: tint,
+                    on: device
+                )
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "切手动白平衡失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// 白平衡回到**自动档**（连续 AWB）
+    func setAutoWhiteBalance() {
+        guard let device else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.configurator.setAutoWhiteBalance(on: device)
+                self.publishManualState(device)
+                self.refreshSnapshot()
+            } catch {
+                DebugLog.shared.error("session", "切回自动白平衡失败：\(error.localizedDescription)")
+                self.publish { self.lastErrorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// **一次刷新**"手动档真值 + 刻度条可用域"并发布给 UI。
+    ///
+    /// 调用点（每一处设备可能改变曝光/白平衡档位的地方都要调）：
+    ///   - 4 个手动写入之后
+    ///   - `setExposureBias`（它可能把设备从手动档回切自动档）
+    ///   - `focus(atDevicePoint:)`（点按对焦会把 `exposureMode` 设成连续自动！）
+    ///   - `applyPreset`（预设会重设曝光与白平衡）
+    ///   - 会话就绪 / 切模式之后
+    ///
+    /// ⚠️ **不要放进每秒的 `refreshSnapshot` 定时器**：那会让 UI 每秒收到一次
+    /// 值没变的 `@Published`（同值也发），白白触发重算。手动档只在以上时机变。
+    private func publishManualState(_ device: AVCaptureDevice) {
+        let exposure = configurator.manualExposure(of: device)
+        let whiteBalance = configurator.manualWhiteBalance(of: device)
+        // "当前值"与"是否手动"是两件事：自动档下也要给出 AE / AWB 的收敛值，
+        // 那是"自动→手动"切换时的初值（否则初值只能瞎猜或退化成常量）。
+        let currentISO = device.iso
+        let currentSeconds = device.exposureDuration.safeSeconds
+        let currentKelvin = configurator.currentTemperature(of: device)
+        var unavailable: [ParameterStripKind: Set<Double>] = [:]
+        for kind in ParameterStripKind.allCases {
+            unavailable[kind] = CaptureCapabilities.unavailableStripValues(for: kind, on: device)
+        }
+        publish {
+            self.manualExposure = exposure
+            self.manualWhiteBalance = whiteBalance
+            self.currentExposure = (currentISO, currentSeconds)
+            self.currentWhiteBalanceKelvin = currentKelvin
+            self.unavailableStripValues = unavailable
         }
     }
 
@@ -328,6 +464,10 @@ final class CaptureSessionController: ObservableObject {
             guard let self else { return }
             do {
                 try self.configurator.setFocusAndExposurePoint(point, on: device)
+                // ⚠️ 点按对焦会把 `exposureMode` 设成**连续自动曝光** —— 也就是说
+                // 手动 ISO/快门 档会被它顶掉（这是系统语义，不是 bug）。
+                // 所以必须重发手动档真值，让 UI 立刻回到"自动"（否则用户会以为还锁着）。
+                self.publishManualState(device)
                 self.refreshSnapshot()
             } catch {
                 DebugLog.shared.error("session", "设置对焦点失败：\(error.localizedDescription)")
@@ -346,6 +486,8 @@ final class CaptureSessionController: ObservableObject {
                 self.publish {
                     self.exposureBias = preset.exposureBias
                 }
+                // 预设会重设曝光（ISO/快门 或 EV）与白平衡 → 手动档真值可能整片变了
+                self.publishManualState(device)
                 self.refreshSnapshot()
             } catch {
                 DebugLog.shared.error("session", "应用预设失败：\(error.localizedDescription)")
@@ -577,6 +719,14 @@ final class CaptureSessionController: ObservableObject {
         if !session.isRunning {
             DebugLog.shared.info("session", "startRunning()")
             session.startRunning()
+        }
+
+        // 会话就绪：**按设备真值刷新手动档状态 + 刻度条可用域**。
+        // 为什么放这里而不是上面那个配置块里：配置块只跑一次（`configurationSucceeded` 守着），
+        // 而"就绪"每次都会到（冷启动 / 返回相机页 / 切模式）；而且设备可用域随 `activeFormat` 变，
+        // 必须在格式定下来之后读。
+        if let device {
+            publishManualState(device)
         }
 
         publish {

@@ -540,6 +540,9 @@ final class CameraViewModel: ObservableObject {
     /// `CameraView` 的**方向锁**兜住（见 `swipeAxis`）。
     @Published private(set) var isExposureEditing = false
 
+    /// 是否处于**手动曝光档**（ISO / 快门 被锁定）—— 派生自硬件真值，不本地记账
+    private var isManualExposureActive: Bool { environment?.session.manualExposure != nil }
+
     /// EV 滑块开始 / 结束拖动。
     ///
     /// 两个职责：
@@ -549,13 +552,237 @@ final class CameraViewModel: ObservableObject {
     ///
     /// ⚠️ 顺序有讲究：**先复位编辑态、再推硬件**。松手那一下推出的值会正常回写回来
     ///（此时编辑态已复位），"松手后以最终吸附值为准同步一次"就靠这个顺序自然成立。
+    ///
+    /// ⚠️ **手动曝光档下必须拦下**（`docs/16` 第五节 ②）：`setExposureTargetBias` 在手动档下
+    /// 会被系统忽略，而 `CaptureDeviceConfigurator.applyExposureBias` 里那条"顺手回切自动档"
+    /// 的最后防线会把设备**从手动档切走** —— 也就是"拖一下 EV，ISO/快门 的锁定静默失效"。
+    /// UI 侧已禁用 EV 面板（第三道），这里是第二道；真被走到说明 UI 漏了 → 留痕。
     func exposureEditingChanged(_ isEditing: Bool) {
-        // 幂等赋值：拖动中 onChanged 会反复送 `true`，值没变就别发 `objectWillChange`
         if isExposureEditing != isEditing {
             isExposureEditing = isEditing
         }
+        guard !isManualExposureActive else {
+            lastPushedExposureBias = nil
+            DebugLog.shared.warn(
+                "ui",
+                "手动曝光档下收到 EV 拖动 → 已拦下（EV 面板本应禁用，出现这条说明拦漏了）"
+            )
+            return
+        }
         lastPushedExposureBias = Float(exposureBias)
         environment?.session.setExposureBias(Float(exposureBias))
+    }
+
+    // MARK: - 参数刻度条（B2 · 模块 #9）
+
+    /// 当前展开的那条刻度条（`nil` = 收起）。
+    ///
+    /// **单值寄存** —— "同一时刻只显示一条"由类型保证（原型 `state.paramStrip` 同款），
+    /// 不需要互斥判断。**不落盘**：临时浮层状态。
+    @Published private(set) var paramStrip: ParameterStripKind?
+
+    /// 拖动草稿：**ISO 与快门必须成对写**（`setExposureModeCustom` 一次接管两者），
+    /// 所以拖某一条时要记住另一条 —— 这份草稿保存这一对。
+    ///
+    /// ## 为什么用草稿，而不是"本地值 + 回写闸门"
+    ///
+    /// `docs/16` 原方案写的是"刻度条要接与 `docs/14` 同款的回写闸门（拖动期不回写 + 只接受最后推送值）"。
+    /// 实现时发现一个更省的结构：**显示值在拖动期取草稿（跟手）、其余时刻取硬件真值** ——
+    /// 本地值根本不会与硬件值"打架"，所以那道闸门**不需要存在**。
+    /// 少一套状态 = 少一类 bug（`docs/14` 那个环路就是"本地值被硬件回写擅自改写"造成的）。
+    private var isoShutterDraft: (iso: Double, seconds: Double)?
+    private var whiteBalanceDraft: Double?
+
+    /// ISO / 快门 是否处于**自动档** —— **派生自硬件真值**，不本地记账
+    ///
+    /// 为什么要回读而不是自己记：`exposureMode` 是同一个 device 实例上的真值，
+    /// 切模式不换 device ⇒ 手动档会活下来；而且**点按对焦会把曝光打回自动**
+    /// （`setFocusAndExposurePoint` 里设了 `continuousAutoExposure`）——
+    /// 本地记账必然出现"UI 说手动、设备是自动"。见 `docs/16` 第六节。
+    var isISOShutterAuto: Bool { environment?.session.manualExposure == nil }
+
+    /// 白平衡是否处于自动档（同上，派生值）
+    var isWhiteBalanceAuto: Bool { environment?.session.manualWhiteBalance == nil }
+
+    /// 某条刻度条**当前应显示的值**：拖动期 = 草稿（跟手），其余 = **硬件真值**（`nil` = 自动态）
+    func stripDisplayValue(_ kind: ParameterStripKind) -> Double? {
+        guard let environment else { return nil }
+        switch kind {
+        case .iso:
+            if let draft = isoShutterDraft { return draft.iso }
+            return environment.session.manualExposure.map { Double($0.iso) }
+        case .shutter:
+            if let draft = isoShutterDraft { return draft.seconds }
+            return environment.session.manualExposure.map { $0.seconds }
+        case .whiteBalance:
+            if let draft = whiteBalanceDraft { return draft }
+            return environment.session.manualWhiteBalance.map { Double($0.temperature) }
+        }
+    }
+
+    /// 某条刻度条在这台设备上**不可用**的档位值（UI 置灰用；**灰但仍可点**，点了给 toast）
+    func unavailableStripValues(for kind: ParameterStripKind) -> Set<Double> {
+        environment?.session.unavailableStripValues[kind] ?? []
+    }
+
+    /// 设备当前的 ISO / 曝光时长（**自动档也有效** —— 取 AE 的收敛值）。
+    /// 自动→手动切换时用它当初值（用户 2026-09-19 拍板 ③：初值取设备当前值，画面不跳）。
+    private func currentExposurePair(_ environment: AppEnvironment) -> (iso: Double, seconds: Double) {
+        let current = environment.session.currentExposure
+        return (Double(current.iso), current.seconds)
+    }
+
+    /// 点图标行「白平衡 / 感光 / 快门速度」= 展开该条刻度条。
+    ///
+    /// 原型 `toggleStrip(id)`：**再点同一条 = 收起**；点另一条 = 换条（单值寄存天然成立）。
+    /// 展开时收起其余扩展浮层（原型 `toggleStrip` 里那三行：场景·风格 / 滤镜条 / 参数排）。
+    func stripTapped(_ kind: ParameterStripKind) {
+        // ⚠️ 这里**不能**用 `dismissTransientPopovers()` —— 它会把刻度条**自己也收掉**，
+        // 于是"再点同一条 = 收起"永远走不到、换条也会变成收起。
+        // 与 `formatChipTapped` 同款：**展开者只收别人**；点别处收起由
+        // `dismissTransientPopovers()`（外部控件调）负责。
+        dismissFunctionPanelIfNeeded()
+        dismissFormatSelectorIfNeeded()
+
+        let willExpand = paramStrip != kind
+        paramStrip = willExpand ? kind : nil
+
+        // 展开时的连带收起：toast 里要**说清**（本项目"状态改写必须留痕"的纪律）
+        let collapsedNames = [
+            isExposurePanelExpanded ? "参数排" : nil,
+            isFilterStripExpanded ? "滤镜条" : nil,
+            isSceneStyleExpanded ? "场景·风格" : nil
+        ].compactMap { $0 }
+
+        if willExpand {
+            isExposurePanelExpanded = false
+            isFilterStripExpanded = false
+            isSceneStyleExpanded = false
+        }
+        Haptics.tick()
+
+        DebugLog.shared.debug(
+            "ui",
+            "刻度条\(willExpand ? "展开" : "收起")（\(kind.displayName)）"
+                + (collapsedNames.isEmpty ? "" : " · 连带收起 \(collapsedNames.joined(separator: "、"))")
+        )
+
+        guard willExpand else {
+            showToast("\(kind.displayName) 刻度条已收起")
+            return
+        }
+        let draftNote = collapsedNames.isEmpty
+            ? ""
+            : " · \(collapsedNames.joined(separator: "与"))已收起"
+        if isAuto(kind) {
+            showToast("\(kind.displayName)：自动（点右侧开关切手动）\(draftNote)")
+        } else if let value = stripDisplayValue(kind) {
+            showToast(
+                "\(kind.displayName)：手动 \(ParameterStripCatalog.label(for: kind, value: value))"
+                    + "（左右滑动刻度）\(draftNote)"
+            )
+        } else {
+            showToast("\(kind.displayName) 刻度条\(draftNote)")
+        }
+    }
+
+    /// 某条刻度条当前是否自动档
+    private func isAuto(_ kind: ParameterStripKind) -> Bool {
+        kind == .whiteBalance ? isWhiteBalanceAuto : isISOShutterAuto
+    }
+
+    /// 右端「自动 / 手动」开关。
+    ///
+    /// ⚠️ **ISO 与快门共用一个开关**（原型 `state.auto.isoShutter`）：这是硬件约束 ——
+    /// 锁了 ISO 就得接管曝光时长，反之亦然（`setExposureModeCustom` 一次接管两者）。
+    /// 白平衡独立（`setWhiteBalanceModeLocked` 与曝光无关）。
+    func stripAutoToggled(_ kind: ParameterStripKind) {
+        guard let environment else { return }
+        let wasAuto = isAuto(kind)
+
+        if wasAuto {
+            // 自动 → 手动：**初值取设备当前值**（拍板 ③）—— 切档瞬间画面不跳，
+            // 用户是从"AE/AWB 刚收敛到的那一档"开始往下调的（系统相机就是这个手感）。
+            switch kind {
+            case .iso, .shutter:
+                let pair = currentExposurePair(environment)
+                DebugLog.shared.debug(
+                    "ui",
+                    "切手动曝光档：初值取设备当前值 ISO \(String(format: "%.0f", pair.iso))"
+                        + " / \(FormatText.shutterSpeed(pair.seconds))"
+                )
+                environment.session.setManualExposure(
+                    iso: Float(pair.iso),
+                    seconds: pair.seconds
+                )
+            case .whiteBalance:
+                let kelvin = environment.session.currentWhiteBalanceKelvin
+                DebugLog.shared.debug(
+                    "ui",
+                    "切手动白平衡档：初值取设备当前值 \(String(format: "%.0f", kelvin))K"
+                )
+                environment.session.setManualWhiteBalance(kelvin: kelvin)
+            }
+            showToast("\(kind.displayName) 已切手动（初值取当前画面值）· 左右滑动刻度调节")
+        } else {
+            switch kind {
+            case .iso, .shutter:
+                environment.session.setAutoExposure()
+                showToast("ISO 与快门已切回自动（两者共用一个开关）")
+            case .whiteBalance:
+                environment.session.setAutoWhiteBalance()
+                showToast("白平衡已切回自动（AWB）")
+            }
+        }
+        Haptics.tick()
+        // 草稿作废：档位刚切换，显示要交回新的硬件真值
+        isoShutterDraft = nil
+        whiteBalanceDraft = nil
+    }
+
+    /// 刻度条拖动（**每跨一档一次**）。`isEditing` 在拖动开始/结束由控件上报。
+    ///
+    /// 自动态下控件本来就不响应（原型 `stripIsAuto` 同款），这里再兜一道：
+    /// 自动态收到拖动值直接忽略，避免"自动档被拖出个手动档"这种怪状态。
+    func stripValueChanged(_ kind: ParameterStripKind, value: Double, isEditing: Bool) {
+        guard let environment else { return }
+        guard !isAuto(kind) else {
+            DebugLog.shared.debug("ui", "刻度条 \(kind.displayName) 处于自动态，忽略拖动值")
+            return
+        }
+
+        switch kind {
+        case .iso:
+            var draft = isoShutterDraft ?? currentExposurePair(environment)
+            draft.iso = value
+            isoShutterDraft = draft
+            environment.session.setManualExposure(
+                iso: Float(draft.iso),
+                seconds: draft.seconds
+            )
+        case .shutter:
+            var draft = isoShutterDraft ?? currentExposurePair(environment)
+            draft.seconds = value
+            isoShutterDraft = draft
+            environment.session.setManualExposure(
+                iso: Float(draft.iso),
+                seconds: draft.seconds
+            )
+        case .whiteBalance:
+            whiteBalanceDraft = value
+            environment.session.setManualWhiteBalance(kelvin: Float(value))
+        }
+
+        if !isEditing {
+            // 松手：草稿清掉 → 显示交回**硬件真值**（异步回读一两帧内到，值本来就一致）
+            DebugLog.shared.debug(
+                "ui",
+                "刻度条 \(kind.displayName) 松手吸附到 "
+                    + ParameterStripCatalog.label(for: kind, value: value)
+            )
+            isoShutterDraft = nil
+            whiteBalanceDraft = nil
+        }
     }
 
     // MARK: - 模式
@@ -737,19 +964,22 @@ final class CameraViewModel: ObservableObject {
         showToast("对焦：点按取景器任意位置即可 · 手动对焦圆盘在模块 #8 交付")
     }
 
-    /// 第 3 项「白平衡」：刻度条是模块 #9（参数排展开态，一次一条）
+    /// 第 3 项「白平衡」：展开 / 收起**白平衡刻度条**（模块 #9，B 组接线）
     func whiteBalanceTapped() {
-        showToast("白平衡刻度条在 P2 参数批次交付（走 setWhiteBalanceModeLocked）")
+        stripTapped(.whiteBalance)
     }
 
-    /// 第 4 项「感光」
+    /// 第 4 项「感光」：展开 / 收起 **ISO 刻度条**
     func isoTapped() {
-        showToast("感光度 ISO 刻度条在 P2 参数批次交付（走 setExposureModeCustom）")
+        stripTapped(.iso)
     }
 
-    /// 第 5 项「快门速度」
+    /// 第 5 项「快门速度」：展开 / 收起**快门刻度条**
+    ///
+    /// ⚠️ 与「感光」是**同一条自动/手动开关**（ISO 与快门共用一个，硬件约束）——
+    /// 两条刻度条可以分别展开，但切换手动的开关是同一个。
     func shutterSpeedTapped() {
-        showToast("快门速度刻度条在 P2 参数批次交付（同一套 setExposureModeCustom）")
+        stripTapped(.shutter)
     }
 
     /// 第 6 项「曝光补偿」：**展开 / 收起参数排**（EV 滑块就在它里面）。
@@ -762,11 +992,25 @@ final class CameraViewModel: ObservableObject {
     /// ⚠️ **连带收起必须在提示里说清**（2026-09-18 真机教训）：此前这里是静默改写
     /// 两个浮层的状态，用户与日志都看不见 → "上划为什么走到那个分支"无法对账。
     func exposureCompensationTapped() {
+        // ⚠️ **手动曝光档下 EV 不生效**（`docs/16` 第五节 ①）：
+        //   `setExposureTargetBias` 会被系统忽略，而 configurator 里那条"回切自动档"的最后防线
+        //   会把 ISO / 快门 的锁定**静默解除** —— 所以这里直接拦住并说明原因，
+        //   不做"点了没反应"，更不做"点了把别处锁定的东西悄悄改掉"。
+        //   已展开时允许收起：否则用户切到手动档之后就关不掉这个面板了。
+        if isManualExposureActive && !isExposurePanelExpanded {
+            Haptics.warning()
+            DebugLog.shared.debug("ui", "手动曝光档下点「曝光补偿」→ 已拦下并说明 EV 不生效")
+            showToast("手动 ISO / 快门 档下 EV 不生效 —— 先点刻度条右端开关切回自动")
+            return
+        }
+
         // 先记住这一下会连带收起谁（toast 只报真发生的事，不虚报）
-        let willCollapseOthers = !isExposurePanelExpanded && (isFilterStripExpanded || isSceneStyleExpanded)
+        let willCollapseOthers = !isExposurePanelExpanded
+            && (isFilterStripExpanded || isSceneStyleExpanded || paramStrip != nil)
         let collapsedNames = [
             isFilterStripExpanded ? "滤镜条" : nil,
-            isSceneStyleExpanded ? "场景·风格条" : nil
+            isSceneStyleExpanded ? "场景·风格条" : nil,
+            paramStrip.map { "\($0.displayName) 刻度条" }
         ].compactMap { $0 }
 
         isExposurePanelExpanded.toggle()
@@ -782,6 +1026,9 @@ final class CameraViewModel: ObservableObject {
         if isExposurePanelExpanded {
             isFilterStripExpanded = false
             isSceneStyleExpanded = false
+            paramStrip = nil
+            isoShutterDraft = nil
+            whiteBalanceDraft = nil
             let value = FormatText.exposureBias(Float(exposureBias))
             let suffix = willCollapseOthers
                 ? " · \(collapsedNames.joined(separator: "与"))已收起"
@@ -806,16 +1053,21 @@ final class CameraViewModel: ObservableObject {
     /// - Parameter source: 入口名，只用于日志对账（"胶囊/箭头" 还是 "风格方块"）
     func toggleSceneStyle(source: String = "胶囊") {
         // 先记住"这一下会不会连带收起别的浮层"，toast 才说得准
-        let willCollapseOthers = !isSceneStyleExpanded && (isFilterStripExpanded || isExposurePanelExpanded)
+        let willCollapseOthers = !isSceneStyleExpanded
+            && (isFilterStripExpanded || isExposurePanelExpanded || paramStrip != nil)
         let collapsedNames = [
             isFilterStripExpanded ? "滤镜条" : nil,
-            isExposurePanelExpanded ? "参数排" : nil
+            isExposurePanelExpanded ? "参数排" : nil,
+            paramStrip.map { "\($0.displayName) 刻度条" }
         ].compactMap { $0 }
 
         isSceneStyleExpanded.toggle()
         if isSceneStyleExpanded {
             isFilterStripExpanded = false
             isExposurePanelExpanded = false
+            paramStrip = nil
+            isoShutterDraft = nil
+            whiteBalanceDraft = nil
         }
         Haptics.tick()
 
@@ -898,22 +1150,30 @@ final class CameraViewModel: ObservableObject {
         dismissTransientPopovers()
         if up {
             if !isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格与参数排
-                // 连带收起参数排时在提示里说明（同一类"状态被改写要留痕"，2026-09-18）
+                // 互斥（原型 setFilter(true)）：呼出滤镜条时收起场景·风格、参数排与刻度条
+                // 连带收起时在提示里说明（同一类"状态被改写要留痕"，2026-09-18）
                 let panelNote = isExposurePanelExpanded ? "（参数排已收起）" : ""
+                let stripNote = paramStrip.map { "（\($0.displayName) 刻度条已收起）" } ?? ""
                 isFilterStripExpanded = true
                 isSceneStyleExpanded = false
                 isExposurePanelExpanded = false
+                paramStrip = nil
+                isoShutterDraft = nil
+                whiteBalanceDraft = nil
                 Haptics.tick()
-                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格\(panelNote)")
+                showToast("已呼出滤镜条 · 再上划一次呼出场景与风格\(panelNote)\(stripNote)")
             } else if isFilterStripExpanded && !isSceneStyleExpanded {
-                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条与参数排
+                // 互斥（原型 setSS(true)）：呼出场景·风格时收起滤镜条、参数排与刻度条
                 let panelNote = isExposurePanelExpanded ? "（参数排已收起）" : ""
+                let stripNote = paramStrip.map { "（\($0.displayName) 刻度条已收起）" } ?? ""
                 isFilterStripExpanded = false
                 isSceneStyleExpanded = true
                 isExposurePanelExpanded = false
+                paramStrip = nil
+                isoShutterDraft = nil
+                whiteBalanceDraft = nil
                 Haptics.tick()
-                showToast("已呼出场景与风格 · 下划收起\(panelNote)")
+                showToast("已呼出场景与风格 · 下划收起\(panelNote)\(stripNote)")
             } else {
                 showToast("浮层已全部展开 · 下划收起")
             }
@@ -924,28 +1184,35 @@ final class CameraViewModel: ObservableObject {
             } else if isFilterStripExpanded {
                 collapseOverlays()
                 showToast("已收起滤镜条，参数排回到平铺")
-            } else if isExposurePanelExpanded {
+            } else if isExposurePanelExpanded || paramStrip != nil {
                 collapseOverlays()
-                showToast("已收起参数排")
+                showToast("已收起参数排 / 刻度条")
             } else {
                 showToast("没有更多可收起的浮层")
             }
         }
     }
 
-    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / 参数排 / EV 圆盘。
+    /// 收起**全部**扩展浮层（原型 `collapseAll`）：场景·风格 / 滤镜条 / 参数排 / **参数刻度条**。
     ///
-    /// ⚠️ **新浮层必须加进这里**（#8 的 EV 圆盘、#9 的参数刻度条落地时补）——
-    /// 少加一处就会出现"下划收不干净"。
+    /// ✅ **Backlog ④ 就此关闭**（它记的就是"浮层互斥缺收起刻度条那一半"）：
+    /// 至此这里一共收 **4 样**，与原型 `collapseAll` 的 4 样一一对应
+    ///（原型收：场景·风格 / 滤镜条 / 刻度条区 / EV 圆盘）。
+    /// ⚠️ **#8 的 EV 圆盘落地时继续加进这里**（原型那第 4 样我方还没建）。
     /// ⚠️ 功能面板（#10）**不在这里**：它是模态浮层，不是"扩展浮层"（原型 `collapseAll` 也不碰
     /// `fnOpen`）；它是**反向**关系 —— 开面板时收起这些（见 `toggleFunctionPanel()`）。
     private func collapseOverlays() {
-        guard isFilterStripExpanded || isSceneStyleExpanded || isExposurePanelExpanded else {
+        guard isFilterStripExpanded || isSceneStyleExpanded
+            || isExposurePanelExpanded || paramStrip != nil else {
             return
         }
         isFilterStripExpanded = false
         isSceneStyleExpanded = false
         isExposurePanelExpanded = false
+        paramStrip = nil
+        // 收起刻度条时草稿一并作废（否则下次展开会先闪一下旧草稿值）
+        isoShutterDraft = nil
+        whiteBalanceDraft = nil
         Haptics.tick()
     }
 
@@ -978,15 +1245,31 @@ final class CameraViewModel: ObservableObject {
         isFunctionPanelExpanded = false
     }
 
-    /// 点任意"别处"时收起**所有临时弹层**（功能面板 + 格式选择器）。
+    /// 点任意"别处"时收起**所有临时弹层**（功能面板 + 格式选择器 + 参数刻度条）。
     ///
     /// 为什么合并成一个入口：原型是一个**全局 `pointerdown` 监听**同时处理
-    /// `fnOpen` / `fmtOpen` / `evOpen`；Swift 侧没有全局监听，只能逐个控件接线 ——
+    /// `fnOpen` / `fmtOpen` / `evOpen` / `paramStrip`；Swift 侧没有全局监听，只能逐个控件接线 ——
     /// 那就必须**只有一个调用点名字**，否则"新增一个弹层忘了在某处收"会反复发生。
-    /// ⚠️ 以后再加临时弹层（EV 圆盘、参数刻度条），**加进这里**，调用点不用动。
+    /// ⚠️ 以后再加临时弹层（#8 的 EV 圆盘），**加进这里**，调用点不用动。
+    ///
+    /// ⚠️ **展开者自己不要调这个函数**（`stripTapped` / `formatChipTapped` 都是）——
+    /// 它会把你刚展开的那个也收掉，表现为"永远打不开"或"再点同一条收不掉"。
     func dismissTransientPopovers() {
         dismissFunctionPanelIfNeeded()
         dismissFormatSelectorIfNeeded()
+        dismissParamStripIfNeeded()
+    }
+
+    /// 点别处收起**参数刻度条**（与 #10 / #11 同款"逐点接线"）
+    ///
+    /// 这也是 Backlog ④（浮层互斥缺"收起刻度条"那一半）的落地 ——
+    /// 另一半（`collapseOverlays()`）同样已补上。
+    func dismissParamStripIfNeeded() {
+        guard paramStrip != nil else { return }
+        DebugLog.shared.debug("ui", "刻度条收起（点别处）")
+        paramStrip = nil
+        isoShutterDraft = nil
+        whiteBalanceDraft = nil
     }
 
     /// 面板第 1 格「实况」：照片模式下是否采集 Live Photo（只记状态 + 角标，接线属 B 组）

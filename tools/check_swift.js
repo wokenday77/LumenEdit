@@ -693,7 +693,13 @@ if (!camViewFile || !vmFile) {
     bad('CameraViewModel 里没有 isExposurePanelExpanded —— 参数排又变回常驻了？');
   } else if (!/isExposurePanelExpanded\s*(?::\s*[^=\n]+)?=\s*false/.test(vmSrc8)) {
     bad('isExposurePanelExpanded 没有显式默认 false（参数排应默认收起）');
-  } else if (!/func exposureCompensationTapped[\s\S]{0,400}?isExposurePanelExpanded\.toggle\(\)/.test(vmSrc8)) {
+  // ⚠️ 这一条原来用**字符窗口**匹配（`func exposureCompensationTapped[\s\S]{0,400}?...toggle()`），
+  //    2026-09-19 B2a 被自己的注释挤爆过一次：在函数开头加了一段守卫说明（EV 与手动档互斥），
+  //    窗口就不够了 → **报了个假的 FAIL**。
+  //    改成**按函数体匹配**（`methodBodyOf`）—— 不再数窗口，加注释/加分支都不会失效。
+  } else if (!/isExposurePanelExpanded\.toggle\(\)/.test(
+    methodBodyOf(vmSrc8, 'exposureCompensationTapped') || ''
+  )) {
     bad('图标行「曝光补偿」没有走 toggle —— 那参数排就没有收起入口（用户找不到关闭方式）');
   } else if (!/isExposurePanelShown/.test(viewSrc8)) {
     bad('CameraView 没用 isExposurePanelShown 门控参数排（放大态/收起态会漏渲染）');
@@ -1558,6 +1564,176 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
       ? '当前 0 个扩展 —— 原型已同步'
       : extDeclared + ' 档标为 Swift 扩展')
       + '），且 ' + catalogIds.length + ' 档都能解析出镜头角色');
+  }
+}
+
+/* ---------- 12. 参数刻度条（B2 · 模块 #9） ---------- */
+// 为什么要这一组：
+//   a) 三条刻度条**一次只显示一条** —— 必须由单值状态保证（不是三个 Bool），写错就会"三条同时露出"；
+//   b) 手动档状态必须**从硬件回读**、不许本地记账 —— 否则会出现"UI 说手动、设备是自动"
+//      （切模式只换 output 不换 device；而**点按对焦还会把曝光打回自动**）；
+//   c) ISO 与快门**必须成对写**（`setExposureModeCustom` 一次接管两者），只写一个会被上层挡成
+//      `partialManualExposure`；
+//   d) 越界写硬件是**抛异常**（不是被忽略）→ 三处 clamp 一个都不能少；
+//   e) **EV 与手动档互斥**是本件最容易出静默 bug 的一处（拖 EV 会把 ISO/快门 的锁定悄悄解除）；
+//   f) **Backlog ④ 的正解**就在这里：`collapseOverlays()` 与 `dismissTransientPopovers()` 都要收刻度条。
+console.log('\n[12] 参数刻度条 (B2)');
+
+const b2CatFile = files.find(f => path.basename(f) === 'ParameterStripCatalog.swift');
+const b2CfgFile = files.find(f => path.basename(f) === 'CaptureDeviceConfigurator.swift');
+const b2SessFile = files.find(f => path.basename(f) === 'CaptureSessionController.swift');
+const b2VmFile = files.find(f => path.basename(f) === 'CameraViewModel.swift');
+
+if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
+  bad('找不到 ParameterStripCatalog / CaptureDeviceConfigurator / CaptureSessionController / CameraViewModel');
+} else {
+  const catSrc12 = fs.readFileSync(b2CatFile, 'utf8');
+  const cfgSrc12 = fs.readFileSync(b2CfgFile, 'utf8');
+  const sessSrc12 = fs.readFileSync(b2SessFile, 'utf8');
+  const vmSrc12 = fs.readFileSync(b2VmFile, 'utf8');
+  const cfgCode12 = cfgSrc12.replace(/\/\/[^\n]*/g, '');
+
+  // ① 三条刻度条：单值寄存 + 三格入口都接线
+  const singleSlot = /@Published private\(set\) var paramStrip: ParameterStripKind\?/.test(vmSrc12);
+  const threeEntries = ['whiteBalance', 'iso', 'shutter']
+    .every(k => new RegExp('stripTapped\\(\\.' + k + '\\)').test(vmSrc12));
+  const reTapSetsNil = /paramStrip = willExpand \? kind : nil/.test(vmSrc12);
+  if (!singleSlot) {
+    bad('`paramStrip` 不是单值寄存（应为 `ParameterStripKind?`）—— "一次只显示一条"必须由类型保证');
+  } else if (!threeEntries) {
+    bad('图标行三格没有都走 stripTapped（白平衡 / 感光 / 快门速度）');
+  } else if (!reTapSetsNil) {
+    bad('刻度条缺"再点同一条 = 收起"（应为 `paramStrip = willExpand ? kind : nil`）');
+  } else {
+    ok('三条刻度条单值寄存（`ParameterStripKind?`）· 三格都接 stripTapped · 再点同一条可收起');
+  }
+
+  // ② 手动档状态**从硬件回读**（不是本地记账）
+  const cfgReaders = /func manualExposure\(of device: AVCaptureDevice\)[\s\S]{0,160}?exposureMode == \.custom/
+      .test(cfgSrc12)
+    && /func manualWhiteBalance\(of device: AVCaptureDevice\)[\s\S]{0,160}?whiteBalanceMode == \.locked/
+      .test(cfgSrc12);
+  const sessPublishes = /@Published private\(set\) var manualExposure:/.test(sessSrc12)
+    && /@Published private\(set\) var manualWhiteBalance:/.test(sessSrc12);
+  const vmDerives = /var isISOShutterAuto: Bool \{ environment\?\.session\.manualExposure == nil \}/
+      .test(vmSrc12)
+    && /var isWhiteBalanceAuto: Bool \{ environment\?\.session\.manualWhiteBalance == nil \}/
+      .test(vmSrc12);
+  if (!cfgReaders) {
+    bad('configurator 缺"手动档真值回读"（`manualExposure(of:)` / `manualWhiteBalance(of:)`）'
+      + ' —— 没有它 UI 只能本地记账，必然出现"UI 说手动、设备是自动"');
+  } else if (!sessPublishes) {
+    bad('session 没有发布 `manualExposure` / `manualWhiteBalance`（回读结果要能传到 UI）');
+  } else if (!vmDerives) {
+    bad('VM 的 `isISOShutterAuto` / `isWhiteBalanceAuto` 不是派生自 session 的硬件真值'
+      + ' —— 本地记账 = "UI 说手动、设备是自动"（点按对焦会把曝光打回自动）');
+  } else {
+    ok('手动档状态从硬件回读（configurator 读 → session 发布 → VM 派生），不本地记账');
+  }
+
+  // ③ ISO 与快门**成对写**
+  //
+  // ⚠️ 必须**限定在 `setManualExposure` 的方法体内**：项目里还有一条**预设路径**
+  //    （`applyExposureLocked`）也调 `setExposureModeCustom(duration:iso:)`，
+  //    只按全文匹配的话，"手动方法里把 iso 拆掉"依然能被另一处满足 → 守卫形同虚设
+  //    （2026-09-19 变异测试 M24 抓出来的：那条守卫当时是全文匹配的）。
+  const manualExpBody = methodBodyOf(cfgCode12, 'setManualExposure');
+  const manualWBBody = methodBodyOf(cfgCode12, 'setManualWhiteBalance');
+  const pairWrite = !!manualExpBody
+    && /setExposureModeCustom\(\s*duration:\s*safeDuration,\s*iso:\s*safeISO/.test(manualExpBody);
+  if (!pairWrite) {
+    bad('`setManualExposure` 里的 `setExposureModeCustom` 没有同时给 `duration:` 与 `iso:` —— '
+      + '锁了 ISO 就得接管曝光时长，只写一个会抛 partialManualExposure'
+      + '（这条是"ISO/快门 共用一个开关"的硬件根源）');
+  } else {
+    ok('ISO 与快门在同一次 `setExposureModeCustom(duration:iso:)` 里成对写入');
+  }
+
+  // ④ 三处 clamp（越界赋值是抛异常）—— 同样要**限定在手动方法体内**（原因同 ③）
+  const clampISO = !!manualExpBody
+    && /safeISO[\s\S]{0,120}?clamped\(to: format\.minISO\.\.\.format\.maxISO\)/.test(manualExpBody);
+  const clampDuration = !!manualExpBody
+    && /durationRange = format\.minExposureDuration\.\.\.format\.maxExposureDuration/
+      .test(manualExpBody)
+    && /safeDuration = requested\.clamped\(to: durationRange\)/.test(manualExpBody);
+  const clampGains = !!manualWBBody
+    && /normalize\(device\.deviceWhiteBalanceGains\(for: values\), for: device\)/.test(manualWBBody);
+  if (!clampISO || !clampDuration || !clampGains) {
+    bad('手动档三处 clamp 不全（ISO ' + clampISO + ' / 时长 ' + clampDuration
+      + ' / 白平衡增益 ' + clampGains + '）—— 越界赋值是**抛异常**，不是被忽略');
+  } else {
+    ok('三处 clamp 齐全（ISO → minISO…maxISO / 时长 → min…maxExposureDuration / 白平衡增益 → normalize）');
+  }
+
+  // ⑤ 唯一入口（铁律 2 的延伸：硬件写入口只能在 configurator）
+  const manualWriters = files
+    .filter(f => /setExposureModeCustom\(|setWhiteBalanceModeLocked\(/.test(fs.readFileSync(f, 'utf8')))
+    .map(f => path.basename(f));
+  if (manualWriters.length !== 1 || manualWriters[0] !== 'CaptureDeviceConfigurator.swift') {
+    bad('`setExposureModeCustom` / `setWhiteBalanceModeLocked` 出现在 '
+      + manualWriters.join(' / ') + ' —— 硬件参数只允许走 CaptureDeviceConfigurator（铁律 2）');
+  } else {
+    ok('手动曝光 / 白平衡的硬件写入口只在 CaptureDeviceConfigurator（铁律 2）');
+  }
+
+  // ⑥ Backlog ④ 的两半：两处收口都要收刻度条
+  const collapseBody12 = methodBodyOf(vmSrc12, 'collapseOverlays');
+  const collapseHasStrip = !!collapseBody12 && /paramStrip = nil/.test(collapseBody12);
+  const dismissBody12 = methodBodyOf(vmSrc12, 'dismissTransientPopovers');
+  const dismissCallsStrip = !!dismissBody12 && /dismissParamStripIfNeeded\(\)/.test(dismissBody12);
+  if (!collapseHasStrip) {
+    bad('`collapseOverlays()` 没有收刻度条 —— 下划收不干净（Backlog ④ 只补了一半）');
+  } else if (!dismissCallsStrip) {
+    bad('`dismissTransientPopovers()` 没有收刻度条 —— "点别处收起"漏了它');
+  } else {
+    ok('刻度条已并入两处收口（collapseOverlays + dismissTransientPopovers）—— Backlog ④ 关闭');
+  }
+
+  // ⑦ EV ↔ 手动曝光档互斥（三道里至少两道要留在代码里，且 configurator 那道必须**留痕**）
+  const vmEvGate = /guard !isManualExposureActive else \{[\s\S]{0,300}?return\s*\n\s*\}/.test(
+    methodBodyOf(vmSrc12, 'exposureEditingChanged') || ''
+  );
+  const cfgSwitchWarn = /switchedBackFromManual[\s\S]{0,400}?DebugLog\.shared\.warn/.test(cfgCode12);
+  const tapGuard = /isManualExposureActive[\s\S]{0,200}?showToast/.test(vmSrc12);
+  if (!vmEvGate) {
+    bad('VM 的 `exposureEditingChanged` 没有"手动档不推 EV"的守卫 —— 拖一下 EV 会把 '
+      + 'ISO/快门 的锁定**静默解除**（`setExposureTargetBias` 在手动档下被系统忽略，'
+      + '而 configurator 还会回切自动档）');
+  } else if (!cfgSwitchWarn) {
+    bad('configurator 的"手动档下推 EV → 回切自动"没有打 warn 留痕 —— 静默改掉别处设置，'
+      + '排障时什么都看不到');
+  } else if (!tapGuard) {
+    bad('手动档下点「曝光补偿」没有说明原因（"点了没反应"违反产品约束）');
+  } else {
+    ok('EV 与手动曝光档互斥三道齐全（点入口说明 + VM 守卫 + configurator warn 留痕）');
+  }
+
+  // ⑧ 刻度条不落盘（`paramStrip` 是临时浮层状态）
+  const persisted = /lumen\.camera\.strip/.test(vmSrc12) || /lumen\.camera\.strip/.test(sessSrc12);
+  const stripToDefaults = /paramStrip[\s\S]{0,100}?UserDefaults/.test(vmSrc12);
+  if (persisted || stripToDefaults) {
+    bad('刻度条状态被落盘了（`lumen.camera.strip.*` / `paramStrip` → UserDefaults）—— '
+      + '它是临时浮层状态，不该跨启动（`docs/16` 第六节）');
+  } else {
+    ok('刻度条状态不落盘（`paramStrip` 是临时浮层状态）');
+  }
+
+  // ⑨ 显示值：拖动期取**草稿**、其余取**硬件真值**（结构性避开 `docs/14` 那类环路）
+  const displayBody12 = methodBodyOf(vmSrc12, 'stripDisplayValue');
+  const usesDraft = !!displayBody12 && /isoShutterDraft|whiteBalanceDraft/.test(displayBody12);
+  const usesHardware = !!displayBody12
+    && /session\.manualExposure|session\.manualWhiteBalance/.test(displayBody12);
+  const noMirrorState = !/@Published private\(set\) var strip(Value|Draft|Kelvin)/.test(vmSrc12);
+  if (!usesDraft) {
+    bad('`stripDisplayValue` 拖动期没有取草稿 —— 气泡不会跟手');
+  } else if (!usesHardware) {
+    bad('`stripDisplayValue` 非拖动期没有取**硬件真值** —— 那就又变成"本地值 vs 硬件值"两套，'
+      + '`docs/14` 那个环路会复发');
+  } else if (!noMirrorState) {
+    bad('VM 里出现了一个专门镜像刻度条值的 `@Published` 状态 —— 正是 `docs/14` 环路的温床'
+      + '（拖动期显示草稿、其余显示硬件真值，不需要第三个状态）');
+  } else {
+    ok('刻度条显示值：拖动期取草稿（跟手）+ 其余取硬件真值（无本地镜像状态，环路结构性不存在）');
   }
 }
 

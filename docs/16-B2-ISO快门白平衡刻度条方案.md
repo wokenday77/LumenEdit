@@ -1,6 +1,8 @@
 # 16 · B2 ISO / 快门 / 白平衡刻度条方案（模块 #9）
 
-> 状态：**方案已确认（2026-09-19）· 待 B1 验证通过后写代码**
+> 状态：**B2a 已交付（2026-09-19）· B2b 待做** —— 数据层 + 硬件 API + session 转发 + VM 状态已 push；
+> UI（刻度条视图 / 图标行接线 / 主题令牌 / 净可见账）在 B2b。5 件拍板已定（见第十一节），
+> 实现笔记与偏离见第十二节。
 > **5 件拍板已定**（见第十一节）：净可见分母取**安全区高**；接受**参数排展开时焦段条让位**；
 > 切手动档初值取**设备当前值**；拆分方式 **B2-0 并进 B2b、B2a+B2b 分两笔提交一次 push**；
 > 触觉与滞后**沿用 `ParameterSlider` 的 0.15s / 0.75**。
@@ -397,3 +399,62 @@ WB 76 档 = 2500…10000 步长 100、slot 三值与原型一致、WB 预设档 
 
 - 前置模式下焦段条是**整条隐藏**还是**保留 + 全部置灰** → 留给"接前置"那件拍板（见 `docs/15` 第四节末）
 - 拖动时"每档写一次硬件"若真机卡顿 → 退化为"松手才写 + 拖动中只更新气泡"（见第十节风险表）
+
+---
+
+## 十二、实现笔记（B2a 已交付 · 2026-09-19）
+
+### 交付了什么
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 数据 | **新增** `Presets/ParameterStripCatalog.swift` | `ParameterStripKind`（iso / shutter / whiteBalance）+ `ParameterStripStep` + 三张档位表（ISO 25 / 快门 15 / 白平衡 76）+ 数值格式 + slot 46/56/26 + 标签档 + WB 预设档 + 默认值 + **各条的求交容差** + `nearestStep` |
+| 能力 | `Camera/Session/CaptureCapabilities.swift` | `availableRange(for:on:)`（ISO → `minISO…maxISO`；快门 → `min…maxExposureDuration`；WB → 标称域不设限）+ `isStripValueAvailable` + `unavailableStripValues` + `stripSummary`（日志一行） |
+| 硬件 | `Camera/Session/CaptureDeviceConfigurator.swift` | 4 个运行时入口 `setManualExposure(iso:seconds:)` / `setAutoExposure` / `setManualWhiteBalance(temperature:tint:)` / `setAutoWhiteBalance`；2 个回读 `manualExposure(of:)` / `manualWhiteBalance(of:)` + `currentTint` / `currentTemperature`；新错误 case `unsupportedManualExposure`；**`applyExposureBias` 的"手动档回切自动"改为留痕**（warn） |
+| 会话 | `Camera/Session/CaptureSessionController.swift` | 4 个转发 + `publishManualState(_:)`（一次刷新：手动档真值 / 当前值 / 刻度条可用域）+ 2 个新 `@Published`（含 `currentExposure` / `currentWhiteBalanceKelvin`）；**7 处调用点**：4 个写入后 · `setExposureBias`（可能回切自动）· `focus(atDevicePoint:)`（**点按对焦会把曝光打回自动**）· `applyPreset` · 会话就绪 · 切模式 |
+| VM | `Camera/UI/CameraViewModel.swift` | `paramStrip`（单值寄存）+ 派生 `isISOShutterAuto` / `isWhiteBalanceAuto` + `stripDisplayValue` / `unavailableStripValues(for:)` + `stripTapped` / `stripAutoToggled` / `stripValueChanged` + **`collapseOverlays()` / `dismissTransientPopovers()` 补刻度条（Backlog ④ 关闭）** + **手动档下 EV 三道拦** |
+
+### ⚠️ 一处**偏离方案**的实现改进（请知悉）
+
+方案第六节原写"刻度条要接与 `docs/14` **同款**的回写闸门（拖动期不回写 + 只接受最后推送值）"。
+实现时改成更省的结构，**那道闸门不需要存在**：
+
+```
+显示值 = 拖动期 → 本地草稿（跟手）
+         其余时刻 → 硬件真值（session.manualExposure / manualWhiteBalance）
+```
+
+于是"本地值"与"硬件值"不会同时存在两份 → `docs/14` 那个环路**结构性不可能发生**（少一套状态 = 少一类 bug）。
+副作用：`isStripEditing` 这个闸门也不再需要；拖动草稿只在拖动期存在，松手即清。
+
+另外，EV 与手动档的互斥做成了**三道**（方案里是两道）：
+① 点「曝光补偿」时若在手动档 → toast 说明（不做"点了没反应"）；② VM 的 `exposureEditingChanged` 守卫；
+③ configurator 的"回切自动"保留为最后防线但**打 warn 留痕**。
+
+### 自检落点（本项目"每件都要有守卫"）
+
+| 检查 | 落点 | 条数 |
+|---|---|---|
+| 参数刻度条（B2a 那半） | `check_swift.js` **第 12 组** | **8 条**：单值寄存 / 三格接线 / 回读不记账 / 成对写 / 三处 clamp / 唯一入口 / Backlog ④ 两半 / EV 三道 / 不落盘 / 草稿+硬件真值 |
+| 三张表与原型同源 | `check_presets.js` **第 6 组** | **9 条**：ISO 25 档 / 快门 15 值 / 快门 15 标签 / WB 生成规则 76 档 / slot 46-56-26 / ISO 标签档 7 / WB 预设档 5 / WB 标签档 15 / 默认值 |
+| 变异测试 | `.workbuddy/mutation-test-b1.py` | **29/29 触发**（B2a 新增 M23~M29：paramStrip 改非可选 / 拆散成对写 / 去 clamp / 去 EV 闸门 / collapseOverlays 不收刻度条 / 假派生 / 只取草稿） |
+
+> 变异测试这一轮又抓出**两条守卫太松**：③（成对写）和 ④（三处 clamp）原本是**全文匹配**，
+> 而项目里还有一条**预设路径**（`applyExposureLocked`）也调 `setExposureModeCustom(duration:iso:)`、
+> 也有同样名字的 `safeISO` —— 于是"手动方法里把 `iso:` 拆掉"仍能被另一处满足，守卫形同虚设。
+> 已改成**限定在 `setManualExposure` / `setManualWhiteBalance` 的方法体内**匹配。
+
+### B2b 需要的东西（接口已就位）
+
+- 读：`viewModel.paramStrip` / `stripDisplayValue(_:)` / `unavailableStripValues(for:)` / `isISOShutterAuto` / `isWhiteBalanceAuto`
+- 写：`stripTapped(_:)` / `stripAutoToggled(_:)` / `stripValueChanged(_:value:isEditing:)` / `dismissParamStripIfNeeded()`
+- 数据：`ParameterStripCatalog.steps(for:)` · `slot(for:)` · `label(for:value:)` · `tolerance(for:)`
+- 还缺（B2b 做）：`Theme` 令牌（面板高 88 / 气泡 / 刻度线 / 指针 / 开关）、`ParameterStripView`、`ToolIconRow` 的 active 态、
+  `ExposurePanel` 删过时文案 + 手动档禁用 + 面板高 108 → 72、`CameraView` 同槽互斥 + 焦段条让位、自检第 12 组⑥⑩（净可见账表）
+
+### 未验证（诚实边界）
+
+⚠️ **编译与真机行为都没验证**（WB 本机无 Xcode）。B2a 的静态防线只有上面那些；交给 Mac 侧：
+首次编译重点看 `AVCaptureDevice` 那几个 API 的签名（`setExposureModeCustom` / `setWhiteBalanceModeLocked` /
+`temperatureAndTintValues(for:)` / `deviceWhiteBalanceGains(for:)` —— 前两个在既有代码里用过，
+后两个在本仓 `snapshot(of:)` 里也用过，**没有新签名风险**），以及 tuple 作为 `@Published` 的用法。

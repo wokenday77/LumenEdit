@@ -256,6 +256,83 @@ enum CaptureCapabilities {
         return unavailable
     }
 
+    // MARK: - 参数刻度条：档位 × 设备能力求交（B2）
+
+    /// 三条刻度条在**这台设备上可用**的取值区间。
+    ///
+    /// | 条 | 区间来源 |
+    /// |---|---|
+    /// | ISO | `activeFormat.minISO ... maxISO` |
+    /// | 快门 | `activeFormat.minExposureDuration ... maxExposureDuration`（换算成**秒**） |
+    /// | 白平衡 | **标称域**（iOS 不提供色温范围查询 API，按业界惯例取 2500…10000）→ 即"不设限" |
+    ///
+    /// ⚠️ **快门那一行的时间方向别搞反**：`minExposureDuration` 是**最快**快门
+    /// （1/12000 ≈ 8.3e-5 s），`maxExposureDuration` 是**最慢**（1 s）——
+    /// 秒数上是升序，而 UI 上刻度条是"左慢右快"，两者相反。
+    /// 搞反的表现是"只有最慢档可用"，一眼可见但原因难猜。
+    ///
+    /// ⚠️ 设备范围随 `activeFormat` 变（30fps 的格式做不了 1s 长曝光），
+    /// 所以这个区间必须**在会话就绪后**（格式已定）读，不能缓存。
+    ///
+    /// 越界档位由 UI **置灰但保留可点**（点了给 toast 说原因），与焦段条那套一致。
+    static func availableRange(
+        for kind: ParameterStripKind,
+        on device: AVCaptureDevice
+    ) -> ClosedRange<Double> {
+        let format = device.activeFormat
+        switch kind {
+        case .iso:
+            let lower = Double(format.minISO)
+            return lower...max(lower, Double(format.maxISO))
+        case .shutter:
+            let lower = format.minExposureDuration.safeSeconds
+            return lower...max(lower, format.maxExposureDuration.safeSeconds)
+        case .whiteBalance:
+            // iOS 没有色温范围查询 → 不设限（用标称域的两端）
+            let values = ParameterStripCatalog.whiteBalanceValues
+            return values[0]...values[values.count - 1]
+        }
+    }
+
+    /// 某个档位值在这台设备上是否可用（含该条的容差，见 `ParameterStripCatalog.tolerance(for:)`）
+    static func isStripValueAvailable(
+        _ value: Double,
+        for kind: ParameterStripKind,
+        on device: AVCaptureDevice
+    ) -> Bool {
+        let range = availableRange(for: kind, on: device)
+        let epsilon = ParameterStripCatalog.tolerance(for: kind)
+        return value >= range.lowerBound - epsilon && value <= range.upperBound + epsilon
+    }
+
+    /// 某条刻度条上**不可用**的档位值集合（UI 置灰用；空集 = 全档可用）
+    static func unavailableStripValues(
+        for kind: ParameterStripKind,
+        on device: AVCaptureDevice
+    ) -> Set<Double> {
+        Set(
+            ParameterStripCatalog.steps(for: kind)
+                .filter { !isStripValueAvailable($0.value, for: kind, on: device) }
+                .map(\.value)
+        )
+    }
+
+    /// 一条刻度条的能力摘要（供调试浮层 / 日志一行看清"哪些档位被灰了"）
+    static func stripSummary(for kind: ParameterStripKind, on device: AVCaptureDevice) -> String {
+        let range = availableRange(for: kind, on: device)
+        let unavailable = unavailableStripValues(for: kind, on: device)
+        let total = ParameterStripCatalog.stepCount(for: kind)
+        let greyed = unavailable.isEmpty
+            ? "无"
+            : unavailable.sorted()
+                .map { ParameterStripCatalog.label(for: kind, value: $0) }
+                .joined(separator: ",")
+        return "\(kind.displayName)：档位 \(total - unavailable.count)/\(total)"
+            + " · 可用域 [\(String(format: "%.3g", range.lowerBound)),"
+            + " \(String(format: "%.3g", range.upperBound))]"
+            + " · 置灰=\(greyed)"
+    }
+
     /// 内置麦克风（Live Photo 与视频都要音轨）
     static func microphone() -> AVCaptureDevice? {
         AVCaptureDevice.default(for: .audio)

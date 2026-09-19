@@ -9,6 +9,7 @@ enum CaptureConfigurationError: LocalizedError {
     case lockFailed
     case partialManualExposure
     case partialManualWhiteBalance
+    case unsupportedManualExposure
     case unsupportedWhiteBalance
     case unsupportedFocus
 
@@ -22,6 +23,8 @@ enum CaptureConfigurationError: LocalizedError {
             return "手动曝光参数不完整：ISO 与快门必须同时设置"
         case .partialManualWhiteBalance:
             return "手动白平衡参数不完整：色温与色调必须同时设置"
+        case .unsupportedManualExposure:
+            return "当前设备或采集格式不支持手动曝光（自定义 ISO / 快门）"
         case .unsupportedWhiteBalance:
             return "当前设备不支持锁定的白平衡"
         case .unsupportedFocus:
@@ -150,14 +153,29 @@ final class CaptureDeviceConfigurator {
         let range = device.minExposureTargetBias...device.maxExposureTargetBias
         let safeBias = bias.sanitized(or: 0).clamped(to: range)
 
+        // 处于手动曝光档时 EV 补偿不生效，这里顺手切回自动档。
+        //
+        // 初衷是"避免拖了滑块但画面没反应"，但 **B2 之后它的含义变了**：
+        // 手动锁了 ISO / 快门之后，用户碰一下 EV 就会把**锁定静默解除**。
+        // 所以两道处理（`docs/16` 第五节 ①）：
+        //   1. **UI 侧必须拦住** —— 手动曝光档下 EV 面板禁用 + 说明（`CameraViewModel`）；
+        //   2. 这里保留回切作为**最后防线**，但**必须留痕**：真被触发就说明 UI 那道闸门漏了，
+        //      日志里要看得见 —— 否则又是一次"静默改掉别处的设置"（比"点了没反应"更糟）。
+        var switchedBackFromManual = false
         try withLock(device) {
-            // 处于手动曝光档时 EV 补偿不生效，这里顺手切回自动档，
-            // 避免出现"拖了滑块但画面没反应"的困惑。
             if device.exposureMode == .custom,
                device.isExposureModeSupported(.continuousAutoExposure) {
                 device.exposureMode = .continuousAutoExposure
+                switchedBackFromManual = true
             }
             device.setExposureTargetBias(safeBias, completionHandler: nil)
+        }
+        if switchedBackFromManual {
+            DebugLog.shared.warn(
+                "device",
+                "推 EV 时设备处于手动曝光档 → 已回切自动档（UI 闸门本应拦住这种情况，"
+                    + "出现这条说明拦漏了）"
+            )
         }
     }
 
@@ -223,6 +241,127 @@ final class CaptureDeviceConfigurator {
                 device.focusMode = .autoFocus
             }
         }
+    }
+
+    // MARK: - 手动曝光档（B2 · ISO / 快门刻度条驱动）
+
+    /// 切到**手动曝光档**：ISO 与曝光时长**必须同时给**。
+    ///
+    /// 为什么必须成对：`setExposureModeCustom(duration:iso:)` 一次接管两者 ——
+    /// 锁了 ISO 就得接管曝光时长（反之亦然）。这正是原型注释里那句
+    /// 「ISO 与快门**共用一个自动/手动开关**」（`state.auto.isoShutter`）的硬件根源，
+    /// 也是 UI 上不可能给出两个独立开关的原因。
+    ///
+    /// 越界赋值是**抛异常**（不是被忽略）→ 两个值都按 `activeFormat` 的真实范围 clamp。
+    func setManualExposure(iso: Float, seconds: Double, on device: AVCaptureDevice) throws {
+        guard device.isExposureModeSupported(.custom) else {
+            throw CaptureConfigurationError.unsupportedManualExposure
+        }
+        let format = device.activeFormat
+        let safeISO = iso.sanitized(or: format.minISO)
+            .clamped(to: format.minISO...format.maxISO)
+        let requested = CMTime(seconds: seconds, preferredTimescale: 1_000_000_000)
+        let durationRange = format.minExposureDuration...format.maxExposureDuration
+        let safeDuration = requested.clamped(to: durationRange)
+
+        try withLock(device) {
+            device.setExposureModeCustom(
+                duration: safeDuration,
+                iso: safeISO,
+                completionHandler: nil
+            )
+        }
+        DebugLog.shared.info(
+            "device",
+            "手动曝光档：ISO \(String(format: "%.0f", safeISO))"
+                + " 快门 \(FormatText.shutterSpeed(safeDuration.safeSeconds))"
+        )
+    }
+
+    /// 手动曝光档 → **自动曝光档**（刻度条右端开关切回自动时走它）
+    ///
+    /// 与 `setAutoFocus` 同款：设备不支持连续自动曝光时静默不动 ——
+    /// 调用方已按能力置灰，这里只兜底，不该让整个拍摄流程中断。
+    func setAutoExposure(on device: AVCaptureDevice) throws {
+        try withLock(device) {
+            if device.isExposureModeSupported(.continuousAutoExposure) {
+                device.exposureMode = .continuousAutoExposure
+            }
+        }
+        DebugLog.shared.info("device", "曝光已回到自动档")
+    }
+
+    /// 读回手动曝光档的**实际值**（`nil` = 当前不是手动档）。
+    ///
+    /// ## 为什么回读，而不是本地记账（`docs/16` 第六节）
+    ///
+    /// `exposureMode` 是**同一个 device 实例上的真值**；切模式（照片↔视频）只换 output、
+    /// 不换 device ⇒ 手动档会活下来。本地记账必然出现"UI 说自动、设备是手动"，
+    /// 也就是"点了没反应"那一类。与 `docs/14` 那条
+    /// "**硬件参数态只能由硬件单向回写**"是同一条纪律。
+    func manualExposure(of device: AVCaptureDevice) -> (iso: Float, seconds: Double)? {
+        guard device.exposureMode == .custom else { return nil }
+        return (device.iso, device.exposureDuration.safeSeconds)
+    }
+
+    // MARK: - 手动白平衡档（B2 · 白平衡刻度条驱动）
+
+    /// 切到**手动白平衡档**：色温与色调**必须同时给**。
+    ///
+    /// 本件只做"色温"一根条（`docs/16` 第十节「不做」）→ 色调由调用方传**设备当前色调**
+    /// （`currentTint(of:)`），这样表现就是"只动色温、不动色调"。
+    func setManualWhiteBalance(
+        temperature: Float,
+        tint: Float,
+        on device: AVCaptureDevice
+    ) throws {
+        guard device.isWhiteBalanceModeSupported(.locked) else {
+            throw CaptureConfigurationError.unsupportedWhiteBalance
+        }
+        try withLock(device) {
+            var values = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues()
+            values.temperature = temperature.sanitized(or: 5600)
+            values.tint = tint.sanitized(or: 0)
+            // 温度/色调 → RGB 增益，**必须**把增益钳到设备范围，否则
+            // `setWhiteBalanceModeLocked` 抛 NSInvalidArgumentException（与 `applyWhiteBalanceLocked` 同理）
+            let gains = normalize(device.deviceWhiteBalanceGains(for: values), for: device)
+            device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
+        }
+        DebugLog.shared.info(
+            "device",
+            "手动白平衡档：\(String(format: "%.0f", temperature))K"
+                + "（色调跟随当前值 \(String(format: "%.0f", tint))）"
+        )
+    }
+
+    /// 手动白平衡档 → **自动白平衡档**（连续 AWB）
+    func setAutoWhiteBalance(on device: AVCaptureDevice) throws {
+        try withLock(device) {
+            if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                device.whiteBalanceMode = .continuousAutoWhiteBalance
+            }
+        }
+        DebugLog.shared.info("device", "白平衡已回到自动档")
+    }
+
+    /// 读回手动白平衡档的**实际值**（`nil` = 当前不是锁定档）
+    ///
+    /// ⚠️ 回读的是**实际生效**的色温（设备可能把请求值钳过），所以 toast 要报这个值、不是请求值。
+    func manualWhiteBalance(of device: AVCaptureDevice) -> (temperature: Float, tint: Float)? {
+        guard device.whiteBalanceMode == .locked else { return nil }
+        let values = device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains)
+        return (values.temperature, values.tint)
+    }
+
+    /// 设备当前的**色调**（只做色温一根条时，色调跟随它 —— 避免"调色温顺手把色调也改了"）
+    func currentTint(of device: AVCaptureDevice) -> Float {
+        device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains).tint
+    }
+
+    /// 设备当前的**色温**（AWB 态下就是它的收敛值）。
+    /// 自动 → 手动切换时用作初值（拍板 ③：初值取设备当前值，切档瞬间画面不跳）。
+    func currentTemperature(of device: AVCaptureDevice) -> Float {
+        device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains).temperature
     }
 
     // MARK: - 参数能力（P2 · 供 UI 画刻度）
