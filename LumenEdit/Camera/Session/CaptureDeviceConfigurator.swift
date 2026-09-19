@@ -344,24 +344,72 @@ final class CaptureDeviceConfigurator {
         DebugLog.shared.info("device", "白平衡已回到自动档")
     }
 
-    /// 读回手动白平衡档的**实际值**（`nil` = 当前不是锁定档）
+    /// 把设备的白平衡增益转成「色温 / 色调」，**转换前先校验增益是否有效**（无效返回 `nil`）。
+    ///
+    /// ## 为什么必须校验 —— 2026-09-19 真机冷启动崩溃（本仓第一例 ObjC 异常 abort）
+    ///
+    /// `temperatureAndTintValues(for:)` 对**无效**的 `deviceWhiteBalanceGains`
+    /// 会抛 `NSInvalidArgumentException` —— **Swift 拦不住 ObjC 异常，全进程 abort**。
+    /// 而冷启动那一瞬（`session.startRunning()` 是异步的，还没真正跑起来），
+    /// 设备白平衡尚未初始化，`deviceWhiteBalanceGains` 正是无效值。崩溃栈：
+    ///
+    /// ```
+    /// objc_exception_throw
+    ///   -[AVCaptureFigVideoDevice temperatureAndTintValuesForDeviceWhiteBalanceGains:]  ← 抛
+    ///   CaptureDeviceConfigurator.currentTemperature(of:)      （:363-365）
+    ///   CaptureSessionController.publishManualState(_:)        （:446）
+    ///   CaptureSessionController.startInternal()               （:728-730）
+    /// ```
+    ///
+    /// 有效判据（与 `normalize(_:for:)` 的钳制口径一致）：
+    /// **三个分量都 finite，且落在 `1.0 ... device.maxWhiteBalanceGain`**。
+    /// 无效时返回 `nil`，调用方各自给兜底值（**不要**在这里瞎猜一个色温）。
+    private func temperatureAndTintValues(
+        of device: AVCaptureDevice
+    ) -> (temperature: Float, tint: Float)? {
+        let gains = device.deviceWhiteBalanceGains
+        let maxGain = device.maxWhiteBalanceGain
+        let isValid: (Float) -> Bool = { value in
+            value.isFinite && value >= 1.0 && value <= maxGain
+        }
+        guard isValid(gains.redGain), isValid(gains.greenGain), isValid(gains.blueGain) else {
+            return nil
+        }
+        // ⚠️ 增益有效才能调这个 API（无效会抛 ObjC 异常，Swift catch 不到）
+        let values = device.temperatureAndTintValues(for: gains)
+        return (values.temperature, values.tint)
+    }
+
+    /// 设备白平衡增益是否有效（能安全地调 `temperatureAndTintValues(for:)`）。
+    /// 供会话侧做"冷启动白平衡就绪后补发一次"的判断（见 `CaptureSessionController`）。
+    func hasValidWhiteBalanceGains(_ device: AVCaptureDevice) -> Bool {
+        temperatureAndTintValues(of: device) != nil
+    }
+
+    /// 读回手动白平衡档的**实际值**（`nil` = 当前不是锁定档，**或增益还没初始化好**）。
     ///
     /// ⚠️ 回读的是**实际生效**的色温（设备可能把请求值钳过），所以 toast 要报这个值、不是请求值。
     func manualWhiteBalance(of device: AVCaptureDevice) -> (temperature: Float, tint: Float)? {
         guard device.whiteBalanceMode == .locked else { return nil }
-        let values = device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains)
-        return (values.temperature, values.tint)
+        return temperatureAndTintValues(of: device)
     }
 
-    /// 设备当前的**色调**（只做色温一根条时，色调跟随它 —— 避免"调色温顺手把色调也改了"）
+    /// 设备当前的**色调**（只做色温一根条时，色调跟随它 —— 避免"调色温顺手把色调也改了"）。
+    ///
+    /// 增益还没初始化（冷启动瞬间）→ 兜底 **0**：调用方拿 0 传回 `setManualWhiteBalance`
+    /// 时会走 `values.tint.sanitized(or: 0)`，等价于"色调不动"。
     func currentTint(of device: AVCaptureDevice) -> Float {
-        device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains).tint
+        temperatureAndTintValues(of: device)?.tint ?? 0
     }
 
     /// 设备当前的**色温**（AWB 态下就是它的收敛值）。
     /// 自动 → 手动切换时用作初值（拍板 ③：初值取设备当前值，切档瞬间画面不跳）。
+    ///
+    /// 增益还没初始化（冷启动瞬间）→ 兜底 **5600K**（与 `ParameterStripCatalog` 的默认值同源）。
+    /// 会话侧会在快照轮询发现增益就绪后**补发一次**，所以这只是头一两秒的占位值。
     func currentTemperature(of device: AVCaptureDevice) -> Float {
-        device.temperatureAndTintValues(for: device.deviceWhiteBalanceGains).temperature
+        temperatureAndTintValues(of: device)?.temperature
+            ?? Float(ParameterStripCatalog.defaultWhiteBalanceKelvin)
     }
 
     // MARK: - 参数能力（P2 · 供 UI 画刻度）

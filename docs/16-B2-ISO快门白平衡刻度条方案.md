@@ -458,12 +458,37 @@ WB 76 档 = 2500…10000 步长 100、slot 三值与原型一致、WB 预设档 
 - 还缺（B2b 做）：`Theme` 令牌（面板高 88 / 气泡 / 刻度线 / 指针 / 开关）、`ParameterStripView`、`ToolIconRow` 的 active 态、
   `ExposurePanel` 删过时文案 + 手动档禁用 + 面板高 108 → 72、`CameraView` 同槽互斥 + 焦段条让位、自检第 12 组⑥⑩（净可见账表）
 
-### 未验证（诚实边界）
+### 🔴 真机冷启动崩溃（Mac 侧 2026-09-19 抓到 · 已修）—— 本仓第一例 ObjC 异常 abort
 
-⚠️ **编译与真机行为都没验证**（WB 本机无 Xcode）。B2a 的静态防线只有上面那些；交给 Mac 侧：
-首次编译重点看 `AVCaptureDevice` 那几个 API 的签名（`setExposureModeCustom` / `setWhiteBalanceModeLocked` /
-`temperatureAndTintValues(for:)` / `deviceWhiteBalanceGains(for:)` —— 前两个在既有代码里用过，
-后两个在本仓 `snapshot(of:)` 里也用过，**没有新签名风险**），以及 tuple 作为 `@Published` 的用法。
+**崩溃栈**：
+
+```
+objc_exception_throw
+  -[AVCaptureFigVideoDevice temperatureAndTintValuesForDeviceWhiteBalanceGains:]  ← 抛
+  CaptureDeviceConfigurator.currentTemperature(of:)      （:363-365）
+  CaptureSessionController.publishManualState(_:)        （:446）
+  CaptureSessionController.startInternal()               （:728-730）
+```
+
+**根因链**：`startInternal()` 在 `session.startRunning()`（异步）之后立刻调 `publishManualState` →
+此刻设备还没跑起来、白平衡尚未初始化，`deviceWhiteBalanceGains` 是无效值 →
+`currentTemperature(of:)` 拿着无效 gains 调 `temperatureAndTintValues(for:)` →
+该 API 对无效增益抛 `NSInvalidArgumentException` → **Swift 拦不住 ObjC 异常** → 全进程 abort。
+触发条件：**装后首启 / 重启后首启**这种冷白平衡态。
+
+**修法**：
+1. **首选（已做）**：抽共享私有助手 `temperatureAndTintValues(of:)`，**转换前先校验增益**
+   （三个分量都 finite 且在 `1.0 … device.maxWhiteBalanceGain`）→ 无效返回 `nil`，**不调 API**；
+   三个调用点（`manualWhiteBalance(of:)` / `currentTint(of:)` / `currentTemperature(of:)`）全部走它。
+2. **同类隐患一起修**：`currentTint` 无效时兜底 **0**（传回去等价于"色调不动"）；
+   `currentTemperature` 无效时兜底 **5600K**（与 `ParameterStripCatalog` 默认值同源）。
+3. **可选加固（已做）**：`publishManualState` 发现增益无效就记一笔
+   （`needsColdWhiteBalanceRefresh`），由每秒的快照轮询在**增益就绪后补发一次**——
+   免得 UI 一直停在兜底值 5600K 上。
+
+**两条通用教训**（已记长期记忆）：**Swift catch 不到 ObjC 异常，只能在入参上防**；
+**读硬件状态的 API 都要问一句"它此刻处于有效状态吗"**（`startRunning` 是异步的，
+"调用了"≠"已经就绪"）。
 
 ---
 

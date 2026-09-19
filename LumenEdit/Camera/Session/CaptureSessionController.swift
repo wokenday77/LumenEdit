@@ -139,6 +139,14 @@ final class CaptureSessionController: ObservableObject {
     private var configurationSucceeded = false
     private var isAppActive = true
     private var isVisible = false
+
+    /// 冷启动那几帧白平衡**尚未初始化**（`deviceWhiteBalanceGains` 无效，
+    /// 此时调 `temperatureAndTintValues(for:)` 会抛 ObjC 异常 → 全进程 abort，
+    /// 见 `CaptureDeviceConfigurator.temperatureAndTintValues(of:)` 的说明）。
+    ///
+    /// 置位后，快照轮询（每秒一次）发现增益就绪时会**补发一次**手动档状态，
+    /// 免得 UI 一直停在兜底值 5600K 上（2026-09-19 用户提的"可选加固"，已做）。
+    private var needsColdWhiteBalanceRefresh = false
     private var snapshotTimer: Timer?
     private var snapshotTick = 0
 
@@ -448,6 +456,14 @@ final class CaptureSessionController: ObservableObject {
         for kind in ParameterStripKind.allCases {
             unavailable[kind] = CaptureCapabilities.unavailableStripValues(for: kind, on: device)
         }
+        // 冷启动那几帧白平衡还没初始化（增益无效 → `temperatureAndTintValues(for:)` 会抛异常，
+        // 见 `CaptureDeviceConfigurator.temperatureAndTintValues(of:)` 的说明），
+        // 此时色温只能给兜底值 5600K。记一笔，等快照轮询发现增益就绪时**补发一次**，
+        // 免得 UI 一直停在兜底值上（2026-09-19 用户提的"可选加固"，已做）。
+        needsColdWhiteBalanceRefresh = !configurator.hasValidWhiteBalanceGains(device)
+        if needsColdWhiteBalanceRefresh {
+            DebugLog.shared.debug("session", "白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发")
+        }
         publish {
             self.manualExposure = exposure
             self.manualWhiteBalance = whiteBalance
@@ -594,6 +610,13 @@ final class CaptureSessionController: ObservableObject {
 
     private func buildSnapshot() {
         snapshotTick += 1
+        // 冷启动白平衡**就绪后的补发**（每秒查一次，就绪即补，只补一次 —— 见 `publishManualState`）
+        if needsColdWhiteBalanceRefresh, let device,
+           configurator.hasValidWhiteBalanceGains(device) {
+            needsColdWhiteBalanceRefresh = false
+            DebugLog.shared.debug("session", "白平衡增益已就绪（冷启动）→ 补发手动档状态")
+            publishManualState(device)
+        }
 
         var snapshot = CameraDebugSnapshot()
         snapshot.modeText = mode.displayName
