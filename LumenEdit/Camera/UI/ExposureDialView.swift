@@ -154,6 +154,9 @@ struct ExposureDialView: View {
 
     /// 拖动期最近一次上报的值（0.1 步进只在**跨档**时上报，停在同一档不重复推）
     @State private var lastReported: Double?
+    /// 拖动锚点：首次触摸只记录「起始值 + 起始 CSS 角」，**不改值**（点击不改变 EV）；
+    /// 拖动中按**角位移增量**换算 —— 顺滑顺走，且不随 VM 回写漂移。
+    @State private var dragAnchor: (value: Double, css: Double)?
     /// 触觉节流（与刻度条同一量级：0.15s）
     @State private var lastTickAt: Date = .distantPast
 
@@ -311,7 +314,11 @@ struct ExposureDialView: View {
                     let ev = EvDialGeometry.minValue
                         + Double(i) / Double(n) * (EvDialGeometry.maxValue - EvDialGeometry.minValue)
                     Text(EvDialGeometry.tickNumberText(ev))
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        // ⚠️ **字号必须乘 `scale`**：原型里刻度数字是 SVG `<text>`（viewBox 400，
+                        // 字号 13 是**用户单位**，随容器等比缩放到 246pt 盘 → 实际 ≈8pt）。
+                        // Swift 端最初写死 13pt 忘了缩放 → 比原型/对焦盘大 62%
+                        //（2026-09-19 用户截图报"刻度数字明显偏大"，[mac-fix]）。
+                        .font(.system(size: 13 * scale, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.85))
                         // ⚠️ **自转必须在 `.position` 之前**：`.position` 会把 Text 包进一个
                         // 占满整个 tickRing 的容器，之后的 `.rotationEffect` 转的是**该容器**
@@ -393,12 +400,26 @@ struct ExposureDialView: View {
             .accessibilityLabel("当前曝光补偿，点按归零")
     }
 
-    // MARK: - 拖拽（原型 dialFromPoint 的 mirror 分支，逐行同构）
+    // MARK: - 拖拽（相对位移模型：顺滑顺走 + 点击不改值，2026-09-19 用户拍板）
 
     private func dragGesture(center: CGPoint) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { gesture in
-                let v = normalizedValue(from: gesture.location, center: center)
+                let css = cssAngle(from: gesture.location, center: center)
+                guard let anchor = dragAnchor else {
+                    // 首次触摸：**只锚定、不动值**（点击不改变 EV —— 与原型 `dialFromPoint`
+                    // 的"绝对定位"不同：那是按下即跳到触点位置的值，2026-09-19 用户拍板改为
+                    // 只能滑动调整）。
+                    dragAnchor = (value, css)
+                    return
+                }
+                // **顺滑顺走**：指尖转多少度、盘面就转多少度（ΔRing = Δcss）。
+                // 盘面旋转 R = 90 − 180v（度）⟹ Δv = −Δcss / 180。
+                // ⚠️ 语义推论：数字顺时针递增 + 盘面跟手转 ⟹ **顺时针滑 = 值减小**
+                //（物理转盘语义；若要"顺时针滑 = 值变大"须镜像数字排列，未采纳）。
+                var delta = css - anchor.css
+                if delta > 180 { delta -= 360 } else if delta < -180 { delta += 360 }
+                let v = min(max(EvDialGeometry.normalized(anchor.value) - delta / 180, 0), 1)
                 let ev = EvDialGeometry.evValue(normalized: v)
                 guard ev != lastReported else { return }
                 lastReported = ev
@@ -406,26 +427,23 @@ struct ExposureDialView: View {
                 fireTickThrottled()
             }
             .onEnded { _ in
-                defer { lastReported = nil }
-                // 松手：把当前值按"结束编辑"再报一次（吸附语义 = 0.1 步进本身就是最近档）
-                let ev = lastReported ?? value
-                onValueChanged(ev, false)
+                defer { dragAnchor = nil }
+                // 松手：把拖动最终值按"结束编辑"再报一次；**纯点击（零位移）什么都不推**
+                guard let last = lastReported else { return }
+                lastReported = nil
+                onValueChanged(last, false)
                 fireTickThrottled()
             }
     }
 
-    /// 触摸点 → 归一化 v ∈ [0,1]（原型 `dialFromPoint` 的 **mirror 分支**）：
-    /// CSS 角 = atan2(dx, −dy)（0° 在上、顺时针）；有效弧 = 左半圈 [180°, 360°]，
-    /// 拖到右半圈（无效区、也是最靠屏外那侧）就近吸到两端。
-    private func normalizedValue(from location: CGPoint, center: CGPoint) -> Double {
+    /// 触摸点 → CSS 角（0° = 12 点方向、顺时针为正；与原型 `dialFromPoint` 同一约定）。
+    /// 本模型只吃**角位移增量**，触点落在哪一半圈不影响换算（不再有"吸到两端"分支）。
+    private func cssAngle(from location: CGPoint, center: CGPoint) -> Double {
         let dx = Double(location.x - center.x)
         let dy = Double(location.y - center.y)
         var css = atan2(dx, -dy) * 180 / .pi
         if css < 0 { css += 360 }
-        if css >= 180 {
-            return (css - 180) / 180
-        }
-        return css > 90 ? 0 : 1
+        return css
     }
 
     /// 带节流的跨档触感（量级与刻度条一致：0.15s）

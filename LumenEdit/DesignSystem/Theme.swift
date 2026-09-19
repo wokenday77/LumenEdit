@@ -544,8 +544,10 @@ enum Theme {
         static let evDialValueBoxGap: CGFloat = 8
         /// 数值框高（原型 padding 4×2 + 16pt 字 ≈ 29，取 30）
         static let evDialValueBoxHeight: CGFloat = 30
-        /// 数值框字号（原型 `.ev-val{ font-size:16px }`，等宽数字）
-        static let evDialValueFontSize: CGFloat = 16
+        /// 数值框字号（原型 `.ev-val{ font-size:16px }`，等宽数字）。
+        /// ⚠️ 2026-09-19 用户拍板缩小到 **13**（截图反馈"+0.0 EV 偏大"；同轮刻度数字
+        /// 修回原型口径 ≈8pt = 13×246/400）—— 需要再调只动这一个数。
+        static let evDialValueFontSize: CGFloat = 13
         /// 盘心标签字号（原型 `.ev-hub .t{ font-size:13px }`）
         static let evDialHubFontSize: CGFloat = 13
         /// 数值框 / 圆心标签的等宽数字字号下的行高辅助（无独立几何意义，给 a11y 用）
