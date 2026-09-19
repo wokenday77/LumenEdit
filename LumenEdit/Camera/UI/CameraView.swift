@@ -1,4 +1,6 @@
 import SwiftUI
+// 遮幅要按"全屏中心"对齐 → 需要窗口的真实安全区（见 `ScreenSafeArea`）
+import UIKit
 
 /// 相机主页。
 ///
@@ -89,7 +91,12 @@ struct CameraView: View {
             // 画幅比遮幅（#10）：取景器上下各压一块黑边。
             // 放在网格线与对焦框**之上**（黑边区域不该出现网格/对焦框），
             // 但**不接收触摸**（原型 `pointer-events:none`）—— 点黑边区域照样对焦，与原型一致。
-            FrameRatioMask(ratio: viewModel.fnRatio)
+            // ⚠️ 常态把窗中心钉到**全屏中心**（backlog ⑤ 修法 A，上移 14pt）；
+            //    ⤢ 放大态容器是取景卡片、不是安全区，按卡片居中（传 false）。
+            FrameRatioMask(
+                ratio: viewModel.fnRatio,
+                pinsWindowToScreenCenter: !viewModel.isZoomOn
+            )
         }
         .clipShape(RoundedRectangle(cornerRadius: previewCornerRadius, style: .continuous))
         .padding(.top, previewTopInset)
@@ -645,44 +652,113 @@ struct CameraView: View {
 
 // MARK: - 画幅比遮幅（#10）
 
-/// 画幅比遮幅：取景器宽不变，按比例算出画面高，**上下各压一块等高的黑边**（原型 `.ratio-mask`）。
+/// 屏幕安全区（窗口坐标系）。
 ///
-/// - 高度公式：`画面高 = 取景器宽 × 比例高宽比`，黑边 = `(取景器高 − 画面高) / 2`
-///   （例子：402×778 的取景器里，`4:3` 竖拍 → 画面高 536 → 上下各 121pt 黑边）
+/// 遮幅要把窗中心钉到**全屏中心**，就必须知道上下安全区之差 —— 这个差值就是"偏下多少"。
+///
+/// 为什么走 UIKit 而不是 SwiftUI：SwiftUI 侧读安全区的写法（`GeometryReader` + `ignoresSafeArea`
+/// 再看 `proxy.safeAreaInsets`）在不同系统版本上的语义有出入，而这里只需要**一个确定的数**；
+/// 本机（Windows）不能编译验证，所以选语义无歧义的那条路。
+///
+/// 取不到窗口时返回 `.zero` —— 此时退化成"按容器居中"（= 改动前的行为），**不会更糟**，
+/// 并且实测值会打进日志，真机一眼能看出是 0/0 还是真值。
+private enum ScreenSafeArea {
+
+    @MainActor
+    static var insets: EdgeInsets {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        guard let window = windows.first(where: { $0.isKeyWindow }) ?? windows.first else {
+            return EdgeInsets()
+        }
+        let inset = window.safeAreaInsets
+        return EdgeInsets(
+            top: inset.top,
+            leading: inset.left,
+            bottom: inset.bottom,
+            trailing: inset.right
+        )
+    }
+}
+
+/// 画幅比遮幅：取景器宽不变，按比例算出画面高，**上下各压一块黑边**（原型 `.ratio-mask`）。
+///
+/// - 高度公式：`画面高 = 取景器宽 × 比例高宽比`，上下黑边合计 = `取景器高 − 画面高`
 /// - **默认就显示**（`FrameRatio` 初值 `4:3`，与原型一致）—— 也就是说取景器默认会有上下黑边，
 ///   这是"画幅比"这项设置的正常表现，不是 bug
 /// - 260ms 过渡（原型 `.26s ease`）让黑边"长出来"
-/// - 用 `GeometryReader` 读容器实际高度：⤢ 放大态卡片高度会变，**天然跟随**，
-///   不需要原型那个 `setTimeout(renderFn, 320)` 的过渡后重算
+/// - 用 `GeometryReader` 读容器实际高度：⤢ 放大态卡片高度会变，**天然跟随**
 /// - **不接收触摸**（原型 `pointer-events:none`）
+///
+/// ## 窗中心钉在**全屏中心**（backlog ⑤ 定案 · 2026-09-19）
+///
+/// 原先两块黑边**等高** ⇒ 窗中心落在**取景器容器（= 安全区）的中心**。
+/// 但安全区上边距（刘海 / 灵动岛 62pt）**大于**下边距（Home 指示条 34pt），
+/// 于是窗中心比**全屏中心**低 `(62 − 34) / 2 = 14pt` —— 这就是"1:1 遮幅偏下"。
+///
+/// Mac 侧 2026-09-19 真机实测的定案数据：
+///
+/// | 项 | 值 |
+/// |---|---|
+/// | 容器（安全区） | 402 × 778 |
+/// | 窗高（1:1） | 402 |
+/// | 改动前黑边 | 各 188（等高） |
+/// | 改动前窗中心 | **451.0** = 安全区中心（构造精确） |
+/// | 全屏中心 | **437.0** → 低 **14pt** |
+/// | 物理屏黑边（改动前） | 上 250 / 下 222 |
+/// | 修完后应为 | 上 **236 / 下 236**（对称） |
+///
+/// 修法（Mac 侧定案的 **A 方案**）：窗中心上移 `(上安全区 − 下安全区) / 2`，钉到全屏中心。
+/// （B 方案"按可见区居中"要上移 60pt，收窄可见黑边 —— 记为偏好项备选，本件不做。）
+///
+/// ⚠️ **只在常态生效**：⤢ 放大态下容器是**取景卡片**（不是安全区），
+/// 此时按卡片居中（`pinsWindowToScreenCenter == false`）—— 卡片才是用户构图的框。
 private struct FrameRatioMask: View {
 
     let ratio: FrameRatio
+    /// 是否把窗中心钉到**全屏中心**。常态 `true`；⤢ 放大态传 `false`（按卡片居中）。
+    var pinsWindowToScreenCenter: Bool = true
 
     var body: some View {
         GeometryReader { proxy in
             let frameHeight = min(proxy.size.height, proxy.size.width * ratio.heightOverWidth)
-            let barHeight = max(0, (proxy.size.height - frameHeight) / 2)
+            let equalBar = max(0, (proxy.size.height - frameHeight) / 2)
+
+            let insets = ScreenSafeArea.insets
+            // 偏置 =（上安全区 − 下安全区）/ 2；⤢ 放大态不偏（按卡片居中）
+            let rawBias = pinsWindowToScreenCenter ? (insets.top - insets.bottom) / 2 : 0
+            // 钳制：偏置不能把任何一块黑边推成负值（否则会压缩画面高）
+            let bias = min(max(rawBias, -equalBar), equalBar)
+
+            let centerY = proxy.size.height / 2 - bias
+            let topBar = max(0, centerY - frameHeight / 2)
+            let bottomBar = max(0, proxy.size.height - centerY - frameHeight / 2)
 
             VStack(spacing: 0) {
                 Rectangle()
                     .fill(Color.black)
-                    .frame(height: barHeight)
+                    .frame(height: topBar)
                 Spacer(minLength: 0)
                 Rectangle()
                     .fill(Color.black)
-                    .frame(height: barHeight)
+                    .frame(height: bottomBar)
             }
             .animation(.easeInOut(duration: 0.26), value: ratio)
-            // 诊断日志（backlog ⑤「1:1 遮幅偏下 8.3pt」）：
-            // 真机实测的"窗中心 445.3pt"**既不等于全屏中心 437、也不等于安全区中心 451**，
-            // 说明容器的 frame 与"安全区/全屏"两个假设都不符 —— 修法选 A 还是 B 取决于这个值，
-            // 所以先把容器尺寸与算出的黑边打出来（每次切比例一次，不刷屏）。
+            // 诊断日志（backlog ⑤）：把"算出来的窗中心（换算到全屏坐标）"与"全屏中心"一起打出来，
+            // Mac 侧**读一行就能核对是否钉住**（437 == 437），不用再去量截图。
+            // 全屏高 = 容器高 + 上安全区 + 下安全区（容器就是安全区）。
+            // ⚠️ 若日志里安全区是 `上0/下0`，说明这台机器上窗口取不到 → 退回按容器居中（改动前行为）。
             .onChange(of: ratio) { _, newValue in
+                let screenHeight = proxy.size.height + insets.top + insets.bottom
                 DebugLog.shared.debug(
                     "ui",
                     "遮幅 \(newValue.displayName)：容器 \(Int(proxy.size.width))×\(Int(proxy.size.height))"
-                        + "，窗高 \(Int(frameHeight))，上下黑边各 \(Int(barHeight))"
+                        + "，安全区 上\(Int(insets.top))/下\(Int(insets.bottom))"
+                        + "，窗高 \(Int(frameHeight))"
+                        + "，上下黑边 \(Int(topBar))/\(Int(bottomBar))"
+                        + "，窗中心（全屏）\(Int(insets.top + centerY))"
+                        + " vs 全屏中心 \(Int(screenHeight / 2))"
                 )
             }
         }

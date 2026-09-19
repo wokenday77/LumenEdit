@@ -965,13 +965,46 @@ if (!fnPanelFile || !camViewFile || !vmFile || !topBarFile9 || !themeFile2) {
     ok('顶栏第三颗图标是 ⠿（设置已收进面板），回调命名正确');
   }
 
-  // ⑥ 画幅比遮幅：存在 + 不接收触摸 + 由 fnRatio 驱动
-  if (!/FrameRatioMask\(ratio: viewModel\.fnRatio\)/.test(viewSrc9)) {
-    bad('取景器里没有画幅比遮幅（FrameRatioMask(ratio: viewModel.fnRatio)）');
-  } else if (!/struct FrameRatioMask[\s\S]{0,1400}?allowsHitTesting\(false\)/.test(viewSrc9)) {
+  // ⑥ 画幅比遮幅：存在 + 不接收触摸 + 由 fnRatio 驱动 + **窗中心钉全屏中心**
+  //    （2026-09-19 backlog ⑤ 修法 A）
+  //    为什么要守这个偏置：安全区上下**不等**（刘海/灵动岛 62 vs Home 指示条 34），
+  //    "两块黑边等高"会让窗中心落在安全区中心（451），比全屏中心（437）**低 14pt** ——
+  //    这就是用户看到的"1:1 遮幅偏下"。
+  //    这条算式、钳制、以及"日志能直接核对"三件事被改掉任何一件，真机上都会重新偏 ——
+  //    而静态检查完全拦得住。（用户 2026-09-19 定案：偏置 =（上 − 下）/ 2，即上移 14pt。）
+  const maskCallOK = /FrameRatioMask\([\s\S]{0,140}?ratio: viewModel\.fnRatio[\s\S]{0,200}?pinsWindowToScreenCenter: !viewModel\.isZoomOn/
+    .test(viewSrc9);
+  const maskBody = /private struct FrameRatioMask[\s\S]*?\n}/.exec(viewSrc9);
+  const maskSrc = maskBody ? maskBody[0] : null;
+  const maskUsesScreenInsets = !!maskSrc && /ScreenSafeArea\.insets/.test(maskSrc);
+  const maskBiasFormula = !!maskSrc && /\(insets\.top - insets\.bottom\) \/ 2/.test(maskSrc);
+  const maskBiasClamped = !!maskSrc && /min\(max\(rawBias, -equalBar\), equalBar\)/.test(maskSrc);
+  // ⚠️ 这条要守的是"**日志里能直接读到两个中心**"这个**能力**，不是"出现过某几个字"：
+  //    注释里也会写"全屏中心"这几个字，只按词匹配会漏（本检查自己踩过一次，被变异测试抓出来）。
+  //    所以要求日志同时打出「窗中心（全屏）」与**由 screenHeight / 2 算出的对照值**。
+  const maskLogsBothCenters = !!maskSrc
+    && /窗中心（全屏）/.test(maskSrc) && /screenHeight \/ 2/.test(maskSrc);
+  const maskNoHit = !!maskSrc && /allowsHitTesting\(false\)/.test(maskSrc);
+
+  if (!maskCallOK) {
+    bad('取景器里的遮幅调用不对（应为 `FrameRatioMask(ratio: viewModel.fnRatio, '
+      + 'pinsWindowToScreenCenter: !viewModel.isZoomOn)`）');
+  } else if (!maskSrc) {
+    bad('找不到 `private struct FrameRatioMask`（改名了？自检需要同步）');
+  } else if (!maskUsesScreenInsets) {
+    bad('遮幅没有读窗口安全区（`ScreenSafeArea.insets`）—— 窗中心钉不到全屏中心');
+  } else if (!maskBiasFormula) {
+    bad('遮幅的偏置不是 `(上安全区 − 下安全区) / 2` —— 1:1 遮幅会重新偏下 '
+      + '（安全区上 62 / 下 34 ⇒ 差 14pt）');
+  } else if (!maskBiasClamped) {
+    bad('遮幅偏置没有钳制（`min(max(rawBias, -equalBar), equalBar)`）'
+      + ' —— 极端比例下会把黑边推成负值');
+  } else if (!maskLogsBothCenters) {
+    bad('遮幅日志没有同时打出"窗中心（全屏）"与"全屏中心" —— Mac 侧就没法读一行核对');
+  } else if (!maskNoHit) {
     bad('遮幅会接收触摸 —— 原型是 pointer-events:none（点黑边区照样对焦）');
   } else {
-    ok('画幅比遮幅存在、由 fnRatio 驱动、不接收触摸');
+    ok('画幅比遮幅：由 fnRatio 驱动、窗中心钉全屏中心（安全区差 / 2，有钳制）、不接收触摸、日志可核对');
   }
 
   // ⑦ 面板高度账 + 净可见（目标机型；iPhone SE 不在目标范围，不查）
