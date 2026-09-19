@@ -526,6 +526,18 @@ final class CaptureSessionController: ObservableObject {
                     // 焦段档位可用性（B1）：随设备/格式而定，配置完成后算一次
                     self.unavailableFocalIds = CaptureCapabilities.unavailableFocalIds(for: device)
                 }
+                // B1 ④ 核法升级：把"变焦拓扑"打成一**行硬数据**（设备类型 / constituent 数量 /
+                // 超广角可达 / 换算基准 / `virtualDeviceSwitchOverVideoZoomFactors` / zoomRange）。
+                //
+                // 为什么要有它：方案第四节那个前提（"虚拟设备的 videoZoomFactor = 1.0 是最广
+                // constituent 的 native 视场"）原本要靠"设 1.0 拍一张、与相册里的 13mm 参考
+                // 对比视场"来核 —— 那是一次要动相机、要人工看图、还带主观判断的验证。
+                // 现在改成**读一次冷启动日志**：switchOver 与映射表算出的切换点（1.85 / 9.23）
+                // 对得上就是对得上，对不上就把映射表整体平移（改 4 个常量）。
+                DebugLog.shared.info(
+                    "session",
+                    CaptureCapabilities.zoomTopologyDescription(of: device)
+                )
                 DebugLog.shared.info("session", "会话配置完成，Live Photo 支持=\(livePhotoSupported)")
             }
         }

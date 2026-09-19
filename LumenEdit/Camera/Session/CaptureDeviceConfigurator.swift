@@ -388,13 +388,41 @@ final class CaptureDeviceConfigurator {
         let target = CGFloat(preset.zoomFactor.sanitized(or: 1.0).clamped(to: 1.0...upper))
         // **配置阶段**用直接设置（瞬移）—— 会话刚建起来，没有"过程"要给用户看。
         // 运行时的平滑变焦走 `applyZoomRamp`（B1 焦段条接的就是那条）。
+        //
+        // ⚠️ **两个方法必须保持独立，不得互相调用**（自检第 11 组⑨守着）：
+        //   本方法的口径 = `CapturePreset.zoomFactor`（预设注入链路，P4 后由 `EditRecipe` 驱动）
+        //   `applyZoomRamp` 的口径 = **焦段档位**（UI 真相）
+        // 一旦互相调用，将来 P4 注入预设时会出现"两个来源抢 videoZoomFactor" ——
+        // 表现为画面在"预设值"与"档位值"之间来回跳，且很难归因。
         device.videoZoomFactor = target
     }
 
-    /// 变焦平滑时长（用户 2026-09-18 拍板：约 0.35s）
+    /// 变焦平滑时长（用户 2026-09-18 拍板：约 0.35s）。
+    ///
+    /// ⚠️ **这是本件唯一的时长旋钮**：SDK **没有** `withDuration:` 重载（见 `applyZoomRamp`
+    /// 的"签名"一节），所以"固定时长"完全由 `rate = log2(目标 / 当前) / zoomRampDuration`
+    /// 反推实现 —— 调手感就改这一个常量，调用处无处可传时长。
+    ///
+    /// 自检第 11 组⑧守着它的量级 ∈ `[0.2, 0.6]s`（太小 ≈ 硬跳、太大 ≈ 拖沓），
+    /// 同时守着 `rate` 必须由 `log2` 算出（固定 rate 会让跨档越大越慢）。
     static let zoomRampDuration: TimeInterval = 0.35
 
     /// 运行时**平滑**变焦（B1：焦段药丸点击 → 这里是接线）。
+    ///
+    /// ## 签名：只有 `withRate:` 一种（Mac 侧 2026-09-19 读 iOS 26 SDK 的 `AVCaptureDevice.h` 实测）
+    ///
+    /// 整个 VideoZoom 分类就三个 API：
+    /// ```
+    /// - (void)rampToVideoZoomFactor:(CGFloat)factor withRate:(float)rate;   // 返回 void
+    /// @property(readonly) BOOL rampingVideoZoom;
+    /// - (void)cancelVideoZoomRamp;
+    /// ```
+    /// **没有 `withDuration:` 重载，也没有 `AVCaptureDevice.Ramp` 类型** —— 所以
+    /// 「固定时长」只能由 `rate = log2(目标 / 当前) / 期望时长` 反推（见下），
+    /// 调用处**不需要** `_ =` 那类"兼容两种签名"的写法（那个前提不成立）。
+    ///
+    /// > `docs/15` 第二节原先留了"若存在 `withDuration:` 则首选"的分支 —— 已按实测删除。
+    /// > **别再把它加回来**：那会让人以为"时长可以直接传"。
     ///
     /// ## 三条硬事实（Apple 文档 2026-09-18 查证，别凭印象改）
     ///
@@ -432,12 +460,10 @@ final class CaptureDeviceConfigurator {
 
         do {
             try withLock(device) {
-                // ⚠️ `_ =` 是**刻意**的：`ramp(toVideoZoomFactor:withRate:)` 在 iOS 18 上
-                // 可能返回 `AVCaptureDevice.Ramp`（可持有以取消 / 观察完成），也可能是 Void ——
-                // 这样写对**两种签名都能编译**，且不产生 unused warning。
-                // 真机编译若报错，按 Xcode 自动补全改这一行
-                //（与 `AVCaptureEventInteraction` 那次的处理方式相同）。
-                _ = device.ramp(toVideoZoomFactor: target, withRate: rate)
+                // 返回 void（Mac 侧已核对 iOS 26 SDK 头文件）→ 直接调用，不要 `_ =`。
+                // 老写法 `_ = device.ramp(...)` 是基于"可能返回 AVCaptureDevice.Ramp"的猜测，
+                // 那个前提不成立（没有 Ramp 类型）。真机报错就按 Xcode 自动补全改这一行。
+                device.ramp(toVideoZoomFactor: target, withRate: rate)
             }
         } catch {
             DebugLog.shared.error("device", "平滑变焦失败：\(error.localizedDescription)")

@@ -1149,7 +1149,10 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
   );
 
   // ① 映射表：4 档焦距解析 + 基准 mm 探测 + zoom 单调递增
-  const baseLine = /baseMillimeters[\s\S]{0,400}?return hasUltraWide \? (\d+) : (\d+)/.exec(capSrc);
+  //    ⚠️ 搜索窗口 400 → 900：`baseMillimeters` 现在把探测委托给 `hasUltraWideLens`
+  //       （2026-09-19 两条互补探测），从函数名到那个 return 的距离变长了。
+  //       窗口放宽只是"别让注释长度影响检查结果"，判据本身没松。
+  const baseLine = /baseMillimeters[\s\S]{0,900}?return hasUltraWide \? (\d+) : (\d+)/.exec(capSrc);
   const mmCount = (focalSrc.match(/FocalPreset\(/g) || []).length;
   if (!baseLine) {
     bad('CaptureCapabilities 里找不到基准焦距探测（baseMillimeters：有超广角 → 13 / 否则 24）');
@@ -1172,6 +1175,45 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
       ok('档位映射单调递增（基准 ' + base + 'mm：'
         + mms.map((mm, i) => mm + '→' + zooms[i].toFixed(2)).join(' / ') + '）');
     }
+  }
+
+  // ①b 置灰判据 + 拓扑日志（2026-09-19 Mac 侧预检要求）
+  //     为什么：`caps.zoom.min` 在单广角回退机型上**也是 1.0**，区分不了 "1.0 = 13mm"
+  //     还是 "1.0 = 24mm"。拿它当判据 → 13mm 档永远"看起来可用" → 点了画面不动。
+  //     所以必须是"两条互补探测"，且拓扑要能在日志里读出来（④ 的核法）。
+  const probeBody = methodBodyOf(capSrc, 'hasUltraWideLens');
+  const probeByConstituents = !!probeBody
+    && /constituentDevices[\s\S]{0,200}?builtInUltraWideCamera/.test(probeBody);
+  const probeByDiscovery = !!probeBody
+    && /DiscoverySession[\s\S]{0,300}?builtInUltraWideCamera/.test(probeBody);
+  // ⚠️ **只在代码里找，不把注释算进来**：注释里恰恰应当写清"为什么不能用它"
+  //    ——本项目踩过"注释里写了禁用字面量、于是守卫自己把自己绊倒"的坑（`docs/12` 第九轮，
+  //    那次是镜像坐标硬编码守卫）。所以这里先把 `//` 之后的内容剥掉再匹配。
+  const capCode = capSrc.replace(/\/\/[^\n]*/g, '');
+  const judgesByZoomMin = /zoom\s*\??\.\s*min/.test(capCode);
+  const hasTopologyDesc = /func zoomTopologyDescription/.test(capSrc)
+    && /virtualDeviceSwitchOverVideoZoomFactors/.test(capSrc);
+  const topologyLogged = /zoomTopologyDescription\(of:/.test(sessionSrc);
+
+  if (!probeBody) {
+    bad('找不到 CaptureCapabilities.hasUltraWideLens（基准焦距探测被改成别处了？）');
+  } else if (!probeByConstituents) {
+    bad('超广角探测缺 constituent 那条（虚拟设备才知道"当前这台设备"能不能到 13mm）');
+  } else if (!probeByDiscovery) {
+    bad('超广角探测缺 DiscoverySession 兜底那条 —— constituentDevices 对非虚拟设备可能返回空，'
+      + '漏判会让 13mm 档不置灰（"点了没反应"）');
+  } else if (judgesByZoomMin) {
+    bad('拿 caps.zoom.min 当置灰判据了 —— 单广角机型上它同样是 1.0，区分不了 13mm / 24mm 视场');
+  } else {
+    ok('置灰判据是两条互补探测（constituent + DiscoverySession），没拿 zoom.min 当判据');
+  }
+
+  if (!hasTopologyDesc) {
+    bad('CaptureCapabilities 缺 zoomTopologyDescription（变焦拓扑日志，④ 的核法）');
+  } else if (!topologyLogged) {
+    bad('会话启动路径没有打印变焦拓扑 —— Mac 侧就没法"读一次冷启动日志"核对 1.0 = 13mm 的前提');
+  } else {
+    ok('变焦拓扑在会话启动时打一行日志（switchOver + constituent 数 + 基准 + 区间）');
   }
 
   // ② 必须用 ramp（硬设 = 直接跳，失去本件的意义）
@@ -1231,6 +1273,43 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
     bad('点了不可用档位没有 toast 说明原因（"点了没反应"违反产品约束）');
   } else {
     ok('不可用档位置灰但仍可点，且点了给 toast 说明原因');
+  }
+
+  // ⑧ 量级守卫（`docs/11` 第七节那条判据的推广：**机制在但量太小等于没做**）
+  const rampBody = methodBodyOf(cfgSrc, 'applyZoomRamp');
+  const rampDurationMatch = /\bzoomRampDuration\s*:\s*TimeInterval\s*=\s*([0-9.]+)/.exec(cfgSrc);
+  const rampDuration = rampDurationMatch ? parseFloat(rampDurationMatch[1]) : null;
+  if (!rampBody) {
+    bad('找不到 CaptureDeviceConfigurator.applyZoomRamp');
+  } else if (!/log2\(/.test(rampBody)) {
+    bad('applyZoomRamp 的 rate 不是由 log2(目标/当前) 算出来的 —— 固定 rate 会让跨档越大越慢'
+      + '（13→120 要 1s 以上，"点一下平滑过去"的手感就没了）');
+  } else if (rampDuration === null) {
+    bad('读不到 zoomRampDuration（改名了？自检需要同步）');
+  } else if (rampDuration < 0.2 || rampDuration > 0.6) {
+    bad('zoomRampDuration = ' + rampDuration + 's 越界（应 ∈ [0.2, 0.6]）：'
+      + '太小 ≈ 硬跳（本件的意义没了）、太大 ≈ 拖沓');
+  } else {
+    ok('变焦量级守卫：rate 走 log2、时长 ' + rampDuration + 's ∈ [0.2, 0.6]');
+  }
+
+  // ⑨ 双来源守卫：两个变焦入口**不得互相调用**（2026-09-19 Mac 侧预检要求）
+  //    两个口径：applyZoomLocked = CapturePreset.zoomFactor（预设链路，P4 后由 EditRecipe 驱动）
+  //              applyZoomRamp   = 焦段档位（UI 真相）
+  //    互相调用 → P4 注入预设时"两个来源抢 videoZoomFactor"，画面来回跳且极难归因。
+  const lockedBody = methodBodyOf(cfgSrc, 'applyZoomLocked');
+  const rampCallsLocked = !!rampBody && /applyZoomLocked\s*\(/.test(rampBody);
+  const lockedCallsRamp = !!lockedBody && /applyZoomRamp\s*\(/.test(lockedBody);
+  const lockedHardSets = !!lockedBody && /device\.videoZoomFactor\s*=/.test(lockedBody);
+  if (!lockedBody) {
+    bad('找不到 CaptureDeviceConfigurator.applyZoomLocked');
+  } else if (rampCallsLocked || lockedCallsRamp) {
+    bad('applyZoomRamp 与 applyZoomLocked 互相调用了 —— 两个变焦来源会抢 videoZoomFactor');
+  } else if (!lockedHardSets) {
+    bad('applyZoomLocked 不再是配置期的硬设（device.videoZoomFactor =）'
+      + ' —— 会话刚建起来不需要"过程"');
+  } else {
+    ok('双来源守卫：applyZoomRamp ⇄ applyZoomLocked 无互相调用，配置期仍是硬设');
   }
 }
 
