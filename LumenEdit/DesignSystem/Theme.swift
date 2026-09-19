@@ -33,6 +33,12 @@ enum Theme {
         /// ⚠️ 与 `ok`（`#34D058`）**不是同一个色** —— 原型里刻度条用 ok、圆盘用这个更亮的绿，
         /// 别"顺手统一"成同一个（两处色值都是对标参考图取的）。
         static let dialAccent = Color(red: 0, green: 224 / 255, blue: 138 / 255)
+        /// 「自动对焦」开关 on 色（原型 `.sw.on{ background:#30d158 }`）。
+        /// ⚠️ 又是第三个绿 —— 原型三处绿各是各的对标值（刻度条 ok / 圆盘 dialAccent /
+        /// 通用开关这个），同样别顺手统一。
+        static let dialSwitchOn = Color(red: 48 / 255, green: 209 / 255, blue: 88 / 255)
+        /// 「自动对焦」开关 off 底色（原型 `.sw{ background:#39393d }`）
+        static let dialSwitchOff = Color(red: 57 / 255, green: 57 / 255, blue: 61 / 255)
         /// accent 的低饱和底：用在「已开启」的胶囊上（原型 `--accent-dim: rgba(242,175,60,.20)`）
         static let accentDim = accent.opacity(0.20)
         /// 模式条未选中档位（原型 `.mode-tab{ color: rgba(255,255,255,.5) }`）
@@ -528,30 +534,40 @@ enum Theme {
         /// 拖动方向闸门死区（与 `ParameterSlider` 同量级）
         static let paramStripDirectionDeadZone: CGFloat = 6
 
-        // MARK: EV 圆盘（#8 · B3a）
+        // MARK: 圆盘（EV / 对焦两盘共用 · #8 · B3b 起改名 dial*）
         //
-        // 原型 `--fd-*` 那组（对焦盘与 EV 盘共用组件，EV 是反向镜像）。
+        // 原型 `--fd-*` 那组（对焦盘与 EV 盘共用一套组件，两盘互为反向镜像）。
         // ⚠️ 半径体系写在 400 坐标系（原型 SVG viewBox 400），随容器等比缩放 ——
-        //    改 `evDialSize` 一个值，刻度/数字/指针/高亮段自动同步（原型同款防脱节设计）。
+        //    改 `dialSize` 一个值，刻度/数字/指针/高亮段自动同步（原型同款防脱节设计）。
 
         /// 圆盘直径（原型 `--fd-size: 246px`；246 是"圆盘组留在屏内"的上限）
-        static let evDialSize: CGFloat = 246
-        /// 数值框宽（**固定宽**：`+3.0 EV` 7 字符 × 16pt 等宽 ≈ 67 + 左右 padding 24 ≈ 91，
-        /// 取 92 留余量 —— 固定宽保证不同值之间不跳宽，也让"右缘钉盘左缘外 8pt"
-        /// 的定位不依赖文本测量）
-        static let evDialValueBoxWidth: CGFloat = 92
+        static let dialSize: CGFloat = 246
+        /// 数值框宽（**固定宽**：`+3.0 EV` / `0.56` / `∞` 各形态都能放下且不跳宽 ——
+        /// 固定宽让"靠盘缘钉 8pt"的定位不依赖文本测量）
+        static let dialValueBoxWidth: CGFloat = 92
         /// 数值框与圆盘边缘的间隙（原型 `calc(50% + size/2 + 8px)` 里的 8）
-        static let evDialValueBoxGap: CGFloat = 8
-        /// 数值框高（原型 padding 4×2 + 16pt 字 ≈ 29，取 30）
-        static let evDialValueBoxHeight: CGFloat = 30
+        static let dialValueBoxGap: CGFloat = 8
+        /// 数值框高（原型 padding 4×2 + 字 ≈ 29，取 30）
+        static let dialValueBoxHeight: CGFloat = 30
         /// 数值框字号（原型 `.ev-val{ font-size:16px }`，等宽数字）。
         /// ⚠️ 2026-09-19 用户拍板缩小到 **13**（截图反馈"+0.0 EV 偏大"；同轮刻度数字
         /// 修回原型口径 ≈8pt = 13×246/400）—— 需要再调只动这一个数。
-        static let evDialValueFontSize: CGFloat = 13
+        static let dialValueFontSize: CGFloat = 13
         /// 盘心标签字号（原型 `.ev-hub .t{ font-size:13px }`）
-        static let evDialHubFontSize: CGFloat = 13
-        /// 数值框 / 圆心标签的等宽数字字号下的行高辅助（无独立几何意义，给 a11y 用）
-        static let evDialHubIconSize: CGFloat = 22
+        static let dialHubFontSize: CGFloat = 13
+        /// 盘心图标框（22pt，自画 ⊖ / ◎）
+        static let dialHubIconSize: CGFloat = 22
+
+        /// 盘下「自动对焦」开关行与圆盘的间距（原型 `--fd-gap:12px`）
+        static let dialAutoSwitchGap: CGFloat = 12
+        /// 开关行高（原型 `--fd-auto-h:29px`，即 `.sw` 通用开关的高）
+        static let dialAutoSwitchHeight: CGFloat = 29
+        /// 开关宽（原型 `.sw{ width:47px }`）
+        static let dialAutoSwitchWidth: CGFloat = 47
+        /// 开关滑块直径（原型 `.sw` 内圆钮）
+        static let dialAutoSwitchKnob: CGFloat = 25
+        /// 开关行标签字号（原型 `.fd-auto{ font-size:12.5px }`）
+        static let dialAutoSwitchLabelFontSize: CGFloat = 12.5
 
         // MARK: 取景器辅助线（三分构图线）
 

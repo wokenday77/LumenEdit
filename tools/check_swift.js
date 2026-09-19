@@ -828,14 +828,15 @@ if (!camViewFile || !vmFile) {
     //    （2026-09-19 实测：不剥注释 → 命中自己的删除说明 → 假 FAIL，MEMORY 坑① 原样复发）
     const clampCode = clampSrc.replace(/\/\/[^\n]*/g, '');
     const viewCode8 = viewSrc8.replace(/\/\/[^\n]*/g, '');
-    const dialFile8 = files.find(f => path.basename(f) === 'ExposureDialView.swift');
+    const dialFile8 = files.find(f => path.basename(f) === 'DialView.swift');
     const dialSrc8 = dialFile8 ? fs.readFileSync(dialFile8, 'utf8') : '';
-    const rangeOK = /minValue:\s*Double\s*=\s*-3/.test(dialSrc8)
-      && /maxValue:\s*Double\s*=\s*3/.test(dialSrc8)
-      && /static let step:\s*Double\s*=\s*0\.1/.test(dialSrc8);
+    // 2026-09-19 B3b：两盘共用 DialView，值域差异收进 DialConfig 工厂（.ev / .focus）
+    const rangeOK = /minValue:\s*-3/.test(dialSrc8)
+      && /maxValue:\s*3/.test(dialSrc8)
+      && /step:\s*0\.1/.test(dialSrc8);
     const noLegacy = !/evUIRange/.test(clampCode) && !/evUIRange/.test(viewCode8);
     if (!dialFile8) {
-      bad('找不到 ExposureDialView.swift（EV 圆盘组件）');
+      bad('找不到 DialView.swift（EV / 对焦共用圆盘组件）');
     } else if (!rangeOK) {
       bad('EV 圆盘的值域不是原型口径（±3 EV / 0.1 步进，`DIALS.ev`：count 61 / min -3 / max 3）');
     } else if (!noLegacy) {
@@ -1761,7 +1762,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     const view12 = fs.readFileSync(camViewFile, 'utf8');
     const noLegacyPanel = !/ExposurePanel\(/.test(view12);
     const stripRendered = /ParameterStripView\(/.test(view12);
-    const dialRendered = /ExposureDialView\(/.test(view12);
+    const dialRendered = /DialView\(/.test(view12);
     const evExpandBody = methodBodyOf(vmSrc12, 'evDialTapped');
     const evExpandCollapsesOthers = !!evExpandBody
       && /isFilterStripExpanded\s*=\s*false/.test(evExpandBody)
@@ -1771,7 +1772,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     if (!stripRendered) {
       bad('CameraView 没有渲染 ParameterStripView —— 刻度条数据层建好了但界面上出不来');
     } else if (!dialRendered) {
-      bad('CameraView 没有渲染 ExposureDialView —— EV 圆盘建好了但界面上出不来');
+      bad('CameraView 没有渲染 DialView —— EV 圆盘建好了但界面上出不来');
     } else if (!noLegacyPanel) {
       bad('CameraView 还在渲染 ExposurePanel —— 参数排已随原型改版退场（EV 入口 = 圆盘）');
     } else if (!evExpandCollapsesOthers) {
@@ -1961,10 +1962,11 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
   // 为什么守：圆盘是**模态**（打开时整条底栈隐藏），且拖动值写的是硬件 EV ——
   // `docs/14` 的回写环教训在圆盘上同样成立（拖动期不回写 + 只接受最后推送值）；
   // 几何账必须"从 Theme 真读 + 复算"，不许手算表（`docs/11`/`docs/16` 两次漏项的教训）。
+  // 2026-09-19 B3b：断言对象从 ExposureDialView.swift 改为 DialView.swift（两盘共用组件）。
   {
-    const dialFile17 = files.find(f => path.basename(f) === 'ExposureDialView.swift');
+    const dialFile17 = files.find(f => path.basename(f) === 'DialView.swift');
     if (!dialFile17) {
-      bad('找不到 ExposureDialView.swift');
+      bad('找不到 DialView.swift（EV / 对焦共用圆盘组件）');
     } else {
       const dialSrc17 = fs.readFileSync(dialFile17, 'utf8');
 
@@ -2003,9 +2005,9 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc17);
         return m ? parseFloat(m[1]) : null;
       };
-      const dialSize = tok17('evDialSize');
-      const boxW = tok17('evDialValueBoxWidth');
-      const boxGap = tok17('evDialValueBoxGap');
+      const dialSize = tok17('dialSize');
+      const boxW = tok17('dialValueBoxWidth');
+      const boxGap = tok17('dialValueBoxGap');
       const shutter = tok17('shutterRowHeight');
       const focal = tok17('focalStripHeight');
       const tool = tok17('toolRowHeight');
@@ -2014,7 +2016,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       const geoMissing = [dialSize, boxW, boxGap, shutter, focal, tool, stackPad]
         .some(v => v === null || v === undefined);
       if (geoMissing) {
-        bad('EV 圆盘几何账读不到令牌（evDialSize / evDialValueBox* / 底栈行高，改名了？）');
+        bad('EV 圆盘几何账读不到令牌（dialSize / dialValueBox* / 底栈行高，改名了？）');
       } else {
         // 容器高 = 安全区内净高（遮幅守卫同款设备表；h 已扣上下安全区）
         const devices17 = [

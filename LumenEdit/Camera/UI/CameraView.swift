@@ -436,18 +436,22 @@ struct CameraView: View {
             value: viewModel.isFunctionPanelExpanded
         )
         // EV 圆盘（#8 · B3a）：**模态浮层**，盖在预览上、底栈整条隐藏（见 `bottomArea` 尾部）。
-        // 圆心钉在图标行「曝光补偿」格的中心（几何推导在 `ExposureDialView`，全部读 Theme 令牌）。
+        // 圆心钉在图标行「曝光补偿」格的中心（几何推导在 `DialView`，全部读 Theme 令牌）。
         // 拖动值走 `evDialValueChanged` → 复用 `docs/14` 的编辑态闸门，不另起炉灶。
+        // ⚠️ B3b 起两盘共用 `DialView`（差异全在 `DialConfig`）—— 盘底/拖拽/字号等
+        // 三条交互约定改一处两盘同步，别在调用点各改各的。
         .overlay {
             if viewModel.isEvDialShown {
-                ExposureDialView(
+                DialView(
+                    config: .ev,
                     value: viewModel.exposureBias,
+                    autoMode: nil,
+                    toastText: viewModel.toast,
                     onValueChanged: { value, isEditing in
                         viewModel.evDialValueChanged(value, isEditing: isEditing)
                     },
-                    onZeroTapped: { viewModel.evDialZeroTapped() },
-                    // 圆盘打开期间的 toast 在圆盘层显示（抬到上半区，原型 `.dial-on .toast{top:38%}`）
-                    toastText: viewModel.toast
+                    onValueBoxTapped: { viewModel.evDialZeroTapped() },
+                    onAutoToggled: nil
                 )
                 .transition(.opacity)
             }
