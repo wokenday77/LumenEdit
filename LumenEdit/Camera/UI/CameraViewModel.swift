@@ -713,7 +713,8 @@ final class CameraViewModel: ObservableObject {
         guard let environment else { return }
         guard !environment.session.unavailableFocalIds.contains(focal.id) else { return }
 
-        environment.session.applyFocal(focal, animated: false) { applied, _ in
+        environment.session.applyFocal(focal, animated: false) { [weak self] applied, _ in
+            guard let self else { return }
             guard let applied else { return }
             DebugLog.shared.debug(
                 "ui",
