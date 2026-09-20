@@ -61,6 +61,11 @@ enum SessionConfigurationError: LocalizedError {
 enum SessionForm: Equatable {
     case virtual
     case physical(FocalPreset)
+
+    var isPhysical: Bool {
+        if case .physical = self { return true }
+        return false
+    }
 }
 
 /// 会话形态的**切换目标**（VM 把用户动作翻译成它；`applyFocalTarget` 只管执行）。
@@ -650,7 +655,12 @@ final class CaptureSessionController: ObservableObject {
             self.publish {
                 self.form = formNow
                 self.isLensSwitching = false
-                self.unavailableFocalIds = CaptureCapabilities.unavailableFocalIds(for: newDevice)
+                // ⚠️ 物理会话下**全部档位可点**：同镜头档走 ramp、跨镜头档走换设备
+                // （物理设备缺失的机型由 `applyFocalTarget` 兜底报错）—— 置灰只属于
+                // 虚拟会话（该机型镜头覆盖不到的档位）。
+                self.unavailableFocalIds = formNow.isPhysical
+                    ? []
+                    : CaptureCapabilities.unavailableFocalIds(for: newDevice)
             }
 
             // 换设备日志（Mac 核法：deviceType 应变为物理单摄 / Live Photo 能力实测值，预检 ③）
@@ -716,6 +726,21 @@ final class CaptureSessionController: ObservableObject {
     // MARK: - 手动对焦（B3b · 对焦圆盘接线）
 
     /// 手动对焦（对焦圆盘拖动写硬件；虚拟多摄不支持 —— UI 已按能力分派，这里是最后防线）。
+    /// 物理会话下的**同镜头平滑变焦**（预检 ⑦：35↔48 同挂一颗 Wide，ramp 到
+    /// `zoomFactorOnPhysicalDevice` —— 比例真读 `mainCropFactor`，禁字面量）。
+    /// 跨镜头（↔13 / ↔120）不归本方法 —— 走 `applyFocalTarget` 换设备 + 转场。
+    /// 录制中调用是安全的（同一颗设备内 ramp，系统支持录制中变焦 —— 拍板 ②）。
+    func applyZoomOnPhysical(to preset: FocalPreset) {
+        guard let device else { return }
+        guard case .physical = form else {
+            DebugLog.shared.warn("session", "applyZoomOnPhysical 在非物理会话被调用 —— 分派矩阵漏改")
+            return
+        }
+        // B1 的 ramp 量级（docs/15：0.35s）
+        configurator.applyZoomRamp(targetZoomFactor: preset.zoomFactorOnPhysicalDevice,
+                                   duration: 0.35, to: device)
+    }
+
     /// 手动对焦（对焦圆盘拖动 / 「自动对焦」开关关闭时）。
     ///
     /// ⚠️ **这是 `manualFocus` 的意图写入点之一**：调用 = 用户表达"进入/保持手动对焦档"

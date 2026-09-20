@@ -569,6 +569,9 @@ enum Theme {
         /// 开关行标签字号（原型 `.fd-auto{ font-size:12.5px }`）
         static let dialAutoSwitchLabelFontSize: CGFloat = 12.5
 
+        /// 全手动档退出 → 切回虚拟多摄的**防抖时长**（`docs/20` 2.2b，量级守卫 [1,5]s）
+        static let dialRevertDebounce: CGFloat = 2.0
+
         // MARK: 取景器辅助线（三分构图线）
 
         /// 三分线粗细。

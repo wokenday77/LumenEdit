@@ -329,6 +329,33 @@ final class CameraViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // 换设备完成边沿（isLensSwitching true→false）→ 执行**待重放动作**（拍板 ①：
+        // 虚拟会话点手动开关/对焦入口 = 先切物理，完成后自动执行原动作）。
+        environment.session.$isLensSwitching
+            .receive(on: RunLoop.main)
+            .sink { [weak self] switching in
+                guard let self, !switching, let action = self.pendingManualAction else { return }
+                self.pendingManualAction = nil
+                switch action {
+                case .toggleManualStrip(let kind):
+                    self.stripAutoToggled(kind)
+                case .openFocusDial:
+                    self.focusDialTapped()
+                }
+            }
+            .store(in: &cancellables)
+
+        // 回切防抖（预检 ①，docs/20 第四节）：三个意图态**全空** + 物理会话 → 2s 后切回虚拟。
+        environment.session.$manualExposure
+            .combineLatest(environment.session.$manualWhiteBalance, environment.session.$manualFocus)
+            .map { $0.0 == nil && $1 == nil && $2 == nil }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] allAuto in
+                self?.evaluateRevertToVirtual(allAuto: allAuto)
+            }
+            .store(in: &cancellables)
+
         // 会话侧的模式 → 同步到 UI；**同时清空"最后推送值"记录** ——
         // 切模式会重建会话，之后的硬件值来自设备（不是我们推的），必须允许回写
         environment.session.$mode
@@ -767,16 +794,24 @@ final class CameraViewModel: ObservableObject {
     /// 手动开关在**当前设备**上是否真的可用（`false` = 刻度条右端开关置灰）。
     ///
     /// 数据链：`CaptureCapabilities` 能力探测 → session `@Published` → 这里派生。
-    /// 虚拟多摄不支持手动参数（SDK `AVCaptureDevice.h:538-541`，2026-09-19 白平衡
-    /// 7 连崩的架构级发现，见 `docs/18`）→ 本机（三摄）上恒 `false`，开关**灰但仍可点**
-    /// （点了由 `stripAutoToggled` 给 toast 说明 —— "置灰 + 说明原因"，不做"点了没反应"）。
-    /// 物理镜头架构落地后探测自动变 true。
+    /// 右端「自动 / 手动」开关是否可用。
+    ///
+    /// ⚠️ **2026-09-20 拍板 ①（`docs/20`）：恒 `true` —— B2 的"能力探测置灰"呈现随按需
+    /// 架构退役**。虚拟会话下点开关 = **切物理会话（转场）→ 完成后自动进手动档**
+    /// （`stripAutoToggled` 入口分派）——按需架构下这是进入手动档的唯一路径，
+    /// "置灰 + 点了给原因"会让手动档永远不可达。能力探测仍在 session 写入链上
+    /// 兜底（`setManualExposure` 等的 throw + 错误 toast）。
     func isManualStripAvailable(_ kind: ParameterStripKind) -> Bool {
-        guard let environment else { return false }
-        return kind == .whiteBalance
-            ? environment.session.isManualWhiteBalanceSupported
-            : environment.session.isManualExposureSupported
+        true
     }
+
+    /// 待重放动作（拍板 ①：虚拟会话点手动开关 / 对焦入口 → 先切物理 → 转场完成后执行）。
+    private enum PendingManualAction {
+        case toggleManualStrip(ParameterStripKind)
+        case openFocusDial
+    }
+
+    private var pendingManualAction: PendingManualAction?
 
     /// 右端「自动 / 手动」开关。
     ///
@@ -786,20 +821,18 @@ final class CameraViewModel: ObservableObject {
     func stripAutoToggled(_ kind: ParameterStripKind) {
         guard let environment else { return }
 
-        // ⚠️ 能力闸门（2026-09-19 白平衡 7 连崩修复的第二道）：设备不支持手动参数时
-        // **不推硬件**（configurator 的守卫是最后一道，但那条路会走"抛错 → 错误 toast"，
-        // 文案是排障视角；这里给的才是用户视角的说明）。灰但仍可点，点了必须留痕。
-        // 开关置灰的样式由 `ParameterStripView.isManualAvailable` 负责。
-        guard isManualStripAvailable(kind) else {
-            let reason = kind == .whiteBalance
-                ? "当前多摄虚拟设备不支持手动白平衡"
-                : "当前多摄虚拟设备不支持手动曝光（ISO / 快门）"
-            DebugLog.shared.warn(
+        // ⚠️ 入口分派（拍板 ①，`docs/20`）：**虚拟会话下点手动开关 = 切物理会话**，
+        // 转场完成后自动重放本开关（此时挂的是物理单摄，手动档立即可用）——
+        // "置灰 + toast 不开盘"是虚拟设备时代的临时呈现，按需架构下退役。
+        // 能力探测仍在 session 写入链兜底（setManualExposure 等的 throw）。
+        if environment.session.form == .virtual {
+            DebugLog.shared.info(
                 "ui",
-                "点 \(kind.displayName) 手动开关被拒：\(reason)（能力探测 = false，"
-                    + "物理镜头架构 docs/18 落地后开放）"
+                "点 \(kind.displayName) 手动开关 → 虚拟会话 → 切物理（完成后自动进手动档）"
             )
-            showToast(reason + " · 切物理镜头后开放")
+            showToast("正在切换到 \(focal.displayName) mm 物理镜头 · 完成后进入手动档")
+            pendingManualAction = .toggleManualStrip(kind)
+            environment.session.applyFocalTarget(.physical(focal: focal))
             return
         }
 
@@ -988,6 +1021,8 @@ final class CameraViewModel: ObservableObject {
     func focalTapped(_ preset: FocalPreset) {
         guard let environment else { return }
 
+        // 不可用档位（**虚拟会话**：该机型镜头覆盖不到的档位，UI 置灰；物理会话下为空集，
+        // 因为跨镜头档走换设备、设备缺失由 applyFocalTarget 兜底报错）
         if environment.session.unavailableFocalIds.contains(preset.id) {
             Haptics.warning()
             DebugLog.shared.debug("ui", "焦段 \(preset.displayName)mm 在当前设备不可用（已置灰）")
@@ -1000,6 +1035,40 @@ final class CameraViewModel: ObservableObject {
         // 点已选中的档位：原型是静默 return；这里补一次轻触感（"点到了、本来就选中"）
         guard preset.id != focal.id else {
             Haptics.tick()
+            return
+        }
+
+        // ⚠️ **分派矩阵**（预检 ⑦，`docs/20` 第六节）——按会话形态分派，收敛在此一处：
+        switch environment.session.form {
+        case .virtual:
+            // 虚拟会话：B1 现状 —— 虚拟切换点内 ramp（平滑变焦）
+            break
+        case .physical(let current):
+            if isRecording, current.physicalDeviceTypes != preset.physicalDeviceTypes {
+                // 预检 ③：录制中**跨镜头**禁（换 input 断流毁产物）；同镜头数码变焦允许（拍板 ②）
+                Haptics.warning()
+                DebugLog.shared.warn("ui", "录制中跨镜头切换被拒（\(current.displayName) → \(preset.displayName)）")
+                showToast("录制中不能切换镜头 —— 试试同镜头的 35 / 48 mm（数码变焦）")
+                return
+            }
+            if current.physicalDeviceTypes == preset.physicalDeviceTypes {
+                // 物理会话**同镜头**：ramp 到该档的裁切系数（比例真读 mainCropFactor，预检 ⑦）
+                focal = preset
+                Haptics.tick()
+                environment.session.applyZoomOnPhysical(to: preset)
+                DebugLog.shared.debug(
+                    "ui",
+                    "物理会话同镜头变焦 → \(preset.displayName) mm（zoom "
+                        + String(format: "%.2f", Double(preset.zoomFactorOnPhysicalDevice)) + "×）"
+                )
+                showToast("焦段 \(preset.displayName) mm · 变焦 "
+                    + String(format: "%.2f", Double(preset.zoomFactorOnPhysicalDevice)) + "×")
+                return
+            }
+            // 物理会话**跨镜头**：换设备 + 转场（第三笔接顺序触发；当前直切）
+            focal = preset
+            Haptics.tick()
+            environment.session.applyFocalTarget(.physical(focal: preset))
             return
         }
 
@@ -1191,15 +1260,26 @@ final class CameraViewModel: ObservableObject {
     func focusDialTapped() {
         guard let environment else { return }
 
-        // ⚠️ 能力分派（拍板 ①·A）：不支持手动对焦 → 说明原因、不开盘。
-        // 点按对焦（点取景器）现在就有用，提示里必须说清，不做"功能全没了"的误导。
-        guard environment.session.isManualFocusSupported else {
-            DebugLog.shared.warn(
+        // ⚠️ 入口分派（拍板 ①，`docs/20`）：**虚拟会话下点「对焦」= 切物理会话**，
+        // 转场完成后自动开盘 —— B3b 的"toast 不开盘"呈现（虚拟设备时代的临时口径）
+        // 随按需架构退役。物理会话下 isManualFocusSupported = true，正常走开盘。
+        if !environment.session.isManualFocusSupported {
+            guard environment.session.form == .virtual else {
+                // 物理会话仍探测失败 —— 理论不可达（物理单摄支持手动对焦），诚实兜底
+                DebugLog.shared.warn(
+                    "ui",
+                    "物理会话下手动对焦能力探测仍为 false —— 请核对设备，本入口按诚实边界拦截"
+                )
+                showToast("手动对焦：当前设备不支持 · 点取景器任意位置仍可自动对焦")
+                return
+            }
+            DebugLog.shared.info(
                 "ui",
-                "点「对焦」手动圆盘被拒：虚拟多摄不支持手动对焦（能力探测 = false，"
-                    + "物理镜头架构 docs/18 落地后开放）"
+                "点「对焦」→ 虚拟会话 → 切物理（完成后自动打开对焦圆盘）"
             )
-            showToast("手动对焦：当前多摄虚拟设备不支持 · 点取景器任意位置仍可自动对焦")
+            showToast("正在切换到 \(focal.displayName) mm 物理镜头 · 完成后打开对焦圆盘")
+            pendingManualAction = .openFocusDial
+            environment.session.applyFocalTarget(.physical(focal: focal))
             return
         }
 
@@ -1267,7 +1347,6 @@ final class CameraViewModel: ObservableObject {
     }
 
     /// 对焦盘「自动对焦」开关（原型 `#fdAuto`：开=自动找焦点并锁定拖动；关=停在当前值）。
-    ///
     /// - 开：`setAutoFocusMode()`（连续自动优先）；读数随 `currentLensPosition` 回写
     ///   实时走（不需要原型的模拟动画 —— 那是"原型没有真硬件"的代偿）。
     /// - 关：把**当前读数**写成锁定值（`setManualFocus`），数值停在原地恢复拖动
@@ -1287,6 +1366,39 @@ final class CameraViewModel: ObservableObject {
             Haptics.tick()
             DebugLog.shared.debug("ui", "自动对焦已开 → 连续自动（手动拖动已锁定）")
             showToast("自动对焦已开：正在自动找焦点（手动拖动已锁定）")
+        }
+    }
+
+    // MARK: - 回切防抖（预检 ① · docs/20 第四节）
+
+    /// 全手动档退出持续 **2s**（`Theme.Size.dialRevertDebounce`）→ 切回虚拟多摄
+    /// （恢复 B1 平滑变焦；防抖防"快速试一档手动就打摆"）。录制中顺延。
+    private var revertDebounceTask: Task<Void, Never>?
+
+    /// 三个意图态全空（手动曝光 / 手动白平衡 / 手动对焦都没锁）。
+    var isAllManualOff: Bool {
+        guard let environment else { return true }
+        return environment.session.manualExposure == nil
+            && environment.session.manualWhiteBalance == nil
+            && environment.session.manualFocus == nil
+    }
+
+    /// 三意图态合并的观察回调：全空 + 物理会话 + 非录制 → 起 2s 防抖；任一条件破坏 → 取消。
+    private func evaluateRevertToVirtual(allAuto: Bool) {
+        guard let environment else { return }
+        revertDebounceTask?.cancel()
+        guard allAuto, environment.session.form.isPhysical, !isRecording else { return }
+
+        let seconds = Double(Theme.Size.dialRevertDebounce)
+        revertDebounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self else { return }
+            guard self.isAllManualOff, !self.isRecording else { return }
+            DebugLog.shared.info(
+                "ui",
+                "全手动档退出 \(Int(seconds))s → 切回虚拟多摄（B1 平滑变焦恢复）"
+            )
+            self.environment?.session.applyFocalTarget(.virtual(focal: self.focal))
         }
     }
 
