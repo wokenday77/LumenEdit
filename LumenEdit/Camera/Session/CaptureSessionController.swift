@@ -216,6 +216,9 @@ final class CaptureSessionController: ObservableObject {
 
     /// 会话未就绪时排队的焦段目标（预检 ②）；`startInternal` 就绪分支补执行。
     private var pendingFocalTarget: FocalTarget?
+
+    /// 顺序触发第一段存下的换设备目标（`beginFocalSwitch` 存、`commitFocalSwitch` 取）。
+    private var pendingSwitchTarget: FocalTarget?
     private var audioInput: AVCaptureDeviceInput?
 
     private var isConfigured = false
@@ -521,23 +524,17 @@ final class CaptureSessionController: ObservableObject {
 
     // MARK: - 会话形态状态机（物理架构 · `docs/20`）
 
-    /// 用户请求切换会话形态（虚拟 ↔ 物理单摄）。
+    /// 用户请求切换会话形态（虚拟 ↔ 物理单摄）—— **顺序触发第一段**（预检 ⑧）。
     ///
-    /// ## 六步流程（预检 ②⑥，`docs/20` 1.3）
+    /// 前置校验通过后只做：停 ramp + `isLensSwitching = true`（UI 开始淡入模糊）。
+    /// **真正的换设备在 `commitFocalSwitch()`** —— 由 UI"淡入完成回调"调用（模糊先完全
+    /// 盖住画面，切换快慢都不影响观感，`docs/20` 3.1）。
     ///
-    /// ```
-    /// 前置：cancel ramp（stopZoomRamp）/ 未就绪排队（pendingFocalTarget）/ 幂等 /
-    ///       录制中跨设备拒绝（兜底，VM 分派层已拦）
-    /// ① isLensSwitching = true（UI 淡入模糊；顺序触发：UI 完成后才真正走到这里）
-    /// ② beginConfiguration → ③ removeInput(video) → ④ addInput(新) → ⑤ commit
-    /// ⑥ applyPreferredFormatLocked(新设备)   ← 铁律 1：commit 之后才能写 activeFormat
-    /// ⑦ reapplyManualStateLocked(新设备)     ← 搬运 clamp 依赖新 activeFormat，必须在 ⑥ 后
-    /// ⑧ form 发布 + isLensSwitching = false
-    /// ```
-    ///
-    /// ⚠️ **add 失败自动回滚原 input**（绝不留无视频输入的会话）。
-    /// ⚠️ **`form` / `isLensSwitching` 的写入点只有本方法**（自检⑲）。
-    func applyFocalTarget(_ target: FocalTarget) {
+    /// - 幂等：目标形态 == 当前形态 → no-op（⚠️ 虚拟分支**不比档位** —— 虚拟会话内
+    ///   切档走 B1 的 ramp 分派，不经过本方法）。
+    /// - 会话未就绪 → `pendingFocalTarget` 排队（预检 ②，`startInternal` 补执行）。
+    /// - 录制中跨设备 → 拒绝（兜底 —— VM 分派层已拦，预检 ③）。
+    func beginFocalSwitch(_ target: FocalTarget) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
 
@@ -554,7 +551,7 @@ final class CaptureSessionController: ObservableObject {
             }
             if sameCase { return }
 
-            // 前置 a：未就绪 → 排队（startInternal 就绪分支补执行，预检 ②）
+            // 未就绪 → 排队（startInternal 就绪分支补执行，预检 ②）
             guard self.state == .running, self.device != nil else {
                 self.pendingFocalTarget = target
                 DebugLog.shared.info("session", "会话未就绪 → 焦段目标已排队（\(target.describe)）")
@@ -562,7 +559,7 @@ final class CaptureSessionController: ObservableObject {
             }
             guard let device = self.device else { return }
 
-            // 前置 b：录制中跨设备拒绝（兜底 —— VM 分派层已拦，预检 ③）
+            // 录制中跨设备拒绝（兜底 —— VM 分派层已拦，预检 ③）
             if self.isRecording, case .physical(let newPreset) = target,
                case .physical(let curPreset) = self.form,
                newPreset.physicalDeviceTypes != curPreset.physicalDeviceTypes {
@@ -572,11 +569,31 @@ final class CaptureSessionController: ObservableObject {
                 return
             }
 
-            // 前置 c：ramp 进行中 → 停掉（预检 ②）
+            // ramp 进行中 → 停掉（预检 ②）
             self.configurator.stopZoomRamp(on: device)
 
-            // ① 转场开
+            // 转场开（顺序触发第一段完成 —— 真正的换设备等 UI 淡入完成回调）
+            self.pendingSwitchTarget = target
             self.publish { self.isLensSwitching = true }
+            DebugLog.shared.info("session", "换设备开始（模糊淡入中）→ \(target.describe)")
+        }
+    }
+
+    /// **顺序触发第二段**：执行换设备六步 + 参数搬运（由 UI"淡入完成回调"调用，预检 ⑧）。
+    ///
+    /// ⚠️ **`form` / `isLensSwitching` 的写入点只有 `beginFocalSwitch` /
+    /// `commitFocalSwitch`**（自检⑲）。
+    func commitFocalSwitch() {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard let target = self.pendingSwitchTarget else { return }
+            self.pendingSwitchTarget = nil
+
+            guard self.state == .running, let device = self.device else {
+                self.pendingFocalTarget = target
+                self.publish { self.isLensSwitching = false }
+                return
+            }
 
             // 旧设备手动参数真值快照（搬运源 —— .custom/.locked 只能用户设，回读可信）
             let previousExposure = self.configurator.manualExposure(of: device)
@@ -680,6 +697,13 @@ final class CaptureSessionController: ObservableObject {
     /// - EV：session 状态里的值 clamp 后重放（手动曝光档下系统忽略 EV，但**值保留**）。
     /// - **对焦：显式降级**（预检 ⑤）—— `lensPosition` 量程随镜头不同，搬运必然对不上焦；
     ///   落回连续自动 + 清意图态（`manualFocus = nil`）+ toast 由 VM 观察 `form` 变化发出。
+    /// 便捷：begin + commit 连发（**直切，无转场** —— 保留给"不需要模糊转场"的调用）。
+    /// 当前 VM 分派全部走 begin + UI 完成回调 commit（顺序触发）。
+    func applyFocalTarget(_ target: FocalTarget) {
+        beginFocalSwitch(target)
+        commitFocalSwitch()
+    }
+
     private func reapplyManualStateLocked(
         on newDevice: AVCaptureDevice,
         previousExposure: (iso: Float, seconds: Double)?,

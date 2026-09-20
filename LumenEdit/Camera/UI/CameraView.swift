@@ -19,6 +19,8 @@ struct CameraView: View {
 
     /// 取景器容器高度（几何判定用，经 PreferenceKey 读出，不参与布局）
     @State private var previewHeight: CGFloat = 0
+    /// 模糊转场浮层的可见态（物理架构 · `docs/20` 第三节；由 `isLensSwitching` 两段驱动）
+    @State private var blurOn = false
     /// 本次拖动的起点时刻（原型 dt ≤ 800ms 的"长按后拖动不算滑动"守卫）
     @State private var swipeGestureStart: Date?
     /// 本次拖动是否已经触发过（提前触发后手势仍在继续，防止一次长滑连跨两级）
@@ -289,6 +291,7 @@ struct CameraView: View {
                       !viewModel.isExposureEditing,      // 闸门①
                       !viewModel.isEvDialShown,          // 闸门③：圆盘是模态，打开期间手势整体禁言
                       !viewModel.isFocusDialShown,       // 闸门③（对焦盘同款）
+                      !viewModel.isLensSwitching,        // 闸门④：换设备转场期间禁言（docs/20 3.2）
                       swipeAxis == .vertical,            // 闸门②
                       shouldTriggerSwipe(value) else {
                     return
@@ -480,6 +483,30 @@ struct CameraView: View {
         }
         .animation(.easeInOut(duration: 0.22), value: viewModel.isEvDialShown)
         .animation(.easeInOut(duration: 0.22), value: viewModel.isFocusDialShown)
+        // 模糊转场浮层（物理架构 · `docs/20` 第三节）：**顺序触发** ——
+        // `isLensSwitching = true` → 淡入（0.15s）→ **淡入完成回调里 commitFocalSwitch()**
+        // （模糊先完全盖住画面，切换快慢都不影响观感）→ 完成后 false → 淡出（0.25s）。
+        // ⚠️ 峰值段"清晰→糊→黑一瞬→糊→清晰"是**预期行为**（转场软化跳变，不消灭黑屏）。
+        .overlay {
+            BlurOverlayView()
+                .ignoresSafeArea()
+                .opacity(blurOn ? 1 : 0)
+                .allowsHitTesting(false)
+        }
+        .onChange(of: viewModel.isLensSwitching) { _, switching in
+            if switching {
+                withAnimation(.easeIn(duration: Theme.Size.dialBlurIn)) {
+                    blurOn = true
+                } completion: {
+                    // 模糊已完全盖住画面 → 顺序触发第二段：真正换设备 + 参数搬运
+                    env.session.commitFocalSwitch()
+                }
+            } else {
+                withAnimation(.easeOut(duration: Theme.Size.dialBlurOut)) {
+                    blurOn = false
+                }
+            }
+        }
         // 顶部浮层槽位（模式条正下方）：**录制计时** 与 **实况角标** 共用，二者互斥 ——
         // 录制只发生在视频 / Log 实况模式，实况角标只在实况模式。
         // 录制徽标从快门上方挪到这里（2026-09-17：2-3 加焦段条后，原位置会盖住药丸）。
@@ -671,6 +698,8 @@ struct CameraView: View {
                 ) { preset in
                     viewModel.focalTapped(preset)
                 }
+                // ⚠️ 转场期间禁点（预检 ②：防连点叠两个换设备流程；`docs/20` 3.2）
+                .allowsHitTesting(!viewModel.isLensSwitching)
             }
 
             // 快门排四件套：缩略图 · 快门（绝对居中）· ⤢ · 风格方块（docs/09）。

@@ -572,6 +572,11 @@ enum Theme {
         /// 全手动档退出 → 切回虚拟多摄的**防抖时长**（`docs/20` 2.2b，量级守卫 [1,5]s）
         static let dialRevertDebounce: CGFloat = 2.0
 
+        /// 换设备模糊转场：**淡入**时长（预检 ⑧ 顺序触发第一段；量级守卫 [0.1,0.5]s）
+        static let dialBlurIn: CGFloat = 0.15
+        /// 换设备模糊转场：**淡出**时长（量级守卫 [0.1,0.5]s）
+        static let dialBlurOut: CGFloat = 0.25
+
         // MARK: 取景器辅助线（三分构图线）
 
         /// 三分线粗细。

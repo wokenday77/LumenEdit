@@ -832,7 +832,7 @@ final class CameraViewModel: ObservableObject {
             )
             showToast("正在切换到 \(focal.displayName) mm 物理镜头 · 完成后进入手动档")
             pendingManualAction = .toggleManualStrip(kind)
-            environment.session.applyFocalTarget(.physical(focal: focal))
+            environment.session.beginFocalSwitch(.physical(focal: focal))
             return
         }
 
@@ -1065,10 +1065,11 @@ final class CameraViewModel: ObservableObject {
                     + String(format: "%.2f", Double(preset.zoomFactorOnPhysicalDevice)) + "×")
                 return
             }
-            // 物理会话**跨镜头**：换设备 + 转场（第三笔接顺序触发；当前直切）
+            // 物理会话**跨镜头**：换设备 + 模糊转场（顺序触发：begin 置位 → UI 淡入完成
+            // 回调里 commit —— CameraView 的 onChange(isLensSwitching) 统一驱动）
             focal = preset
             Haptics.tick()
-            environment.session.applyFocalTarget(.physical(focal: preset))
+            environment.session.beginFocalSwitch(.physical(focal: preset))
             return
         }
 
@@ -1279,7 +1280,7 @@ final class CameraViewModel: ObservableObject {
             )
             showToast("正在切换到 \(focal.displayName) mm 物理镜头 · 完成后打开对焦圆盘")
             pendingManualAction = .openFocusDial
-            environment.session.applyFocalTarget(.physical(focal: focal))
+            environment.session.beginFocalSwitch(.physical(focal: focal))
             return
         }
 
@@ -1398,7 +1399,7 @@ final class CameraViewModel: ObservableObject {
                 "ui",
                 "全手动档退出 \(Int(seconds))s → 切回虚拟多摄（B1 平滑变焦恢复）"
             )
-            self.environment?.session.applyFocalTarget(.virtual(focal: self.focal))
+            self.environment?.session.beginFocalSwitch(.virtual(focal: self.focal))
         }
     }
 

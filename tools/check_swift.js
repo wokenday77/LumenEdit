@@ -1384,16 +1384,19 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
     ok('变焦前先 clamp 到设备能力区间（统一走 zoomRange，两处口径不漂）');
   }
 
-  // ⑤ **不重建会话**：变焦路径里不得出现配置变更 / input 增删
+  // ⑤ **变焦路径不得重建会话**（2026-09-20 预检 ⑦ 改口：物理会话的换设备**必须**增删
+  //    input，但只允许在 applyFocalTarget / beginFocalSwitch / commitFocalSwitch 三个
+  //    形态方法里 —— 变焦路径 setZoomFactor 仍不得碰配置）
   const zoomBody = methodBodyOf(sessionSrc, 'setZoomFactor');
   if (!zoomBody) {
     bad('找不到 CaptureSessionController.setZoomFactor');
   } else if (/beginConfiguration|addInput|removeInput|commitConfiguration/.test(zoomBody)) {
-    bad('setZoomFactor 里出现了会话配置变更 —— 切镜头**不该重建会话**（那套是模式切换用的）');
+    bad('setZoomFactor 里出现了会话配置变更 —— 变焦**不该重建会话**（换设备是形态切换的事，'
+      + '只允许发生在 applyFocalTarget / beginFocalSwitch / commitFocalSwitch）');
   } else if (!/applyFocal/.test(sessionSrc)) {
     bad('找不到 applyFocal（档位 → zoom 的换算入口）');
   } else {
-    ok('切镜头路径只做 lock → ramp → unlock（无 beginConfiguration / input 增删）');
+    ok('变焦路径只做 lock → ramp → unlock；input 增删只归形态切换三方法（预检 ⑦ 改口）');
   }
 
   // ⑥ 焦段条命中高仍为条高 44（药丸视觉 30，别把命中高改成药丸高）
@@ -1931,10 +1934,12 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       && !/isFocusModeSupported\(\.locked\)/.test(focusBody16);
     const sessSupportOK = /@Published private\(set\) var isManualExposureSupported/.test(sessSrc12)
       && /@Published private\(set\) var isManualWhiteBalanceSupported/.test(sessSrc12);
+    // ⚠️ 2026-09-20 拍板 ①（docs/20）：B2 的"能力闸门"（置灰 + toast 不开盘）被**入口分派**
+    // 取代 —— 虚拟会话点手动开关 = 切物理 → 转场完成自动进手动档（唯一可达路径）。
     const vmGateOK = !!toggleBody16
-      && /isManualStripAvailable/.test(toggleBody16)
-      && /showToast/.test(toggleBody16)
-      && /DebugLog\.shared\.warn/.test(toggleBody16);
+      && /form == \.virtual/.test(toggleBody16)
+      && /beginFocalSwitch\(/.test(toggleBody16)
+      && /showToast\(/.test(toggleBody16);
     if (!wbGuardOK) {
       bad('`setManualWhiteBalance` 的能力守卫不是 `isLockingWhiteBalanceWithCustomDeviceGainsSupported`'
         + '（或还残留 `isWhiteBalanceModeSupported(.locked)`）—— 后者在虚拟多摄上误报 true，'
@@ -1948,10 +1953,10 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + '（Mac 同类预警，AVCaptureDevice.h:1110）');
     } else if (!sessSupportOK) {
       bad('session 没有发布 `isManualExposureSupported` / `isManualWhiteBalanceSupported`'
-        + ' —— UI 无法按能力把手动开关置灰');
+        + ' —— 能力位仍要发布（换设备后探测随新设备翻转）');
     } else if (!vmGateOK) {
-      bad('VM 的 `stripAutoToggled` 缺能力闸门（isManualStripAvailable + toast + warn 留痕）'
-        + ' —— 开关置灰后点了必须给原因（"点了没反应"禁令），更不能把硬件写推出去');
+      bad('VM 的 `stripAutoToggled` 缺虚拟会话**入口分派**（form == .virtual → applyFocalTarget 切物理）'
+        + ' —— 拍板 ①：点手动开关 = 切物理 → 自动进手动档，不能退回"置灰 + toast"旧呈现');
     } else {
       ok('虚拟多摄诚实边界齐备（白平衡×2 / 对焦守卫换对 API + session 支持位 + VM 能力闸门）');
     }
@@ -2222,6 +2227,133 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         ok('对焦圆盘齐备（共用 DialView 唯一盘底 / 两盘工厂分派 / 对焦写硬件唯一入口 / '
           + '能力分派 toast 不开盘 / 对焦档 = 用户意图态（回读只喂读数）/ docs/14 闸门 / 点按只测光分流）');
       }
+    }
+  }
+
+  // ⑲ 物理架构（`docs/20`）—— 形态状态机 / 搬运顺序 / 搬运清单 / zoom 表 / 回切防抖 /
+  //    录制禁切 / 转场顺序触发 / 排队
+  {
+    // session 源码本组自读（sessionSrc 是第 11 组的块内变量，跨块取不到）
+    const sessionSrc19Path = files.find(f => path.basename(f) === 'CaptureSessionController.swift');
+    const sessionSrc19 = sessionSrc19Path ? fs.readFileSync(sessionSrc19Path, 'utf8') : '';
+    const sessionSrc = sessionSrc19;
+
+    // a) input 增删唯一入口（预检 ⑦ 可执行化）：**除 CaptureSessionController 外**的任何
+    //    Swift 文件都不得出现 `session.addInput(`（视频 input 增删只允许在 session 的
+    //    buildSession / commitFocalSwitch 两方法；音频增删也在 session 文件内）。
+    //    ⚠️ 剥注释后匹配（注释里提到 addInput 不得误报 —— MEMORY 坑①）。
+    const videoAdders = files
+      .filter(f => path.basename(f) !== 'CaptureSessionController.swift')
+      .filter(f => /session\.addInput\(/.test(fs.readFileSync(f, 'utf8').replace(/\/\/[^\n]*/g, '')))
+      .map(f => path.basename(f));
+    const inputOK = videoAdders.length === 0
+      && /func commitFocalSwitch\(\)/.test(sessionSrc19)
+      && /func beginFocalSwitch\(_ target: FocalTarget\)/.test(sessionSrc19);
+    if (!inputOK) {
+      bad('session.addInput 出现在 ' + (videoAdders.join(' / ') || '非法位置')
+        + ' —— 视频 input 增删只允许在 CaptureSessionController 的 buildSession / '
+        + 'commitFocalSwitch（预检 ⑦）');
+    }
+
+    // b) 搬运顺序（预检 ⑥ 可执行化）：commitFocalSwitch 体内 `applyPreferredFormatLocked`
+    //    必须出现在 `reapplyManualStateLocked` **之前**（clamp 依赖新 activeFormat，铁律 1）
+    const commitBody19 = methodBodyOf(sessionSrc19, 'commitFocalSwitch');
+    let orderOK = false, orderDetail = '';
+    if (commitBody19) {
+      const iFmt = commitBody19.indexOf('applyPreferredFormatLocked');
+      const iRe = commitBody19.indexOf('reapplyManualStateLocked');
+      if (iFmt < 0) { orderDetail = 'commitFocalSwitch 里没有 applyPreferredFormatLocked'; }
+      else if (iRe < 0) { orderDetail = 'commitFocalSwitch 里没有 reapplyManualStateLocked（搬运丢了）'; }
+      else if (iFmt > iRe) { orderDetail = 'applyFormat 在搬运之后（clamp 拿到的是旧格式）'; }
+      else { orderOK = true; }
+    }
+    if (!orderOK) {
+      bad('搬运顺序错（预检 ⑥）：' + (orderDetail || '找不到 commitFocalSwitch 顺序'));
+    }
+
+    // c) 搬运清单齐全（预检 ④⑤）：曝光 / 白平衡 / EV / 对焦降级 四项
+    const reapplyBody19 = methodBodyOf(sessionSrc19, 'reapplyManualStateLocked');
+    const carryOK = !!reapplyBody19
+      && /setManualExposure\(/.test(reapplyBody19)
+      && /setManualWhiteBalance\(/.test(reapplyBody19)
+      && /applyExposureBias\(/.test(reapplyBody19)
+      && /self\.manualFocus = nil/.test(reapplyBody19)
+      && /setAutoFocus\(on: newDevice\)/.test(reapplyBody19);
+    if (!carryOK) {
+      bad('搬运清单不全（须含曝光 / 白平衡 / EV / 对焦显式降级四项 —— 预检 ④⑤）');
+    }
+
+    // d) 物理 zoom 表禁字面量（预检 ⑦）：zoomFactorOnPhysicalDevice 必须真读 mainCropFactor。
+    //    ⚠️ 先剥 // 注释：文档注释里写有"≈ 1.458"的示例值（不剥 → 误报，MEMORY 坑①）
+    const focalSrc19Raw = files
+      .filter(f => path.basename(f) === 'FocalPreset.swift')
+      .map(f => fs.readFileSync(f, 'utf8'))[0] || '';
+    const focalCode19 = focalSrc19Raw.replace(/\/\/[^\n]*/g, '');
+    const zoomMapOK = /zoomFactorOnPhysicalDevice/.test(focalCode19)
+      && /mainCropFactor \?\? 1/.test(focalCode19)
+      && !/1\.458/.test(focalCode19)
+      && !/return 2(\.0)?\s*$/.test(focalCode19);
+    if (!zoomMapOK) {
+      bad('物理 zoom 表出现字面量系数 —— 35/48 的比例必须真读 `FocalPreset.mainCropFactor`（预检 ⑦）');
+    }
+
+    // e) 回切防抖（预检 ①）：令牌存在 + 量级 [1,5]s + 三态判据（判据封装在 `isAllManualOff`）
+    const themeSrc19 = fs.readFileSync(themeFile2, 'utf8');
+    const mDebounce = /dialRevertDebounce:\s*CGFloat\s*=\s*([0-9.]+)/.exec(themeSrc19);
+    const debounceVal = mDebounce ? parseFloat(mDebounce[1]) : null;
+    const vmRevert19 = methodBodyOf(vmSrc12, 'evaluateRevertToVirtual');
+    const vmAllManualOff = methodBodyOf(vmSrc12, 'isAllManualOff');
+    const revertOK = debounceVal !== null && debounceVal >= 1 && debounceVal <= 5
+      && !!vmRevert19
+      && /isAllManualOff/.test(vmRevert19)
+      && /beginFocalSwitch\(/.test(vmRevert19)
+      // isAllManualOff 是计算属性（非 func）→ 用全文三态判据（三项同现才算齐）
+      && /manualExposure == nil/.test(vmSrc12)
+      && /manualWhiteBalance == nil/.test(vmSrc12)
+      && /manualFocus == nil/.test(vmSrc12);
+    if (!revertOK) {
+      bad('回切策略缺失或越界（预检 ①）：dialRevertDebounce ∈ [1,5]s + 三意图态判据（isAllManualOff）'
+        + ' + 切回调用 —— 全手动退出必须切回虚拟（否则永久失去平滑变焦）');
+    }
+
+    // f) 录制中禁跨镜头切（预检 ③）：focalTapped 分派含 isRecording 分支
+    const vmFocalBody19 = methodBodyOf(vmSrc12, 'focalTapped');
+    const recOK = !!vmFocalBody19
+      && /isRecording/.test(vmFocalBody19)
+      && /physicalDeviceTypes/.test(vmFocalBody19);
+    if (!recOK) {
+      bad('`focalTapped` 分派缺录制中跨镜头拒绝（isRecording + physicalDeviceTypes 比较，预检 ③）');
+    }
+
+    // g) 转场顺序触发（预检 ⑧）：两时长令牌量级 + UI completion 里 commit + isLensSwitching 驱动。
+    //    ⚠️ viewSrc **剥注释后匹配**：注释里写着 "commitFocalSwitch()"（不剥 → 假绿，坑① 第三次）
+    const viewSrc19 = fs.readFileSync(camViewFile, 'utf8');
+    const viewSrc19Code = viewSrc19.replace(/\/\/[^\n]*/g, '');
+    const mBlurIn = /dialBlurIn:\s*CGFloat\s*=\s*([0-9.]+)/.exec(themeSrc19);
+    const mBlurOut = /dialBlurOut:\s*CGFloat\s*=\s*([0-9.]+)/.exec(themeSrc19);
+    const blurIn = mBlurIn ? parseFloat(mBlurIn[1]) : null;
+    const blurOut = mBlurOut ? parseFloat(mBlurOut[1]) : null;
+    const blurRange = v => v !== null && v >= 0.1 && v <= 0.5;
+    const seqOK = /commitFocalSwitch\(\)/.test(viewSrc19Code)
+      && /onChange\(of: viewModel\.isLensSwitching\)/.test(viewSrc19Code)
+      && blurRange(blurIn) && blurRange(blurOut)
+      && /@Published private\(set\) var isLensSwitching/.test(sessionSrc19);
+    if (!seqOK) {
+      bad('模糊转场不是顺序触发或时长越界（预检 ⑧：淡入完成回调里 commitFocalSwitch；'
+        + 'dialBlurIn/Out ∈ [0.1,0.5]s；isLensSwitching 发布位存在）');
+    }
+
+    // h) 排队（预检 ②）：startInternal 就绪分支补执行 pendingFocalTarget
+    const startBody19 = methodBodyOf(sessionSrc19, 'startInternal');
+    const queueOK = !!startBody19 && /pendingFocalTarget/.test(startBody19);
+    if (!queueOK) {
+      bad('`startInternal` 没有补执行 pendingFocalTarget —— 会话未就绪时的切镜头请求会丢');
+    }
+
+    // i) 汇总
+    if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK) {
+      ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
+        + '顺序触发转场 / 排队补执行 —— docs/18 预检 7+3 全落地）');
     }
   }
 }
