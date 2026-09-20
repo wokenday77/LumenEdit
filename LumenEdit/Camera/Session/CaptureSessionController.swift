@@ -313,6 +313,10 @@ final class CaptureSessionController: ObservableObject {
             // 问题 6（Mac 复验）：切模式重配 outputs 时系统可能**重选 activeFormat**，
             // 手动档（.custom / .locked）会被一并清掉 —— 但**切模式不是退出手动的意图**，
             // 用户设置的参数必须保留（`docs/20` 复验补充）。先快照、commit 后比对重放。
+            // ⚠️ [mac-fix] 快照前先解包设备：`device` 是 `AVCaptureDevice?`，
+            //    直接传进 `manualExposure(of:)` 编译不过（2026-09-20 批三编译实测）。
+            //    无设备时重配 outputs 也无从谈起 —— 直接返回（与下方 `if let device` 同源）。
+            guard let device = self.device else { return }
             let prevExposure = self.configurator.manualExposure(of: device)
             let prevWhiteBalance = self.configurator.manualWhiteBalance(of: device)
             let prevBias = device.exposureTargetBias
