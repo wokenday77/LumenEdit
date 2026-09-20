@@ -2182,14 +2182,32 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
           + '**或又加回了 isFocusAuto 拦截** —— 第一次拖动就是进入手动的意图，拦掉 = 拖动永远无效');
       }
 
-      // h) 点按分流（拍板 ③）：手动对焦锁定期间点取景器 → 只测光（setExposurePointOnly）
+      // h) 点按分流（**方案 A**，2026-09-20 用户拍板；原拍板 ③「只测光、不解除」已退役）
+      //    · 手动锁定 + 对焦盘**开着** → 只测光（误触缓解，不解除手动档）
+      //    · 手动锁定 + 对焦盘**关着** → 解除手动档（`setAutoFocusMode`，既有意图入口）+ 重新对焦
+      //    ⚠️ 判据 `isFocusDialShown` 必须**在 `dismissTransientPopovers()` 之前**读 ——
+      //       那句会把盘收掉，之后再读恒为假（误触缓解成摆设）。
+      //    ⚠️ 顺序比较前**必须剥 `//` 注释**：本方法体的说明里就写着「必须在
+      //       `dismissTransientPopovers()` 之前」，不剥会命中注释里那处（坑① 又犯一次，
+      //       2026-09-20 本轮实测：守卫因此报假 FAIL）。
       const vmTapBody = methodBodyOf(vmSrc12, 'focusTapped');
-      const tapSplitOK = !!vmTapBody
-        && /isFocusManual/.test(vmTapBody)
-        && /setExposurePointOnly/.test(vmTapBody);
+      const vmTapCode = (vmTapBody || '').replace(/\/\/[^\n]*/g, '');
+      const iRead = vmTapCode.indexOf('let wasFocusDialOpen = isFocusDialShown');
+      const iDismiss = vmTapCode.indexOf('dismissTransientPopovers()');
+      const tapReadOrder = !!vmTapBody && iRead >= 0 && iDismiss >= 0 && iRead < iDismiss;
+      const tapMisTap = !!vmTapBody
+        && /if isFocusManual, wasFocusDialOpen \{/.test(vmTapCode)
+        && /setExposurePointOnly/.test(vmTapCode);
+      const tapUnlock = !!vmTapBody
+        && /if isFocusManual \{[\s\S]{0,900}?setAutoFocusMode\(\)/.test(vmTapCode)
+        && /focus\(atDevicePoint: devicePoint\)/.test(vmTapCode);
+      const tapSplitOK = tapReadOrder && tapMisTap && tapUnlock;
       if (!tapSplitOK) {
-        bad('`focusTapped` 没有"手动锁定 → 只测光"分流（isFocusManual + setExposurePointOnly）'
-          + ' —— 点按会把用户锁定的对焦打回自动（拍板 ③ 违反）');
+        bad('`focusTapped` 的点按分流不合方案 A（2026-09-20 拍板）：需要 '
+          + '① **先**读 `isFocusDialShown` 再 `dismissTransientPopovers()`（顺序反了判据恒假）；'
+          + '② 手动锁定 + 盘开着 → `setExposurePointOnly`（只测光、不解除）；'
+          + '③ 手动锁定 + 盘关着 → `setAutoFocusMode()`（解除手动档，走既有意图入口）+ 重新对焦'
+          + '（缺 ③ = 又回到"点了没反应"的批三实锤）');
       }
 
       // i) 开关行几何（读 Theme 令牌复算）：盘底 + gap + 开关行 ≤ 圆心 Y + 底栈余量
@@ -2228,7 +2246,8 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       if (radialOK && convOK && focusCfgOK && evCfgOK && focusWriterOK && entryOK
         && noCfgReader && noIntentLeak && sessFocusOK && focusGateOK && tapSplitOK) {
         ok('对焦圆盘齐备（共用 DialView 唯一盘底 / 两盘工厂分派 / 对焦写硬件唯一入口 / '
-          + '能力分派 toast 不开盘 / 对焦档 = 用户意图态（回读只喂读数）/ docs/14 闸门 / 点按只测光分流）');
+          + '能力分派 toast 不开盘 / 对焦档 = 用户意图态（回读只喂读数）/ docs/14 闸门 / '
+          + '点按分流 = 方案 A（点按解除手动 · 对焦盘开着时不解除））');
       }
     }
   }

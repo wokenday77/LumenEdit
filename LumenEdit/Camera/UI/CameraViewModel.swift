@@ -666,19 +666,53 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - 对焦
 
+    /// 点取景器：对焦 + 测光（**方案 A**，2026-09-20 用户拍板）。
+    ///
+    /// ## 语义（按"用户视角"定，分两支）
+    ///
+    /// | 场景 | 行为 | 理由 |
+    /// |---|---|---|
+    /// | 自动对焦档 | `focus(atDevicePoint:)` —— 对焦 + 测光 | 一直如此 |
+    /// | **手动锁定 + 对焦盘开着** | **只测光**（不动焦、不解除） | 用户正在盘上操作，点到取景器多半是误触 |
+    /// | **手动锁定 + 对焦盘关着** | **解除手动档 + 重新对焦** | 方案 A：与 iPhone 原生 / 飓风一致，**永远有出路** |
+    ///
+    /// ## 为什么改成"点按解除"（方案 A 的由来）
+    ///
+    /// 原拍板 ③ 是"手动锁定期间点按只测光、且**没有任何提示**"—— 批三真机实测它的代价：
+    /// 用户在对焦盘里把对焦锁到 0.00（最近端）之后，**整场 40 次点按全部只测光**，
+    /// 而用户以为"点按对焦坏了"，**没有任何出路**（详见 `docs/21` 问题 4）。
+    /// 方案 A 让"点一下就回来"：点按即重新对焦，不需要用户理解"手动档"这个概念。
+    /// 误触由**对焦盘开着时不解除**兜住（用户在对焦盘上操作时，点取景器是误触）。
+    ///
+    /// ⚠️ 解除走的是**既有意图入口** `setAutoFocusMode()`（`manualFocus` 的两个写入点之一），
+    /// **不新开写入点** —— 自检⑱守着写入点唯一（`backlog ⑩` 的正源修）。
     func focusTapped(viewPoint: CGPoint, devicePoint: CGPoint) {
+        // ⚠️ **必须在 `dismissTransientPopovers()` 之前**读"对焦盘是不是开着" ——
+        // 那句会把盘收掉（`isFocusDialShown = false`），之后再读恒为假、误触缓解就成了摆设。
+        let wasFocusDialOpen = isFocusDialShown
+
         // 点取景器 = 对焦 + 收起功能面板（原型 viewport 的 click 处理器同时做这两件事）
         dismissTransientPopovers()
-        if isFocusManual {
-            // ⚠️ 拍板 ③（2026-09-19）：手动对焦锁定期间，点按**只测光、不动焦** ——
-            // 用户锁了焦就是不想让它动；测光仍有用（自动曝光档下生效）。
-            // 焦点框照常显示（UI 反馈），日志留痕。
+
+        if isFocusManual, wasFocusDialOpen {
+            // 误触缓解（方案 A 的附带条件）：只更新测光点，**保持手动档**
             environment?.session.setExposurePointOnly(devicePoint)
             DebugLog.shared.debug(
                 "ui",
-                "手动对焦锁定中 → 点按仅测光（不动焦）"
+                "手动对焦锁定中 + 对焦盘开着 → 点按仅测光（不解除手动档，防误触）"
             )
         } else {
+            if isFocusManual {
+                // 方案 A：解除手动档 → 随后系统 AF 在触点重新对焦
+                environment?.session.setAutoFocusMode()
+                Haptics.tick()
+                DebugLog.shared.info(
+                    "ui",
+                    "手动对焦锁定中 → 点按取景器：解除手动档并重新对焦（方案 A）"
+                )
+                // 状态改写必须留痕（本项目纪律）：解除手动档是用户看得见的状态变化
+                showToast("已解除手动对焦 · 正在重新对焦")
+            }
             environment?.session.focus(atDevicePoint: devicePoint)
         }
         focusPoint = viewPoint

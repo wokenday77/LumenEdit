@@ -995,11 +995,16 @@ final class CaptureSessionController: ObservableObject {
         }
     }
 
-    /// 切到**自动对焦**（对焦盘「自动对焦」开关打开时）
+    /// 切到**自动对焦**（对焦盘「自动对焦」开关打开时；**以及点按取景器解除手动档时**）
     ///
     /// ⚠️ **这是 `manualFocus` 的意图写入点之二**：调用 = 用户表达"退出手动对焦档"
     /// —— 这里发布 `manualFocus = nil`。此后点按对焦（`.autoFocus` → 系统转 `.locked`）
     /// 不会再被误判成"用户手动锁定"（正源修，`backlog ⑩`）。
+    ///
+    /// 两个调用点（都是**用户显式操作**，没有"推断"成分）：
+    ///   1. 对焦盘「自动对焦」开关置开；
+    ///   2. **点取景器时手动锁定 → 解除并重新对焦**（方案 A，2026-09-20 用户拍板；见 `docs/21` 第七节）。
+    ///      带例外：对焦盘开着时的点按算误触，**不调本方法**（只测光）。
     func setAutoFocusMode() {
         guard let device else { return }
         sessionQueue.async { [weak self] in
@@ -1016,7 +1021,12 @@ final class CaptureSessionController: ObservableObject {
         }
     }
 
-    /// **只测光、不动焦**（拍板 ③：手动对焦锁定期间，点按取景器仅更新测光点）。
+    /// **只测光、不动焦** —— 现在的唯一调用点：**对焦盘开着时点取景器**（误触缓解）。
+    ///
+    /// ⚠️ 语义变更（2026-09-20 方案 A）：它**不再**是"手动锁定期间点按取景器"的默认行为。
+    /// 原拍板 ③ 那条（手动锁定 → 点按只测光、无提示）在真机上造成了"无出路"（批三 40 次点按
+    /// 全部只测光、用户以为对焦坏了）—— 现改为**点按解除手动档并重新对焦**（方案 A），
+    /// 只有"对焦盘正开着"这一种误触场景才走这里（见 `CameraViewModel.focusTapped`）。
     func setExposurePointOnly(_ point: CGPoint) {
         guard let device else { return }
         sessionQueue.async { [weak self] in
