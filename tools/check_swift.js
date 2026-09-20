@@ -2387,15 +2387,34 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     }
 
     // k) Mac 复验 5 问题对应的守卫（2026-09-20 修复批）
-    //    k1（🔴问题1+🟠问题4）：格式探测缓存 + 视频/Log 直达链（不再 12~41 候选逐个 apply）
+    // k1（🔴问题1+🟠问题4 + 批五 问题 1①）：格式探测缓存（**带标识落盘**）+ 视频/Log 直达链
+    //    ⚠️ 批五：内存字典改成"标识字符串 + UserDefaults 落盘"——否则缓存活不过 App 重启，
+    //    **每会话首次**换设备都要重跑 4.2~5.0s 的冷探测，而那正是静默路径被降级成转场的根因。
     const fmtBody19 = methodBodyOf(sessionSrc19, 'applyPreferredFormatLocked');
     const fmtCacheOK = !!fmtBody19
-      && /if let cached = formatProbeCache\[cacheKey\]/.test(fmtBody19)
+      && /formatProbeIdentities\[cacheKey\]/.test(fmtBody19)
+      && /device\.formats\.first\(where: \{ Self\.formatIdentity\(\$0\) == identity \}\)/.test(fmtBody19)
       && /needsLiveProbe/.test(fmtBody19)
-      && /mode == \.photo \|\| mode == \.livePhoto/.test(fmtBody19);
+      && /mode == \.photo \|\| mode == \.livePhoto/.test(fmtBody19)
+      // 缓存自愈：命中缓存但 Live 不支持 → 作废回退（否则会把 Live 能力悄悄关掉）
+      && /!photoService\.output\.isLivePhotoCaptureSupported/.test(fmtBody19);
+    const fmtPersistOK = /private let formatProbeCacheDefaultsKey = "lumen\.camera\.formatProbeCache"/
+        .test(sessionSrc19)
+      && /UserDefaults\.standard\.dictionary\(forKey: formatProbeCacheDefaultsKey\)/.test(sessionSrc19)
+      && /private static func formatIdentity\(/.test(sessionSrc19)
+      && /private func persistFormatProbeIdentities\(\)/.test(sessionSrc19)
+      // ⚠️ **落盘必须紧跟写入**（变异测试 M31 证明过：只要求"方法里出现过 persist…"不够，
+      //    作废分支里也有一处，删掉写盘那处照样通过）—— 用"赋值 + 紧邻落盘"这个成对模式
+      && /formatProbeIdentities\[cacheKey\] = Self\.formatIdentity\(final\)\s*\n\s*persistFormatProbeIdentities\(\)/
+        .test(fmtBody19);
     if (!fmtCacheOK) {
       bad('采集格式探测缺缓存 / 视频/Log 直达链（Mac 复验 🔴问题1 换设备 4.5~11.9s、'
-        + '🟠问题4 Live 判据恒 false）—— (设备,模式) 命中缓存一次直达；视频/Log 不进 Live 探测循环');
+        + '🟠问题4 Live 判据恒 false）—— (设备,模式) 命中缓存一次直达；视频/Log 不进 Live 探测循环；'
+        + '批五还要求"命中缓存后校验 Live 能力，不满足即作废回退"');
+    } else if (!fmtPersistOK) {
+      bad('格式探测缓存没有**落盘**（批五 问题 1①）—— 只存内存的话 App 每次重启都是冷的，'
+        + '每会话首次换设备仍要 4.2~5.0s，静默路径必然被降级成转场；'
+        + '落盘键 / 读取 / formatIdentity / persistFormatProbeIdentities 四件都要在');
     }
     //    k2（🔴问题2）：刻度条初值有效性守卫（无效 → 回落档位表默认值）
     const vmToggle19 = methodBodyOf(vmSrc12, 'stripAutoToggled');
@@ -2464,20 +2483,103 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       bad('`normalizeToAutoLocked` 没有同时归一曝光与白平衡 —— 残留只清一半，'
         + '白平衡 .locked 残留会让 UI 显示自动而设备仍在手动');
     }
-    //    m2（🔴问题6 / 用户问题 2）：切模式**一律按快照重放**（不再"只在被清掉时重放"），
-    //       且 EV 重放仍只在自动曝光档；同样先归一。
+    //    m2（🔴问题6 / 用户问题 2 / 批五 问题 3）：切模式**一律按快照重放**（不再"只在被清掉时重放"），
+    //       且 EV 重放仍只在自动曝光档；归一（只清"快照要自动"的那一路）必须排在 EV 之前。
+    //       ⚠️ 批五追加：系统重选 activeFormat 的落地**晚于**这里的重放 → 必须有**延迟复查与补写**
+    //       （`reverifyManualIntent`），否则"手动模式切完模式回到自动"原样复发。
     const modeBody19 = methodBodyOf(sessionSrc19, 'switchMode');
     const modeKeepOK = !!modeBody19
       && /prevExposure = self\.configurator\.manualExposure\(of: device\)/.test(modeBody19)
-      && /normalizeToAutoLocked\(on: device\)/.test(modeBody19)
       && /if let prev = prevExposure \{[\s\S]{0,400}?setManualExposure\(/.test(modeBody19)
       && /if let prev = prevWhiteBalance \{[\s\S]{0,400}?setManualWhiteBalance\(/.test(modeBody19)
       && /prevExposure == nil, abs\(device\.exposureTargetBias - prevBias\)/.test(modeBody19)
-      && !/afterExposure/.test(modeBody19);
+      && /prevExposure == nil, self\.configurator\.manualExposure\(of: device\) != nil/.test(modeBody19)
+      && modeBody19.indexOf('setAutoExposure(on: device)') >= 0
+      && modeBody19.indexOf('setAutoExposure(on: device)') < modeBody19.indexOf('applyExposureBias(')
+      && !/afterExposure/.test(modeBody19)
+      && /reverifyManualIntent\([\s\S]{0,300}?reason: "切模式复查"/.test(modeBody19);
     if (!modeKeepOK) {
       bad('切模式缺"手动参数意图保留"重放（🔴问题6 / 用户问题 2：切完参数回到自动）'
-        + '—— 口径是**先归一、再一律按快照重放**（幂等），不再用"比对 commit 前后"'
-        + '（那个判据依赖系统行为，实测漏判）；EV 重放仍须限自动曝光档');
+        + '—— 口径是**先归一（只清快照要自动的那一路）、再一律按快照重放**（幂等），'
+        + '不再用"比对 commit 前后"（那个判据依赖系统行为，实测漏判）；'
+        + '且必须有 `reverifyManualIntent(..., reason: "切模式复查")` 兜"系统更晚落地"那一刀');
+    }
+    //    m2b（批五 问题 3 根因）：`reverifyManualIntent` 本体必须"三路都补 + 尊重用户改主意"
+    const reverifyBody19 = methodBodyOf(sessionSrc19, 'reverifyManualIntent');
+    const reverifyOK = !!reverifyBody19
+      // 三路（曝光 / 白平衡 / EV）都能补
+      && /setManualExposure\(/.test(reverifyBody19)
+      && /setManualWhiteBalance\(/.test(reverifyBody19)
+      && /applyExposureBias\(/.test(reverifyBody19)
+      // **先看意图还在不在**（用户中途点了"切回自动"就绝不能按回去）
+      && /self\.manualExposure\.map \{ abs\(\$0\.iso - prev\.iso\) < 0\.5 \} \?\? false/.test(reverifyBody19)
+      && /self\.manualWhiteBalance/.test(reverifyBody19)
+      && /abs\(self\.exposureBias - bias\) < 0\.001/.test(reverifyBody19)
+      // 复查是**多次递进**的（单次复查堵不住"更晚的落地"）——
+      // ⚠️ 判据必须要求"**真的自己调自己**"，只写 `remaining - 1` 不够：
+      //    变异测试 M26 把递归调用换成 `_ = (remaining - 1, …)` 后，旧判据照样通过。
+      && /self\.reverifyManualIntent\(\s*remaining - 1,/.test(reverifyBody19)
+      && /asyncAfter/.test(reverifyBody19);
+    if (!reverifyOK) {
+      bad('`reverifyManualIntent` 不完整（批五 问题 3）—— 必须：三路都补（曝光/白平衡/EV）、'
+        + '补写前先核对**已发布的意图态**（用户中途改主意就不能按回去）、并且是**多次递进复查**');
+    }
+    //    m2c（批五 问题 3 诊断）：切模式 commit 之后要留一行"瞬间档位"——
+    //       它把"参数回自动"的三种成因（快照没读到 / commit 就清了 / 更晚的落地清了）分开
+    const modeDiagOK = !!modeBody19
+      && /切模式 commit 后瞬间档位/.test(modeBody19)
+      && /快照=曝光/.test(modeBody19);
+    if (!modeDiagOK) {
+      bad('切模式缺"commit 后瞬间档位"诊断行（批五 问题 3）—— 复验时要靠它区分'
+        + '"快照没读到手动档" vs "重放被更晚的落地清掉"，否则只能靠猜');
+    }
+    //    m2d（批五 问题 3 同因）：换设备路径也要有延迟复查（新设备格式落地同样可能晚于搬运）
+    const focalReverifyOK = !!switchBody19
+      && /reverifyManualIntent\([\s\S]{0,400}?reason: throughTransition \? "换设备复查（转场）" : "换设备复查（静默）"/
+        .test(switchBody19);
+    if (!focalReverifyOK) {
+      bad('换设备路径缺延迟复查（批五 问题 3 同因）—— 新设备的 `activeFormat` 落地同样可能晚于搬运，'
+        + '必须 `reverifyManualIntent(..., reason: "换设备复查…")`');
+    }
+    //    m7（批五 问题 1③）：静默换形态必须有**结果回执**，入口排队**不得**再盲等超时
+    //        （盲等的病根：分不清"慢"与"没做" —— 冷探测 4.2~5.0s 必然撞上 1.2s 超时 → 退转场）
+    const outcomeOK = /enum SilentSwitchOutcome \{/.test(sessionSrc19)
+      && /case alreadySatisfied/.test(sessionSrc19);
+    const silentBody19b = methodBodyOf(sessionSrc19, 'applyFocalTargetSilently');
+    const silentSignalOK = !!silentBody19b
+      && /completion: \(\(SilentSwitchOutcome\) -> Void\)\? = nil/.test(silentBody19b)
+      && /completion\?\(\.skipped\)/.test(silentBody19b)
+      && /completion\?\(\.alreadySatisfied\)/.test(silentBody19b)
+      && /completion\?\(\.switched\)/.test(silentBody19b)
+      // 耗时留痕（复验要能一眼看出"这次是慢还是快"）
+      && /静默换形态耗时/.test(silentBody19b);
+    if (!outcomeOK || !silentSignalOK) {
+      bad('静默换形态缺结果回执（批五 问题 1③）—— 需要 `SilentSwitchOutcome`（switched / '
+        + 'alreadySatisfied / skipped）与 `applyFocalTargetSilently(_:completion:)` 三个分支都回调，'
+        + '并打一行耗时；否则入口只能盲等超时 → 被判成"没做"而退转场');
+    }
+    const queueBody19b = methodBodyOf(vmSrc12, 'queueActionRequiringPhysical');
+    const queueOutcomeOK = !!queueBody19b
+      && /case \.switched:/.test(queueBody19b)
+      // ⚠️ 光有 `case .alreadySatisfied:` 三个字不够（变异测试 M28 证明过：把那支掏空、
+      //    只留一句日志，旧判据照样通过）—— 必须**真的执行**排队动作
+      && /case \.alreadySatisfied:[\s\S]{0,400}?self\.executePendingManualAction\(pending\)/.test(queueBody19b)
+      && /case \.skipped:/.test(queueBody19b)
+      && /beginFocalSwitch\(\.physical\(focal: self\.focal\)\)/.test(queueBody19b)
+      // ⚠️ 反例判据：**不许**再出现"盲等 1200ms"那条兜底
+      && !/milliseconds\(1200\)/.test(vmSrc12);
+    if (!queueOutcomeOK) {
+      bad('入口排队没有按回执分派（批五 问题 1③）—— 三种回执都要处理：switched 交给 form 边沿 / '
+        + 'alreadySatisfied 直接执行 / skipped 退转场；且**不得**再保留 1.2s 盲等超时');
+    }
+    //    入口的**竞态出口**：预切换可能在"检查 form"与"入队"之间完成 ——
+    //    那时 form 不会再变、边沿永不触发 = 排队动作永远不执行（"点了没反应"）
+    const entryRaceOK = !!queueBody19b
+      && /if environment\?\.session\.form\.isPhysical == true \{[\s\S]{0,200}?executePendingManualAction\(action\)/.test(queueBody19b);
+    const oneExecOK = /private func executePendingManualAction\(_ action: PendingManualAction\)/.test(vmSrc12);
+    if (!entryRaceOK || !oneExecOK) {
+      bad('入口排队缺"设备已就位就直接执行"的出口（批五）—— 预切换抢先完成时 form 不再变化，'
+        + '等 `form` 边沿会永远等不到（表现为"点了没反应"）；两条执行路径必须共用 executePendingManualAction');
     }
     //    m3（🟠问题2）：气泡与指针同源（气泡用 steps[currentStepIndex] 吸附）
     const bubbleOK = /ParameterStripCatalog\.label\(for: kind, value: steps\[currentStepIndex\]\.value\)/
@@ -2498,30 +2600,49 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       bad('跟手倍率缺失 / 越界 / 方向写反（🟠问题3 + 实锤 B：拍板 1.5:1，安全边界 ≤2:1）'
         + '—— 必须是 `translation.width * Self.dragGain`（乘 = 更跟手；除 = 更钝）');
     }
-    //    m4b（批四 🟠问题1"细密度没生效"）：刻度层级必须用原型四档
-    //        （minor 10 / **mid 15** / major 22 / preset 22），**不许**再自创"更细更淡"的
-    //        1px/20% 半高发丝线（用户实测"外形没有变化"）。
-    const tierInCatalog = /enum ParameterStripTickTier/.test(
-      fs.readFileSync(b2CatFile, 'utf8')
-    );
+    //    m4b（批四 🟠问题1 + 批五 问题 2）：刻度层级 = 原型四档 + 第五档 `hair`
+    //        不许再自创"更细更淡"的 1px/20% 半高发丝线（用户批三实测"外形没有变化"）。
+    const catSrc19 = fs.readFileSync(b2CatFile, 'utf8');
+    const tierInCatalog = /enum ParameterStripTickTier/.test(catSrc19)
+      && /case hair/.test(catSrc19);
     const tierUsedInView = /ParameterStripCatalog\.tickTier\(/.test(stripCode19);
-    const tierMidToken = /paramStripTickMidHeight:\s*CGFloat\s*=\s*15/.test(themeSrc19)
-      && /stripTickMid\s*=\s*Color\.white\.opacity\(0\.48\)/.test(themeSrc19);
+    const tierTokens = /paramStripTickMidHeight:\s*CGFloat\s*=\s*15/.test(themeSrc19)
+      && /stripTickMid\s*=\s*Color\.white\.opacity\(0\.48\)/.test(themeSrc19)
+      // 第五档三件套：更矮 + 更细 + 更暗（"更细"不能只靠亮度，也不能只靠高度）
+      && /paramStripTickHairWidth:\s*CGFloat\s*=\s*1\b/.test(themeSrc19)
+      && /stripTickHair\s*=\s*Color\.white\.opacity\(0\.26\)/.test(themeSrc19);
     const noFakeHairline = !/Color\.white\.opacity\(isAuto \? 0\.10 : 0\.20\)/.test(stripCode19);
-    if (!tierInCatalog || !tierUsedInView || !tierMidToken) {
+    // 五档高度**必须严格递增**（hair < minor < mid < major）—— 否则"层级"名存实亡
+    const tierTok19 = n => {
+      const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc19);
+      return m ? parseFloat(m[1]) : null;
+    };
+    const hHair = tierTok19('paramStripTickHairHeight');
+    const hMinor = tierTok19('paramStripTickHeight');
+    const hMid = tierTok19('paramStripTickMidHeight');
+    const hMajor = tierTok19('paramStripTickMajorHeight');
+    const tierOrderOK = [hHair, hMinor, hMid, hMajor].every(v => v !== null)
+      && hHair < hMinor && hMinor < hMid && hMid < hMajor;
+    if (!tierInCatalog || !tierUsedInView || !tierTokens) {
       bad('刻度层级不齐（批四 🟠问题1：细刻度"外形没变化"）—— 需要 '
-        + 'ParameterStripTickTier 枚举 + 视图调用 tickTier + Theme 的 mid 令牌'
-        + '（paramStripTickMidHeight = 15 / stripTickMid = 白 48%）');
+        + 'ParameterStripTickTier（含 `hair`）+ 视图调用 tickTier + Theme 的 mid/hair 令牌'
+        + '（mid 15/48% · hair 6.5/1pt/26%）');
+    } else if (!tierOrderOK) {
+      bad('五档刻度高度不是严格递增（hair ' + hHair + ' / minor ' + hMinor + ' / mid ' + hMid
+        + ' / major ' + hMajor + '）—— 层级靠"高度 + 宽度 + 亮度"三件套表达，'
+        + '顺序一乱用户就读不出哪条是主档');
     } else if (!noFakeHairline) {
       bad('视图里还留着自创的 1px / 20% 白半高发丝线 —— 那是"更细更淡"的错路子，'
-        + '层级应由原型四档（高度 + 对比度）表达');
+        + '层级应由五档（高度 + 宽度 + 亮度）表达');
     }
-    //    m4c：档间细刻度只给**快门**（ISO 25 档本身是 1/3 档真实档位、WB 76 档够密）
-    const halfStepGate = /func hasHalfStepTicks\(_ kind: ParameterStripKind\) -> Bool/.test(
-      fs.readFileSync(b2CatFile, 'utf8')
-    ) && /ParameterStripCatalog\.hasHalfStepTicks\(kind\)/.test(stripCode19);
-    if (!halfStepGate) {
-      bad('档间细刻度没走 `hasHalfStepTicks` 判据（只有快门该加：15 档全主档、档距 56pt 最疏）');
+    //    m4c（批五 问题 2）：细分线 **三条都加**（此前只有快门），位置在相邻真实档位中点
+    const subTickGate = /func hasSubTicks\(_ kind: ParameterStripKind\) -> Bool/.test(catSrc19)
+      && /ParameterStripCatalog\.hasSubTicks\(kind\)/.test(stripCode19)
+      && /\(CGFloat\(gap\) \+ 0\.5\) \* geometry\.slot/.test(stripCode19)
+      && !/hasHalfStepTicks/.test(catSrc19) && !/hasHalfStepTicks/.test(stripCode19);
+    if (!subTickGate) {
+      bad('档间细分线不合批五口径（问题 2）—— 需要 `hasSubTicks` 判据（ISO / 快门 / 白平衡**三条都加**）、'
+        + '位置在相邻真实档位的中点（`(gap + 0.5) * slot`），且旧的 `hasHalfStepTicks`（只给快门）已退场');
     }
     //    m5（🟡问题7）：同值不推硬件（iso/shutter/wb 三分支都有 current 一致性跳过）
     const sameValueOK = !!vmSrc12.match(/与当前硬件值一致 → 跳过重复写入/g)
@@ -2633,16 +2754,19 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     }
     // l) 汇总（含 k/m/n 段）
     if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK
-      && fmtCacheOK && initialGuardOK && sameSourceOK && physBranchOK
-      && evSkipOK && modeKeepOK && bubbleOK && gainOK && sameValueOK && a2OK
-      && normOK1 && normImplOK && tierInCatalog && tierUsedInView && tierMidToken
-      && noFakeHairline && halfStepGate
+      && fmtCacheOK && fmtPersistOK && initialGuardOK && sameSourceOK && physBranchOK
+      && evSkipOK && modeKeepOK && modeDiagOK && reverifyOK && focalReverifyOK
+      && bubbleOK && gainOK && sameValueOK && a2OK
+      && normOK1 && normImplOK && tierInCatalog && tierUsedInView && tierTokens
+      && tierOrderOK && noFakeHairline && subTickGate
       && prewarmOK && oneExecutorOK && formSinkOK && oldSinkGone && queueEntryOK && silentRevertOK
+      && outcomeOK && silentSignalOK && queueOutcomeOK && entryRaceOK && oneExecOK
       && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
-        + '顺序触发转场 / 排队补执行 / 格式缓存与初值守卫 / 同源上报 / 归一后重放 / '
-        + '切模式一律按快照重放 / 四档刻度层级 / 预切换无转场 / 对焦锁定值守卫 / '
-        + '松手待回读对齐 —— docs/18 预检 7+3 + 批三/批四问题全落地）');
+        + '顺序触发转场 / 排队补执行 / 格式缓存**落盘**与初值守卫 / 同源上报 / 归一后重放 / '
+        + '切模式一律按快照重放 + **延迟复查补写** / 五档刻度层级（含档间细分） / '
+        + '静默换形态**结果回执**（不再盲等超时）与竞态出口 / 对焦锁定值守卫 / '
+        + '松手待回读对齐 —— docs/18 预检 7+3 + 批三/四/五问题全落地）');
     }
   }
 }

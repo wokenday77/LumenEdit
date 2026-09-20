@@ -389,13 +389,7 @@ final class CameraViewModel: ObservableObject {
                 guard let self else { return }
                 guard form.isPhysical, let action = self.pendingManualAction else { return }
                 self.pendingManualAction = nil
-                self.physicalFallbackTask?.cancel()
-                switch action {
-                case .toggleManualStrip(let kind):
-                    self.stripAutoToggled(kind)
-                case .openFocusDial:
-                    self.focusDialTapped()
-                }
+                self.executePendingManualAction(action)
             }
             .store(in: &cancellables)
 
@@ -928,10 +922,6 @@ final class CameraViewModel: ObservableObject {
 
     private var pendingManualAction: PendingManualAction?
 
-    /// 预切换的**兜底定时器**（1.2s）：预切换没能把 form 推到物理档时，退回转场路径
-    /// —— 保证"点了手动开关 / 点对焦"永远有结果（本项目的"不做点了没反应"硬约束）。
-    private var physicalFallbackTask: Task<Void, Never>?
-
     /// 参数界面（刻度条 / 对焦圆盘）是否开着。
     ///
     /// 用途：**预切换与回切防抖共用的一条闸门** ——
@@ -942,27 +932,64 @@ final class CameraViewModel: ObservableObject {
         paramStrip != nil || isFocusDialShown
     }
 
-    /// 排队一个"**先挂好物理设备、再执行**"的入口动作（拍板 ① + 批四 ③）。
+    /// 排队一个"**先挂好物理设备、再执行**"的入口动作（拍板 ① + 批四 ③ + 批五 问题 1）。
     ///
-    /// 两条通道（用户 2026-09-20 要求的转场边界：非焦段入口人眼无感）：
-    ///   ① **预切换**（`applyFocalTargetSilently`，不置 `isLensSwitching` ⇒ **完全无转场**）——
-    ///      绝大多数情况走这条（打开刻度条时设备就已经挂好了）；
-    ///   ② **兜底**：1.2s 内 `form` 仍未变成物理（预切换被跳过：录制中 / 会话未就绪 /
-    ///      真转场插队）→ 退回原来的 begin+commit 转场路径。宁可有一次模糊转场，
-    ///      也不能"点了没反应"。
+    /// ## 三条路径（都由 session 的**结果回执**决定，**没有盲等超时**）
+    ///
+    /// | 回执 | 处理 |
+    /// |---|---|
+    /// | `alreadySatisfied`（或调用前 `form` 已是物理） | **直接执行** —— 设备已挂好，等 `form` 边沿会永远等不到 |
+    /// | `switched` | 交给 `$form` 边沿执行（它排在这个回调之前） |
+    /// | `skipped`（录制中 / 未就绪 / 真转场让路） | 退回 `beginFocalSwitch`（转场路径） |
+    ///
+    /// ## 为什么不再用"1.2s 超时兜底"（批四的做法）
+    ///
+    /// 冷探测首次换设备要 4.2~5.0s（Mac 批四复验实锤），**必然**撞上 1.2s 超时 →
+    /// 静默路径被降级成转场 = 用户看到的还是那 0.85~1.0s 的模糊（问题 1 的现象）。
+    /// 盲等的病根是分不清"**慢**"和"**没做**"：慢要等，没做才退转场 —— 所以改成结果回执。
+    ///
+    /// ⚠️ 还修掉一个**真实竞态死胡同**：预切换可能在"检查 `form`"与"入队"之间完成，
+    /// 那样 `form` 已不会变、边沿永不触发 → 排队动作永远不执行（"点了没反应"）。
+    /// 上面那条"调用前先看 `form`"就是它的出口。
     private func queueActionRequiringPhysical(_ action: PendingManualAction) {
+        // 出口 ①：设备已经挂好了（预切换抢先完成）→ 直接执行，不要排队
+        if environment?.session.form.isPhysical == true {
+            DebugLog.shared.debug("ui", "入口动作：物理设备已就位 → 直接执行（不等 form 边沿）")
+            executePendingManualAction(action)
+            return
+        }
+
         pendingManualAction = action
-        environment?.session.applyFocalTargetSilently(.physical(focal: focal))
-        physicalFallbackTask?.cancel()
-        physicalFallbackTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1200))
-            guard !Task.isCancelled, let self else { return }
-            guard self.pendingManualAction != nil else { return }
-            DebugLog.shared.warn(
-                "ui",
-                "预切换 1.2s 未完成 → 退回转场路径（入口不能死在等待里）"
-            )
-            self.environment?.session.beginFocalSwitch(.physical(focal: self.focal))
+        DebugLog.shared.info("ui", "入口动作已排队：先静默挂物理设备，挂好后自动执行")
+        environment?.session.applyFocalTargetSilently(.physical(focal: focal)) { [weak self] outcome in
+            Task { @MainActor in
+                guard let self, self.pendingManualAction != nil else { return }
+                switch outcome {
+                case .switched:
+                    // 形态已落定：`$form` 边沿会把动作跑掉（它排在这个回调之前）
+                    DebugLog.shared.debug("ui", "静默换形态完成 → 由 form 边沿执行入口动作")
+                case .alreadySatisfied:
+                    // 出口 ②：目标形态本来就满足（竞态）→ 自己执行，等边沿会死等
+                    DebugLog.shared.debug("ui", "静默换形态：目标形态已满足 → 直接执行入口动作")
+                    let pending = self.pendingManualAction
+                    self.pendingManualAction = nil
+                    if let pending { self.executePendingManualAction(pending) }
+                case .skipped:
+                    // 出口 ③：静默没做（录制中 / 未就绪 / 真转场让路）→ 退回转场路径
+                    DebugLog.shared.warn("ui", "静默换形态没能启动 → 退回转场路径（入口不能死在等待里）")
+                    self.environment?.session.beginFocalSwitch(.physical(focal: self.focal))
+                }
+            }
+        }
+    }
+
+    /// 执行排队中的入口动作（`$form` 边沿 与 两条"直接执行"出口共用同一份实现）
+    private func executePendingManualAction(_ action: PendingManualAction) {
+        switch action {
+        case .toggleManualStrip(let kind):
+            stripAutoToggled(kind)
+        case .openFocusDial:
+            focusDialTapped()
         }
     }
 

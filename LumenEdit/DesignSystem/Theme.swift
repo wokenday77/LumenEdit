@@ -128,6 +128,17 @@ enum Theme {
         /// "外形没有变化"）。现改回原型的第二层：15pt 高 / 48% 白 / 1.5pt 宽（见
         /// `paramStripTickMidHeight`），层级从对比度上直接读得出来。
         static let stripTickMid = Color.white.opacity(0.48)
+        /// **细分档**刻度线颜色（批五 问题 2：真实档位之间的细分线 —— 最细一档）。
+        ///
+        /// 参考图实测（`reference/video-frames-2026-09-16`，源帧 588px / 393pt = 1.5px per pt）：
+        /// 白平衡刻度条主档（每 500K）间距 ≈18pt、其间约 **9~10 条细刻度**，
+        /// 细:主 的高度比约 1:2。我们的 slot 是原型真源（WB 26pt/档）**绝对密度对不齐**，
+        /// 但"每个真实档位之间补一条细分线"后，主档间 ≈8 条 —— 与参考图同一量级。
+        ///
+        /// ⚠️ 与 2026-09-20 批三那版"1px / 20% 白 / 半高发丝线"的区别：那版是**自创**且替代了
+        /// `mid` 层（用户实测"外形没变化"）；这一档是**在四档之上新增的第五档**，
+        /// 与 `minor(10) / mid(15)` 明确区分（6.5pt / 26% / 1pt 宽）。
+        static let stripTickHair = Color.white.opacity(0.26)
         /// 主刻度线（原型 `.sp-tick.major{ background:rgba(255,255,255,.82) }`）
         static let stripTickMajor = Color.white.opacity(0.82)
         /// 白平衡**预设档**的刻度（原型 `.sp-tick.preset{ background:rgba(242,175,60,.85) }` = `--accent`）
@@ -515,9 +526,17 @@ enum Theme {
         static let paramStripTickHeight: CGFloat = 10
         /// **中间档**刻度线高（原型 `.sp-tick.mid{ height:15px }`）
         ///
-        /// 三档高度 10 / 15 / 22 全部来自原型 CSS；刻度**底边对齐**（共用
+        /// 四档高度 10 / 15 / 22 / 22 全部来自原型 CSS；刻度**底边对齐**（共用
         /// `paramStripTickBottomInset` 那条基线），所以"高"直接表达层级。
+        /// ⚠️ 批五 问题 2 在其上加了**第五档 `hair`(6.5)**（真实档位之间的细分线）——
+        /// 不是原型里的档，是"对照参考图加密"的用户要求（口径见 `stripTickHair`）。
         static let paramStripTickMidHeight: CGFloat = 15
+        /// **细分档**刻度线高（批五 问题 2：四档之上新增的第五档）。
+        /// 6.5pt：比 `minor`(10) 明显更矮 ⇒ 一眼能分"档位线"与"细分线"；
+        /// 参考图细:主 ≈ 1:2，我们取 6.5:22 ≈ 1:3.4（我们的档距更疏，对比要更明显才读得出来）。
+        static let paramStripTickHairHeight: CGFloat = 6.5
+        /// **细分档**刻度线宽：1pt（其余各档 1.5pt —— "更细"要靠**宽度 + 高度 + 亮度**三件套一起表达）
+        static let paramStripTickHairWidth: CGFloat = 1
         /// 主刻度 / 预设刻度高（原型 `.sp-tick.major` / `.preset{ height:22px }`）
         static let paramStripTickMajorHeight: CGFloat = 22
         /// 刻度线距面板底部（原型 `bottom:20px`；压到 84 高后取 16）

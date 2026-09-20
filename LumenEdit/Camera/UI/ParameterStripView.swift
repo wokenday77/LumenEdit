@@ -57,8 +57,9 @@ struct ParameterStripGeometry {
 /// │         气泡（绿底黑字，钉在指针上方）22        │ 开关 47×29 │
 /// │             ▼ 指针三角 6×8                  30 │  「自动」   │
 /// │             │ 竖线 1.5                         │           │
-/// │  刻度 46–68：四档层级（底边同一条基线）          │           │
-/// │      minor 10 / mid 15 / major 22 / preset 22   │           │
+/// │  刻度 46–68：五档层级（底边同一条基线）          │           │
+/// │   hair 6.5 / minor 10 / mid 15 / major 22 /     │           │
+/// │   preset 22（hair = 真实档位之间的细分线）        │           │
 /// │  数字 71.5–82                                  │           │
 /// └────────────────────────────────────────────────┴───────────┘
 /// ```
@@ -73,9 +74,9 @@ struct ParameterStripGeometry {
 /// 3. **指针与气泡 `allowsHitTesting(false)`**：拖动必须落到刻度区，指针不许抢触摸
 ///   （原型 `.sp-pointer{ pointer-events:none }`）
 ///
-/// ⚠️ **刻度层级四档**（`minor/mid/major/preset`）不是本视图发明的 —— 原型
-/// `.sp-tick` / `.sp-tick.mid` / `.sp-tick.major` / `.sp-tick.preset` 四条 CSS 就是它，
-/// 只是原型的 JS 渲染只用了后两档。分级规则在 `ParameterStripCatalog.tickTier`。
+/// ⚠️ **刻度层级五档**（`hair` 是批五新增的第五档，四档本体来自原型）——
+/// `hair`/`minor`/`mid`/`major`/`preset` 逐档加高、加亮：分级规则在
+/// `ParameterStripCatalog.tickTier`（真实档位）与 `hasSubTicks`（档间细分线）。
 ///
 /// ## 分工
 ///
@@ -173,23 +174,18 @@ struct ParameterStripView: View {
 
     private func scaleArea(geometry: ParameterStripGeometry) -> some View {
         ZStack(alignment: .topLeading) {
-            // 档间**半档细刻度**（原型的 `.sp-tick.mid` 层级；2026-09-20 批四）。
+            // 档间**细分刻度**（第五档 `hair`；批五 问题 2 按参考图加密）。
             //
-            // ⚠️ 与批三那版（1px 宽 / 20% 白 / 半高发丝线）的区别就在这里：那是自创的
-            // "更细更淡"，用户实测**外形没有变化**（太淡 + 档距偏疏）。现在用原型四档里的
-            // `mid`：15pt 高 / 48% 白 / 1.5pt 宽 —— 层级由高度 + 对比度同时表达。
-            //
-            // 只有**快门**加（`hasHalfStepTicks`）：它 15 档全是主档、档距 56pt，最疏。
-            // ISO 的 25 条本身就是 1/3 档真实档位、白平衡 26pt 有 76 档 —— 都不加合成线
-            // （理由见 `ParameterStripCatalog.hasHalfStepTicks` / `tickTier`）。
+            // 位置 = 每两个相邻真实档位的**中点**（`slot / 2`）；三条都加（批四只有快门）。
+            // 口径与"为什么这样对齐参考图"见 `ParameterStripCatalog.hasSubTicks`。
             // ⚠️ 这些线**不参与吸附**：吸附永远落在 `steps` 里的真实档位。
-            if ParameterStripCatalog.hasHalfStepTicks(kind) {
+            if ParameterStripCatalog.hasSubTicks(kind) {
                 ForEach(0..<max(0, steps.count - 1), id: \.self) { gap in
                     let x = geometry.padding + (CGFloat(gap) + 0.5) * geometry.slot
-                    let h = Theme.Size.paramStripTickMidHeight
-                    RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(tickFill(for: .mid, isUnavailable: false))
-                        .frame(width: Theme.Size.paramStripTickWidth, height: h)
+                    let h = Theme.Size.paramStripTickHairHeight
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
+                        .fill(tickFill(for: .hair, isUnavailable: false))
+                        .frame(width: Theme.Size.paramStripTickHairWidth, height: h)
                         .position(
                             x: x,
                             y: Theme.Size.paramStripHeight
@@ -276,16 +272,17 @@ struct ParameterStripView: View {
         }
     }
 
-    /// 层级 → 刻度线高（三档高度全部来自原型 CSS；`major` 与 `preset` 同高）
+    /// 层级 → 刻度线高（四档高度来自原型 CSS；`major` 与 `preset` 同高；`hair` 是批五新增的第五档）
     private func height(for tier: ParameterStripTickTier) -> CGFloat {
         switch tier {
+        case .hair: return Theme.Size.paramStripTickHairHeight
         case .minor: return Theme.Size.paramStripTickHeight
         case .mid: return Theme.Size.paramStripTickMidHeight
         case .major, .preset: return Theme.Size.paramStripTickMajorHeight
         }
     }
 
-    /// 刻度线颜色：自动态 / 不可用档压暗 → 白平衡预设档（琥珀）→ 中间档 → 主刻度 → 普通
+    /// 刻度线颜色：自动态 / 不可用档压暗 → 白平衡预设档（琥珀）→ 中间档 → 主刻度 → 普通 → 细分
     ///
     /// ⚠️ 顺序有讲究：**自动态 / 不可用档优先**（整条压暗是"当前不可调"的统一表达），
     /// 预设档在它之后 —— 否则自动态下还会冒出几根琥珀线，与"整条不可调"矛盾。
@@ -296,6 +293,7 @@ struct ParameterStripView: View {
         case .major: return Theme.Palette.stripTickMajor
         case .mid: return Theme.Palette.stripTickMid
         case .minor: return Theme.Palette.stripTick
+        case .hair: return Theme.Palette.stripTickHair
         }
     }
 

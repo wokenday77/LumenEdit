@@ -27,6 +27,32 @@ enum SessionConfigurationError: LocalizedError {
     }
 }
 
+/// 采集格式探测缓存的**落盘键**（跨 App 启动复用；格式对象本身不能存盘，存"标识"）。
+///
+/// 见 `CaptureSessionController.formatProbeIdentities` 的说明。
+private let formatProbeCacheDefaultsKey = "lumen.camera.formatProbeCache"
+
+// MARK: - 静默换形态的结果
+
+/// `applyFocalTargetSilently` 的**结果回执**（批五 · 问题 1③）。
+///
+/// 为什么需要它：入口（点手动开关 / 点「对焦」）的排队原来是"盲等 1.2s，超时就退转场"——
+/// 而**冷探测首次换设备要 4.2~5.0s**（Mac 批四复验实锤），于是"必然退转场"，
+/// 用户看到的还是那 0.85~1.0s 的模糊（问题 1 的现象）。
+/// 盲等的病根是**分不清"慢"和"没做"**：慢应该继续等，没做才该退转场。
+enum SilentSwitchOutcome {
+
+    /// 真的换了设备（形态已落定 → 调用方挂在 `form` 边沿的待执行动作会被触发）
+    case switched
+
+    /// 目标形态**本来就已满足**（无需换设备）→ 调用方应**直接执行**动作，不能等边沿
+    /// （等下去 `form` 不会再变 = 永远等不到 = "点了没反应"）
+    case alreadySatisfied
+
+    /// **这次没做**（录制中 / 会话未就绪 / 真转场让路）→ 调用方应退回"转场"路径
+    case skipped
+}
+
 /// 相机会话控制器：`AVCaptureSession` 的生命周期、模式切换、参数入口。
 ///
 /// ## 配置顺序（写死，不可调整）
@@ -327,6 +353,18 @@ final class CaptureSessionController: ObservableObject {
             self.reconfigureOutputsLocked(for: newMode)
             self.session.commitConfiguration()
 
+            // 🔍 诊断（批五）：commit 之后**立刻**读一次设备档位 —— 这一行把"参数回自动"的三种成因
+            //     分开，复验时一眼定性（用户问题 3 的三个怀疑点）：
+            //       · 这里=自动 → 系统在 commit 期间就清了（说明快照本身没读到手动档）
+            //       · 这里=手动 → 是**之后**的异步落地清了它（快照 OK、重放也写了，被更晚的落地覆盖）
+            DebugLog.shared.info(
+                "session",
+                "切模式 commit 后瞬间档位：曝光="
+                    + "\(self.configurator.manualExposure(of: device) == nil ? "自动" : "手动")"
+                    + " / 白平衡="
+                    + "\(self.configurator.manualWhiteBalance(of: device) == nil ? "自动" : "手动")"
+                    + " / 快照=曝光\(prevExposure == nil ? "自动" : "手动")·白平衡\(prevWhiteBalance == nil ? "自动" : "手动")"
+            )
             self.preparePhotoTemplateIfNeeded(for: newMode)
             self.publish { self.mode = newMode }
             // ⚠️ 切模式**一律按快照重放**（2026-09-20 批四 · 🔴 问题 2）。
@@ -336,16 +374,16 @@ final class CaptureSessionController: ObservableObject {
             // 所以那条口径**没被验到**）。意图快照 = 用户的设置，**重放是幂等的**（写同样的值），
             // 所以不需要猜系统做了什么：切模式不是退出手动的意图 → 一律重新施加一遍。
             if let device = self.device {
-                // ⓪ 归一（实锤 A 同因）：会话重配 outputs 时系统可能重选 activeFormat，
-                //    甚至把档位改成"半保持"的怪态 —— 归一到自动后，重放结果唯一确定。
-                //    ⚠️ 必须在下面的 EV 重放**之前**（自检⑲ n2 守这条顺序）。
-                let leftover = self.normalizeToAutoLocked(on: device)
-                if leftover.exposure || leftover.whiteBalance {
-                    DebugLog.shared.warn(
-                        "session",
-                        "切模式：档位有残留（曝光=\(leftover.exposure ? "手动" : "自动") / "
-                            + "白平衡=\(leftover.whiteBalance ? "手动" : "自动")）→ 已归一到自动，再按快照重放"
-                    )
+                // ⓪ 归一：**只清"快照里是自动档"的那一路** —— 快照要手动档的那一路下面直接重放，
+                //    不必先归一再写回（少一次硬件写，也避免日志里出现"每次都报残留"的噪音）。
+                //    ⚠️ 归一必须排在 EV 重放**之前**（自检⑲ n2 守这条顺序）。
+                if prevExposure == nil, self.configurator.manualExposure(of: device) != nil {
+                    try? self.configurator.setAutoExposure(on: device)
+                    DebugLog.shared.info("session", "切模式：曝光档有残留 → 已归一到自动（为 EV 重放让路）")
+                }
+                if prevWhiteBalance == nil, self.configurator.manualWhiteBalance(of: device) != nil {
+                    try? self.configurator.setAutoWhiteBalance(on: device)
+                    DebugLog.shared.info("session", "切模式：白平衡档有残留 → 已归一到自动")
                 }
                 // ① 曝光：快照有手动档 → 一律重放（幂等）
                 if let prev = prevExposure {
@@ -384,6 +422,15 @@ final class CaptureSessionController: ObservableObject {
                         + " / 白平衡=\(self.configurator.manualWhiteBalance(of: device) == nil ? "自动" : "手动")"
                         + " / 对焦意图=\(self.manualFocus == nil ? "自动" : "手动")"
                         + " / EV=\(String(format: "%+.1f", device.exposureTargetBias))"
+                )
+                // ⚠️ **延迟复查与补写**（批五 · 🔴问题 3 根因）：系统重选 `activeFormat` 的落地
+                //    比这里的重放**更晚**，会把它清掉 —— 隔几拍再看一眼，被清了就按快照补写。
+                self.reverifyManualIntent(
+                    4,
+                    exposure: prevExposure,
+                    whiteBalance: prevWhiteBalance,
+                    bias: prevBias,
+                    reason: "切模式复查"
                 )
             }
             self.refreshSnapshot()
@@ -794,6 +841,16 @@ final class CaptureSessionController: ObservableObject {
                 + "当前档位 \(targetFocal.displayName) mm；"
                 + "Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
         )
+
+        // 延迟复查（批五 · 问题 3 同因）：新设备的格式落地同样可能晚于搬运 ——
+        // 被清掉就按旧设备快照补写一次（回焦点/回虚拟时同理）。
+        reverifyManualIntent(
+            4,
+            exposure: previousExposure,
+            whiteBalance: previousWhiteBalance,
+            bias: previousBias,
+            reason: throughTransition ? "换设备复查（转场）" : "换设备复查（静默）"
+        )
     }
 
     /// 把设备的**两个手动态**（曝光 / 白平衡）归一到自动档 —— 清"上一轮残留"。
@@ -854,15 +911,133 @@ final class CaptureSessionController: ObservableObject {
     ///
     /// - 尽力而为：录制中 / 会话未就绪 / 真转场进行中 → 直接放弃（不排队、不报错）。
     ///   放弃没有严重后果：用户真去点手动时，`queueActionRequiringPhysical` 会走转场兜底。
-    func applyFocalTargetSilently(_ target: FocalTarget) {
+    ///
+    /// - Parameter completion: **结果回执**（批五 问题 1③，语义见 `SilentSwitchOutcome`）。
+    ///   在 `sessionQueue` 上回调；调用方要用主线程状态的话自己 hop 回主线程。
+    ///   ⚠️ 有了它，调用方**不再需要"盲等超时"** —— 慢就继续等，没做才退转场。
+    func applyFocalTargetSilently(
+        _ target: FocalTarget,
+        completion: ((SilentSwitchOutcome) -> Void)? = nil
+    ) {
         sessionQueue.async { [weak self] in
-            guard let self else { return }
-            guard !self.isRecording, self.state == .running, self.device != nil else { return }
+            guard let self else { completion?(.skipped); return }
+            guard !self.isRecording, self.state == .running, self.device != nil else {
+                DebugLog.shared.info("session", "静默换形态跳过：录制中 / 会话未就绪")
+                completion?(.skipped)
+                return
+            }
             // 真转场进行中 → 让路（`pendingSwitchTarget` 已存，等 UI 完成回调，别插队）
-            guard !self.isLensSwitching, self.pendingSwitchTarget == nil else { return }
-            guard self.needsSwitch(to: target) else { return }
+            guard !self.isLensSwitching, self.pendingSwitchTarget == nil else {
+                DebugLog.shared.info("session", "静默换形态跳过：真转场进行中（让路）")
+                completion?(.skipped)
+                return
+            }
+            guard self.needsSwitch(to: target) else {
+                DebugLog.shared.debug("session", "静默换形态：目标形态已满足，无需换设备")
+                completion?(.alreadySatisfied)
+                return
+            }
             DebugLog.shared.info("session", "静默换形态（后台挂设备 · 无转场）→ \(target.describe)")
+            let started = Date()
             self.performFocalSwitch(target, throughTransition: false)
+            let cost = Date().timeIntervalSince(started)
+            // 耗时留痕（批五 问题 1）：命中格式缓存应 ≈0.3~0.8s；首次冷探测 4~5s。
+            // ⚠️ 它同时也是"用户为什么等了一下"的依据 —— 不要因为"日志有点长"删掉。
+            DebugLog.shared.info(
+                "session",
+                "静默换形态耗时 \(String(format: "%.2f", cost))s"
+                    + "（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）"
+            )
+            completion?(.switched)
+        }
+    }
+
+    /// 参数重放后的**延迟复查与修复**（2026-09-20 批五 · 🔴问题 3 根因）。
+    ///
+    /// ## 为什么"commit 之后立刻重放"不够
+    ///
+    /// `commitConfiguration()` **返回 ≠ 系统已完成工作**：切模式 / 换设备会让会话重新协商
+    /// `activeFormat`，而那次落地**发生在我们重放之后**，把刚写进去的 `.custom` / `.locked`
+    /// 清成自动 —— 表现就是"手动模式切完模式回到自动"（批四 Mac 复验：切焦段保住、切模式没测，
+    /// 用户复验点名"手动模式下切模式仍恢复自动档"）。
+    /// 光靠一次重放必输：我们和系统在抢同一份状态，而它比我们晚。
+    ///
+    /// ## 做法（复查 → 必要时补写，幂等）
+    ///
+    /// 按**递增间隔复查几次**（150 / 300 / 500 / 800ms，共 4 拍）：意图还在 → 什么都不做；
+    /// 被系统清掉 → 按快照**再写一次**并打 WARN 留痕（复验一眼能看出"重放被谁清了"）。
+    /// 复查本身只是读设备状态，代价极小；总共 ~1.75s 覆盖"系统落地拖到一秒外"的长尾。
+    ///
+    /// ⚠️ **必须尊重用户中途改主意**：每次复查前先看**已发布的意图态**
+    /// （`manualExposure` / `manualWhiteBalance` / `exposureBias`）是否还等于快照 ——
+    /// 用户在复查窗口内点了"切回自动"，这里就**不能**把它按回去（否则变成"我点了自动它自己又跳回手动"）。
+    ///
+    /// - Parameters:
+    ///   - remaining: 剩余复查次数（调用方传 4 → 依次 150 / 300 / 500 / 800ms 四拍）
+    ///   - reason: 日志前缀（"切模式复查" / "换设备复查"）
+    private func reverifyManualIntent(
+        _ remaining: Int,
+        exposure: (iso: Float, seconds: Double)?,
+        whiteBalance: (temperature: Float, tint: Float)?,
+        bias: Float,
+        reason: String
+    ) {
+        guard remaining > 0 else { return }
+        let delayMs: Int
+        switch remaining {
+        case 4: delayMs = 150
+        case 3: delayMs = 300
+        case 2: delayMs = 500
+        default: delayMs = 800
+        }
+        let thisAttempt = 5 - remaining
+        sessionQueue.asyncAfter(deadline: .now() + .milliseconds(delayMs)) { [weak self] in
+            guard let self, let device = self.device else { return }
+
+            var repaired: [String] = []
+            // ① 曝光（快照是手动档 + 用户意图仍是手动档 + 设备被清成自动 → 补写）
+            if let prev = exposure {
+                let intentStillManual = self.manualExposure.map { abs($0.iso - prev.iso) < 0.5 } ?? false
+                if intentStillManual, self.configurator.manualExposure(of: device) == nil {
+                    try? self.configurator.setManualExposure(
+                        iso: prev.iso, seconds: prev.seconds, on: device
+                    )
+                    repaired.append("曝光")
+                }
+            }
+            // ② 白平衡（同上）
+            if let prev = whiteBalance {
+                let intentStillManual = self.manualWhiteBalance
+                    .map { abs($0.temperature - prev.temperature) < 25 } ?? false
+                if intentStillManual, self.configurator.manualWhiteBalance(of: device) == nil {
+                    try? self.configurator.setManualWhiteBalance(
+                        temperature: prev.temperature, tint: prev.tint, on: device
+                    )
+                    repaired.append("白平衡")
+                }
+            }
+            // ③ EV（仅自动曝光档；意图值仍是快照那个）
+            if exposure == nil, abs(self.exposureBias - bias) < 0.001,
+               abs(device.exposureTargetBias - bias) > 0.001 {
+                try? self.configurator.applyExposureBias(bias, to: device)
+                repaired.append("EV")
+            }
+
+            if !repaired.isEmpty {
+                DebugLog.shared.warn(
+                    "session",
+                    "\(reason)：系统在重放之后清掉了\(repaired.joined(separator: "/"))"
+                        + "（第 \(thisAttempt) 拍复查）→ 已按快照补写"
+                )
+                self.publishManualState(device)
+            }
+            self.reverifyManualIntent(
+                remaining - 1,
+                exposure: exposure,
+                whiteBalance: whiteBalance,
+                bias: bias,
+                reason: reason
+            )
         }
     }
 
@@ -1496,14 +1671,42 @@ final class CaptureSessionController: ObservableObject {
     /// 所以这里按候选顺序逐个应用，**取第一个 Live Photo 能力为 true 的**；
     /// 若全都不支持（或探测本身不可靠），退回第一个候选，
     /// 行为与改动前一致，不影响普通拍照。
-    /// (设备 uniqueID + 模式) → 已探测成功的采集格式。
+    /// (设备 uniqueID + 模式) → 已探测成功的采集格式的**标识字符串**。
     ///
-    /// ## 为什么要有它（2026-09-20 Mac 复验 🔴 问题 1）
+    /// ## 为什么存"标识"而不是格式对象
     ///
-    /// 这个探测循环本是**冷启动一次性**口径；物理架构换设备后**每次都跑**：
-    /// 12~41 个候选逐个 `applyFormat`（每个 300~800ms）→ 换设备糊屏 **4.5~11.9s**。
-    /// 命中缓存的格式**一次 apply 直达**（毫秒级）；探测失败会清缓存回退完整探测。
-    private var formatProbeCache: [String: AVCaptureDevice.Format] = [:]
+    /// `AVCaptureDevice.Format` 是设备的附属对象，**不能存盘**（下一次启动是另一批对象）。
+    /// 所以存"尺寸 + 像素格式 + 帧率区间"这三件套组成的标识，命中时在当前设备的
+    /// `formats` 里按同样的标识找回那个格式对象。
+    ///
+    /// ## 为什么要落盘（2026-09-20 批五 · 🔴问题 1①）
+    ///
+    /// 原本这个缓存只在**内存**里：App 每次启动都是冷的，于是**每会话的第一次换设备**
+    /// 都要跑完整探测（12~41 个候选逐个 `applyFormat`，每个 300~800ms）
+    /// = 4.2~5.0s（Mac 批四复验实测）。
+    /// 那个耗时**直接导致静默路径被降级成转场**（用户要的"点对焦/开刻度条人眼无感"就没了），
+    /// 所以缓存必须跨会话活着。
+    private var formatProbeIdentities: [String: String] =
+        (UserDefaults.standard.dictionary(forKey: formatProbeCacheDefaultsKey) as? [String: String]) ?? [:]
+
+    /// 格式的**可持久化标识**（见 `formatProbeIdentities` 的说明）。
+    ///
+    /// 三件套：`宽x高 | 像素格式(FourCC) | 帧率区间`。
+    /// 同一台设备上三者全同基本就是同一个格式；万一撞了也只是"少试几个候选"，
+    /// 而且照片类模式还有一道 **Live 能力自愈**（见 `applyPreferredFormatLocked`）。
+    private static func formatIdentity(_ format: AVCaptureDevice.Format) -> String {
+        let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        let subType = format.formatDescription.mediaSubType.rawValue
+        let ranges = format.videoSupportedFrameRateRanges
+        let minFPS = ranges.map(\.minFrameRate).min() ?? 0
+        let maxFPS = ranges.map(\.maxFrameRate).max() ?? 0
+        return "\(size.width)x\(size.height)|\(subType)"
+            + "|\(String(format: "%.0f", minFPS))-\(String(format: "%.0f", maxFPS))"
+    }
+
+    private func persistFormatProbeIdentities() {
+        UserDefaults.standard.set(formatProbeIdentities, forKey: formatProbeCacheDefaultsKey)
+    }
 
     private func applyPreferredFormatLocked(to device: AVCaptureDevice) {
         // ⚠️ 视频 / Log 模式下照片输出**不挂载** → `isLivePhotoCaptureSupported` 恒 false
@@ -1513,21 +1716,34 @@ final class CaptureSessionController: ObservableObject {
         let needsLiveProbe = mode == .photo || mode == .livePhoto
         let cacheKey = "\(device.uniqueID)|\(mode.rawValue)"
 
-        if let cached = formatProbeCache[cacheKey] {
+        // ① 缓存命中（优先磁盘里的标识）：**一次 applyFormat 直达**
+        if let identity = formatProbeIdentities[cacheKey],
+           let cached = device.formats.first(where: { Self.formatIdentity($0) == identity }) {
+            var applied = false
             do {
                 try configurator.applyFormat(cached, frameRate: 30, to: device)
-                DebugLog.shared.info(
-                    "session",
-                    "采集格式命中缓存（跳过探测循环）：\(CaptureCapabilities.formatSummary(cached))"
-                )
-                return
+                applied = true
             } catch {
                 DebugLog.shared.warn(
                     "session",
-                    "缓存的采集格式应用失败 → 回退完整探测：\(error.localizedDescription)"
+                    "缓存标识解析出的格式应用失败 → 回退完整探测：\(error.localizedDescription)"
                 )
-                formatProbeCache[cacheKey] = nil
             }
+            // **自愈**：照片类模式要求 Live 能力 —— 缓存里的格式若不满足（系统/机型变化、
+            // 或标识撞档），一律作废并回退完整探测，宁可慢一次也不能把 Live 能力悄悄关掉。
+            if applied, needsLiveProbe, !photoService.output.isLivePhotoCaptureSupported {
+                DebugLog.shared.warn("session", "缓存格式不支持 Live Photo → 作废缓存并回退完整探测")
+                applied = false
+            }
+            if applied {
+                DebugLog.shared.info(
+                    "session",
+                    "采集格式命中**缓存**（跳过探测循环）：\(CaptureCapabilities.formatSummary(cached))"
+                )
+                return
+            }
+            formatProbeIdentities[cacheKey] = nil
+            persistFormatProbeIdentities()
         }
 
         let candidates = CaptureCapabilities.formatCandidates(
@@ -1575,12 +1791,14 @@ final class CaptureSessionController: ObservableObject {
         }
 
         guard let final else { return }
-        formatProbeCache[cacheKey] = final
+        // 写缓存（**带标识落盘**，跨会话复用 —— 批五 问题 1①）
+        formatProbeIdentities[cacheKey] = Self.formatIdentity(final)
+        persistFormatProbeIdentities()
         DebugLog.shared.info(
             "session",
             "选用采集格式 \(CaptureCapabilities.formatSummary(final))"
                 + "，Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
-                + "（候选共 \(candidates.count) 个，已缓存）"
+                + "（候选共 \(candidates.count) 个，已缓存并落盘）"
         )
     }
 
