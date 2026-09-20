@@ -1,4 +1,7 @@
 import Foundation
+// 物理架构（docs/20）：`physicalDeviceTypes` 需要 `AVCaptureDevice.DeviceType`
+//（2026-09-20 [mac-fix] 编译实测：缺此 import 报 "cannot find type 'AVCaptureDevice' in scope"）
+import AVFoundation
 
 /// 焦段档位：**13 / 24 / 35 / 48 / 120**（毫米，5 档）。
 ///

@@ -248,6 +248,11 @@ final class CameraViewModel: ObservableObject {
 
     /// 是否正在录制视频（P1b-2）
     @Published private(set) var isRecording = false
+    /// 换设备转场进行中（物理架构 · `docs/20` 第三节）：**透传 session 的发布值**给 UI ——
+    /// `CameraView` 观察本值驱动模糊浮层两段式（true → 淡入 → 完成回调 commit → false → 淡出），
+    /// 并作为上划/下划手势的闸门④（转场期间禁言）。
+    /// ⚠️ session 的 `isLensSwitching` 是同一真值源，VM 只做镜像（唯一的写入点 = 下方订阅）。
+    @Published private(set) var isLensSwitching = false
     /// 已录制秒数，供录制指示器计时
     @Published private(set) var recordingSeconds: Double = 0
     @Published private(set) var toast: String?
@@ -334,7 +339,10 @@ final class CameraViewModel: ObservableObject {
         environment.session.$isLensSwitching
             .receive(on: RunLoop.main)
             .sink { [weak self] switching in
-                guard let self, !switching, let action = self.pendingManualAction else { return }
+                guard let self else { return }
+                // 先镜像给 UI（模糊浮层要看到 **true 边沿**；下面 pendingAction 只关心 false 边沿）
+                self.isLensSwitching = switching
+                guard !switching, let action = self.pendingManualAction else { return }
                 self.pendingManualAction = nil
                 switch action {
                 case .toggleManualStrip(let kind):
@@ -346,15 +354,26 @@ final class CameraViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // 回切防抖（预检 ①，docs/20 第四节）：三个意图态**全空** + 物理会话 → 2s 后切回虚拟。
-        environment.session.$manualExposure
-            .combineLatest(environment.session.$manualWhiteBalance, environment.session.$manualFocus)
-            .map { $0.0 == nil && $1 == nil && $2 == nil }
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] allAuto in
-                self?.evaluateRevertToVirtual(allAuto: allAuto)
-            }
-            .store(in: &cancellables)
+        // ⚠️ 用 `CombineLatest3` + **显式闭包参数类型**：原链式写法
+        // `$manualExposure.combineLatest(…).map { $0.0 == nil && … }` 在本文件（超大 `attach()`）
+        // 上下文里把 Swift 类型检查拖爆（2026-09-20 [mac-fix] 编译实测：
+        // "unable to type-check this expression in reasonable time"）——展开类型，语义零变化。
+        Publishers.CombineLatest3(
+            environment.session.$manualExposure,
+            environment.session.$manualWhiteBalance,
+            environment.session.$manualFocus
+        )
+        .map { (exposure: (iso: Float, seconds: Double)?,
+                 whiteBalance: (temperature: Float, tint: Float)?,
+                 focus: Float?) -> Bool in
+            exposure == nil && whiteBalance == nil && focus == nil
+        }
+        .removeDuplicates()
+        .receive(on: RunLoop.main)
+        .sink { [weak self] allAuto in
+            self?.evaluateRevertToVirtual(allAuto: allAuto)
+        }
+        .store(in: &cancellables)
 
         // 会话侧的模式 → 同步到 UI；**同时清空"最后推送值"记录** ——
         // 切模式会重建会话，之后的硬件值来自设备（不是我们推的），必须允许回写

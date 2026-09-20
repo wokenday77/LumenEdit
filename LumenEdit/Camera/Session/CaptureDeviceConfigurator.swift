@@ -279,7 +279,9 @@ final class CaptureDeviceConfigurator {
     /// 赋成当前值**（赋值即终止 ramp，画面停在当前放大倍数）。
     /// 没有进行中的 ramp 时是 no-op。
     func stopZoomRamp(on device: AVCaptureDevice) {
-        guard device.rampingVideoZoom else { return }
+        // ⚠️ Swift 导入名是 `isRampingVideoZoom`（ObjC 属性 `rampingVideoZoom` getter 为
+        //    `isRampingVideoZoom`，Swift 按 getter 命名）——2026-09-20 [mac-fix] 编译实测。
+        guard device.isRampingVideoZoom else { return }
         try? withLock(device) {
             device.videoZoomFactor = device.videoZoomFactor
         }
