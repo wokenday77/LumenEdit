@@ -120,6 +120,14 @@ enum Theme {
 
         /// 普通刻度线（原型 `.sp-tick{ background:rgba(255,255,255,.34) }`）
         static let stripTick = Color.white.opacity(0.34)
+        /// **中间档**刻度线（原型 `.sp-tick.mid{ background:rgba(255,255,255,.48) }`）。
+        ///
+        /// 2026-09-20 批四补：原型 CSS 里**四档刻度**（plain / mid / major / preset）早就定义好了，
+        /// 但 JS 渲染只用了 `major`/`preset` 两档 —— Swift 侧于是把"主档之间的细刻度"
+        /// 实现成了自创的 1px / 20% 白 / 半高发丝线，**太淡、看不出层级**（用户批三实测
+        /// "外形没有变化"）。现改回原型的第二层：15pt 高 / 48% 白 / 1.5pt 宽（见
+        /// `paramStripTickMidHeight`），层级从对比度上直接读得出来。
+        static let stripTickMid = Color.white.opacity(0.48)
         /// 主刻度线（原型 `.sp-tick.major{ background:rgba(255,255,255,.82) }`）
         static let stripTickMajor = Color.white.opacity(0.82)
         /// 白平衡**预设档**的刻度（原型 `.sp-tick.preset{ background:rgba(242,175,60,.85) }` = `--accent`）
@@ -505,6 +513,11 @@ enum Theme {
         static let paramStripTickWidth: CGFloat = 1.5
         /// 普通刻度线高（原型 `height:10px`）
         static let paramStripTickHeight: CGFloat = 10
+        /// **中间档**刻度线高（原型 `.sp-tick.mid{ height:15px }`）
+        ///
+        /// 三档高度 10 / 15 / 22 全部来自原型 CSS；刻度**底边对齐**（共用
+        /// `paramStripTickBottomInset` 那条基线），所以"高"直接表达层级。
+        static let paramStripTickMidHeight: CGFloat = 15
         /// 主刻度 / 预设刻度高（原型 `.sp-tick.major` / `.preset{ height:22px }`）
         static let paramStripTickMajorHeight: CGFloat = 22
         /// 刻度线距面板底部（原型 `bottom:20px`；压到 84 高后取 16）

@@ -57,7 +57,8 @@ enum SessionConfigurationError: LocalizedError {
 /// - **冷启动默认 `.virtual`**（按需策略：自动档保住 B1 的平滑变焦）。
 /// - 进入任一手动档 → `.physical(当前档位)`；全手动档退出持续 2s 防抖 → 切回 `.virtual`
 ///  （防抖在 VM 层，session 只执行）。
-/// - 写入点唯一：`applyFocalTarget(_:)`（自检⑲）。
+/// - 写入点唯一：`performFocalSwitch`（三个调用者：`beginFocalSwitch` /
+///   `commitFocalSwitch` / `applyFocalTargetSilently`，自检⑲）。
 enum SessionForm: Equatable {
     case virtual
     case physical(FocalPreset)
@@ -68,7 +69,7 @@ enum SessionForm: Equatable {
     }
 }
 
-/// 会话形态的**切换目标**（VM 把用户动作翻译成它；`applyFocalTarget` 只管执行）。
+/// 会话形态的**切换目标**（VM 把用户动作翻译成它；`performFocalSwitch` 只管执行）。
 ///
 /// 两个 case 都带目标档位：切回虚拟后要把 zoom 对齐到当前档位（虚拟阶梯），
 /// 切到物理后要对齐到 `zoomFactorOnPhysicalDevice`。
@@ -207,7 +208,7 @@ final class CaptureSessionController: ObservableObject {
     private var device: AVCaptureDevice?
     private var videoInput: AVCaptureDeviceInput?
 
-    /// 当前会话形态（`docs/20`）。**写入点唯一** = `applyFocalTarget`。
+    /// 当前会话形态（`docs/20`）。**写入点唯一** = `performFocalSwitch`。
     @Published private(set) var form: SessionForm = .virtual
 
     /// 换设备进行中（模糊转场驱动位，顺序触发 —— 预检 ⑧）。
@@ -310,9 +311,9 @@ final class CaptureSessionController: ObservableObject {
         DebugLog.shared.info("session", "切换模式 \(mode.displayName) → \(newMode.displayName)")
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            // 问题 6（Mac 复验）：切模式重配 outputs 时系统可能**重选 activeFormat**，
-            // 手动档（.custom / .locked）会被一并清掉 —— 但**切模式不是退出手动的意图**，
-            // 用户设置的参数必须保留（`docs/20` 复验补充）。先快照、commit 后比对重放。
+            // 切模式重配 outputs 时系统可能**重选 activeFormat**，手动档（.custom / .locked）
+            // 会被一并清掉 —— 但**切模式不是退出手动的意图**，用户设置的参数必须保留。
+            // 做法（2026-09-20 批四改口径）：**先快照意图、commit 后一律重放**（见下方 ① ②）。
             // ⚠️ [mac-fix] 快照前先解包设备：`device` 是 `AVCaptureDevice?`，
             //    直接传进 `manualExposure(of:)` 编译不过（2026-09-20 批三编译实测）。
             //    无设备时重配 outputs 也无从谈起 —— 直接返回（与下方 `if let device` 同源）。
@@ -328,39 +329,62 @@ final class CaptureSessionController: ObservableObject {
 
             self.preparePhotoTemplateIfNeeded(for: newMode)
             self.publish { self.mode = newMode }
-            // 切模式重配了输出、`activeFormat` 可能跟着变 → 手动档真值与刻度条可用域重算一次
-            // （换的是 output，不是 device；**手动参数意图保留**：被系统清了就重放 —— 问题 6）
+            // ⚠️ 切模式**一律按快照重放**（2026-09-20 批四 · 🔴 问题 2）。
+            //
+            // 旧实现是"比对 commit 前后，只有被系统清掉才重放" —— 判据依赖"系统到底改没改"，
+            // 而用户实测"切模式参数还是回到自动"（批三复验 🔴6 那 3 次切模式时手动档未激活，
+            // 所以那条口径**没被验到**）。意图快照 = 用户的设置，**重放是幂等的**（写同样的值），
+            // 所以不需要猜系统做了什么：切模式不是退出手动的意图 → 一律重新施加一遍。
             if let device = self.device {
-                let afterExposure = self.configurator.manualExposure(of: device)
-                if prevExposure != nil, afterExposure == nil {
-                    // 手动曝光被系统清 → 重放（值就是快照里的，无需 clamp 变化）
+                // ⓪ 归一（实锤 A 同因）：会话重配 outputs 时系统可能重选 activeFormat，
+                //    甚至把档位改成"半保持"的怪态 —— 归一到自动后，重放结果唯一确定。
+                //    ⚠️ 必须在下面的 EV 重放**之前**（自检⑲ n2 守这条顺序）。
+                let leftover = self.normalizeToAutoLocked(on: device)
+                if leftover.exposure || leftover.whiteBalance {
+                    DebugLog.shared.warn(
+                        "session",
+                        "切模式：档位有残留（曝光=\(leftover.exposure ? "手动" : "自动") / "
+                            + "白平衡=\(leftover.whiteBalance ? "手动" : "自动")）→ 已归一到自动，再按快照重放"
+                    )
+                }
+                // ① 曝光：快照有手动档 → 一律重放（幂等）
+                if let prev = prevExposure {
                     try? self.configurator.setManualExposure(
-                        iso: prevExposure!.iso, seconds: prevExposure!.seconds, on: device
+                        iso: prev.iso, seconds: prev.seconds, on: device
                     )
                     DebugLog.shared.info(
                         "session",
-                        "切模式清掉了手动曝光 → 已重放（ISO \(String(format: "%.0f", prevExposure!.iso))）"
+                        "切模式：手动曝光已按快照重放（ISO \(String(format: "%.0f", prev.iso))）"
                     )
                 }
-                let afterWhiteBalance = self.configurator.manualWhiteBalance(of: device)
-                if prevWhiteBalance != nil, afterWhiteBalance == nil {
+                // ② 白平衡：同上
+                if let prev = prevWhiteBalance {
                     try? self.configurator.setManualWhiteBalance(
-                        temperature: prevWhiteBalance!.temperature,
-                        tint: prevWhiteBalance!.tint,
+                        temperature: prev.temperature,
+                        tint: prev.tint,
                         on: device
                     )
                     DebugLog.shared.info(
                         "session",
-                        "切模式清掉了手动白平衡 → 已重放（\(String(format: "%.0f", prevWhiteBalance!.temperature))K）"
+                        "切模式：手动白平衡已按快照重放（\(String(format: "%.0f", prev.temperature))K）"
                     )
                 }
-                // EV 重放与手动曝光互斥（同 🔴1：applyExposureBias 见 .custom 会回切自动）——
+                // ③ EV 重放与手动曝光互斥（同 🔴1：applyExposureBias 见 .custom 会回切自动）——
                 // 只在"切模式前就是自动曝光档"时才重放；手动档下 EV 值本就无效、保留状态即可。
                 if prevExposure == nil, abs(device.exposureTargetBias - prevBias) > 0.001 {
                     try? self.configurator.applyExposureBias(prevBias, to: device)
-                    DebugLog.shared.info("session", "切模式重置了 EV → 已重放（\(String(format: "%+.1f", prevBias))）")
+                    DebugLog.shared.info("session", "切模式：EV 已重放（\(String(format: "%+.1f", prevBias))）")
                 }
                 self.publishManualState(device)
+                // ④ **复查一行**（Mac 核法，🔴6 的判据）：切模式后设备的实际档位 + 意图态。
+                DebugLog.shared.info(
+                    "session",
+                    "切模式后档位复查（\(newMode.displayName)）：曝光="
+                        + "\(self.configurator.manualExposure(of: device) == nil ? "自动" : "手动")"
+                        + " / 白平衡=\(self.configurator.manualWhiteBalance(of: device) == nil ? "自动" : "手动")"
+                        + " / 对焦意图=\(self.manualFocus == nil ? "自动" : "手动")"
+                        + " / EV=\(String(format: "%+.1f", device.exposureTargetBias))"
+                )
             }
             self.refreshSnapshot()
         }
@@ -450,7 +474,7 @@ final class CaptureSessionController: ObservableObject {
         // ⚠️ **物理会话不走虚拟阶梯**（2026-09-20 Mac 复验 🟡 问题 5）：虚拟阶梯
         // （`zoomFactor(forFocal:of:)`）吃 `virtualDeviceSwitchOverVideoZoomFactors`，
         // 物理单摄上为空 → 解析失败 → "焦段 xx mm 在本机没有对应镜头，未推硬件"
-        // （会话重启后档位对齐静默失败实锤）。物理会话下设备已由 `applyFocalTarget`
+        // （会话重启后档位对齐静默失败实锤）。物理会话下设备已由 `performFocalSwitch`
         // 挂好，zoom 直接取 `zoomFactorOnPhysicalDevice`（挂载时已对齐，此处理论上是 no-op，
         // 放这里是为了**会话重启后的对齐路径**同样正确）。
         let zoom: CGFloat?
@@ -576,6 +600,22 @@ final class CaptureSessionController: ObservableObject {
 
     // MARK: - 会话形态状态机（物理架构 · `docs/20`）
 
+    /// 目标形态是否**真的需要**换设备（幂等判据，`beginFocalSwitch` / `applyFocalTargetSilently`
+    /// / `performFocalSwitch` 三处共用）。
+    ///
+    /// ⚠️ 虚拟分支**不比档位** —— 虚拟会话内切档走 B1 的 ramp 分派，不经过换设备路径；
+    /// 比档位会造成"点 24→35 也换一次设备"。
+    private func needsSwitch(to target: FocalTarget) -> Bool {
+        switch (form, target) {
+        case (.virtual, .virtual):
+            return false
+        case (.physical(let a), .physical(let b)):
+            return a.id != b.id
+        default:
+            return true
+        }
+    }
+
     /// 用户请求切换会话形态（虚拟 ↔ 物理单摄）—— **顺序触发第一段**（预检 ⑧）。
     ///
     /// 前置校验通过后只做：停 ramp + `isLensSwitching = true`（UI 开始淡入模糊）。
@@ -586,22 +626,15 @@ final class CaptureSessionController: ObservableObject {
     ///   切档走 B1 的 ramp 分派，不经过本方法）。
     /// - 会话未就绪 → `pendingFocalTarget` 排队（预检 ②，`startInternal` 补执行）。
     /// - 录制中跨设备 → 拒绝（兜底 —— VM 分派层已拦，预检 ③）。
+    ///
+    /// ⚠️ **只负责"置位 + 排队"，不换设备** —— 真正换设备在 `performFocalSwitch`
+    /// （由 `commitFocalSwitch` 或 `applyFocalTargetSilently` 叫起）。
     func beginFocalSwitch(_ target: FocalTarget) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
 
-            // 幂等：目标形态 == 当前形态 → no-op（⚠️ 虚拟分支**不比档位** —— 虚拟会话内
-            // 切档走 B1 的 ramp 分派，不经过本方法；比档位会造成重复换设备）
-            let sameCase: Bool
-            switch (self.form, target) {
-            case (.virtual, .virtual):
-                sameCase = true
-            case (.physical(let a), .physical(let b)):
-                sameCase = a.id == b.id
-            default:
-                sameCase = false
-            }
-            if sameCase { return }
+            // 幂等：目标形态 == 当前形态 → no-op（判据见 `needsSwitch`）
+            if !self.needsSwitch(to: target) { return }
 
             // 未就绪 → 排队（startInternal 就绪分支补执行，预检 ②）
             guard self.state == .running, self.device != nil else {
@@ -633,136 +666,234 @@ final class CaptureSessionController: ObservableObject {
 
     /// **顺序触发第二段**：执行换设备六步 + 参数搬运（由 UI"淡入完成回调"调用，预检 ⑧）。
     ///
-    /// ⚠️ **`form` / `isLensSwitching` 的写入点只有 `beginFocalSwitch` /
-    /// `commitFocalSwitch`**（自检⑲）。
+    /// ⚠️ **`form` / `isLensSwitching` 的写入点只有 `performFocalSwitch`**，
+    /// 而它是被这三个方法叫起来的：`beginFocalSwitch`（转场第一段：**唯一置位**
+    /// `isLensSwitching = true` 的地方）、`commitFocalSwitch`（转场第二段）、
+    /// `applyFocalTargetSilently`（后台无转场；自检⑲）。
     func commitFocalSwitch() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard let target = self.pendingSwitchTarget else { return }
             self.pendingSwitchTarget = nil
 
-            guard self.state == .running, let device = self.device else {
+            guard self.state == .running, self.device != nil else {
                 self.pendingFocalTarget = target
                 self.publish { self.isLensSwitching = false }
                 return
             }
 
-            // 旧设备手动参数真值快照（搬运源 —— .custom/.locked 只能用户设，回读可信）
-            let previousExposure = self.configurator.manualExposure(of: device)
-            let previousWhiteBalance = self.configurator.manualWhiteBalance(of: device)
-            let previousBias = self.exposureBias
+            self.performFocalSwitch(target, throughTransition: true)
+        }
+    }
 
-            // ②③④⑤ 换 input（失败回滚原 input —— 绝不留无视频输入的会话）
-            let newDevice: AVCaptureDevice
-            switch target {
-            case .virtual: newDevice = CaptureCapabilities.backCamera() ?? device
-            case .physical(let preset):
-                guard let physical = CaptureCapabilities.physicalDevice(for: preset) else {
-                    self.publish {
-                        self.isLensSwitching = false
-                        self.lastErrorMessage = "本机没有 \(preset.displayName) mm 对应的镜头"
-                    }
-                    return
-                }
-                newDevice = physical
-            }
+    /// 换设备的**唯一执行体**（真实转场 / 后台静默换形态共用；`throughTransition` 只决定
+    /// 是否去改写 `isLensSwitching` 那两位）。
+    ///
+    /// - Parameter throughTransition: `true` = 由 UI 淡入完成回调驱动的真实转场
+    ///   （结束时要复位 `isLensSwitching`）；`false` = 后台静默（**绝不碰它**）。
+    private func performFocalSwitch(_ target: FocalTarget, throughTransition: Bool) {
+        // 幂等（静默换形态可能与真转场竞争）
+        guard needsSwitch(to: target) else {
+            if throughTransition { publish { self.isLensSwitching = false } }
+            return
+        }
+        guard let device = self.device else {
+            if throughTransition { publish { self.isLensSwitching = false } }
+            return
+        }
 
-            self.session.beginConfiguration()
-            if let old = self.videoInput {
-                self.session.removeInput(old)
-            }
-            do {
-                let input = try AVCaptureDeviceInput(device: newDevice)
-                guard self.session.canAddInput(input) else {
-                    throw SessionConfigurationError.cannotAddInput
-                }
-                self.session.addInput(input)
-                self.videoInput = input
-                self.device = newDevice
-            } catch {
-                if let old = self.videoInput ?? nil, self.session.canAddInput(old) {
-                    self.session.addInput(old)
-                    self.device = old.device
-                }
-                self.session.commitConfiguration()
-                self.publish {
-                    self.isLensSwitching = false
-                    self.lastErrorMessage = "切换镜头失败，已恢复原镜头（\(error.localizedDescription)）"
+        // 旧设备手动参数真值快照（搬运源 —— .custom/.locked 只能用户设，回读可信）
+        let previousExposure = configurator.manualExposure(of: device)
+        let previousWhiteBalance = configurator.manualWhiteBalance(of: device)
+        let previousBias = exposureBias
+
+        // ②③④⑤ 换 input（失败回滚原 input —— 绝不留无视频输入的会话）
+        let newDevice: AVCaptureDevice
+        switch target {
+        case .virtual: newDevice = CaptureCapabilities.backCamera() ?? device
+        case .physical(let preset):
+            guard let physical = CaptureCapabilities.physicalDevice(for: preset) else {
+                publish {
+                    if throughTransition { self.isLensSwitching = false }
+                    self.lastErrorMessage = "本机没有 \(preset.displayName) mm 对应的镜头"
                 }
                 return
             }
-            self.session.commitConfiguration()
+            newDevice = physical
+        }
 
-            // ⑥ 格式（铁律 1：commit 之后）
-            self.applyPreferredFormatLocked(to: newDevice)
-
-            // ⑦ 参数搬运（对焦显式降级 —— 预检 ⑤）
-            self.reapplyManualStateLocked(
-                on: newDevice,
-                previousExposure: previousExposure,
-                previousWhiteBalance: previousWhiteBalance,
-                previousBias: previousBias
-            )
-
-            // zoom 对齐：物理挂载后 = 档位原生/裁切系数；回虚拟后 = 当前档位走虚拟阶梯
-            let targetFocal: FocalPreset
-            switch target {
-            case .physical(let preset):
-                targetFocal = preset
-                self.configurator.setVideoZoomFactorDirect(preset.zoomFactorOnPhysicalDevice, on: newDevice)
-            case .virtual(let focal):
-                targetFocal = focal
-                self.applyFocal(focal, animated: false) { _, _ in }
+        session.beginConfiguration()
+        if let old = videoInput {
+            session.removeInput(old)
+        }
+        do {
+            let input = try AVCaptureDeviceInput(device: newDevice)
+            guard session.canAddInput(input) else {
+                throw SessionConfigurationError.cannotAddInput
             }
-
-            // 音频 input 不受视频 input 增删影响（只移除了视频），无需重配。
-            self.publishManualState(newDevice)
-            let formNow: SessionForm = { switch target {
-            case .virtual: return .virtual
-            case .physical(let p): return .physical(p)
-            } }()
-            self.publish {
-                self.form = formNow
-                self.isLensSwitching = false
-                // ⚠️ 物理会话下**全部档位可点**：同镜头档走 ramp、跨镜头档走换设备
-                // （物理设备缺失的机型由 `applyFocalTarget` 兜底报错）—— 置灰只属于
-                // 虚拟会话（该机型镜头覆盖不到的档位）。
-                self.unavailableFocalIds = formNow.isPhysical
-                    ? []
-                    : CaptureCapabilities.unavailableFocalIds(for: newDevice)
+            session.addInput(input)
+            videoInput = input
+            self.device = newDevice
+        } catch {
+            if let old = videoInput ?? nil, session.canAddInput(old) {
+                session.addInput(old)
+                self.device = old.device
             }
+            session.commitConfiguration()
+            publish {
+                if throughTransition { self.isLensSwitching = false }
+                self.lastErrorMessage = "切换镜头失败，已恢复原镜头（\(error.localizedDescription)）"
+            }
+            return
+        }
+        session.commitConfiguration()
 
-            // 换设备日志（Mac 核法：deviceType 应变为物理单摄 / Live Photo 能力实测值，预检 ③）
-            DebugLog.shared.info(
-                "session",
-                "换设备完成 → \(target.describe)；当前档位 \(targetFocal.displayName) mm；"
-                    + "Live Photo 能力=\(self.photoService.output.isLivePhotoCaptureSupported)"
-            )
+        // ⑥ 格式（铁律 1：commit 之后）
+        applyPreferredFormatLocked(to: newDevice)
+
+        // ⑦ 参数搬运（先归一新设备清残留，再按快照重放 —— 批四 🔴 实锤 A）
+        reapplyManualStateLocked(
+            on: newDevice,
+            previousExposure: previousExposure,
+            previousWhiteBalance: previousWhiteBalance,
+            previousBias: previousBias
+        )
+
+        // zoom 对齐：物理挂载后 = 档位原生/裁切系数；回虚拟后 = 当前档位走虚拟阶梯
+        let targetFocal: FocalPreset
+        switch target {
+        case .physical(let preset):
+            targetFocal = preset
+            configurator.setVideoZoomFactorDirect(preset.zoomFactorOnPhysicalDevice, on: newDevice)
+        case .virtual(let focal):
+            targetFocal = focal
+            applyFocal(focal, animated: false) { _, _ in }
+        }
+
+        // 音频 input 不受视频 input 增删影响（只移除了视频），无需重配。
+        publishManualState(newDevice)
+        let formNow: SessionForm = { switch target {
+        case .virtual: return .virtual
+        case .physical(let p): return .physical(p)
+        } }()
+        publish {
+            self.form = formNow
+            if throughTransition { self.isLensSwitching = false }
+            // ⚠️ 物理会话下**全部档位可点**：同镜头档走 ramp、跨镜头档走换设备
+            // （物理设备缺失的机型由 `performFocalSwitch` 兜底报错）—— 置灰只属于
+            // 虚拟会话（该机型镜头覆盖不到的档位）。
+            self.unavailableFocalIds = formNow.isPhysical
+                ? []
+                : CaptureCapabilities.unavailableFocalIds(for: newDevice)
+        }
+
+        // 换设备日志（Mac 核法：deviceType 应变为物理单摄 / Live Photo 能力实测值，预检 ③）
+        DebugLog.shared.info(
+            "session",
+            "换设备完成（\(throughTransition ? "转场" : "静默·无转场")）→ \(target.describe)；"
+                + "当前档位 \(targetFocal.displayName) mm；"
+                + "Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
+        )
+    }
+
+    /// 把设备的**两个手动态**（曝光 / 白平衡）归一到自动档 —— 清"上一轮残留"。
+    ///
+    /// ## 为什么需要它（2026-09-20 批四 · 🔴 实锤 A）
+    ///
+    /// `exposureMode` / `whiteBalanceMode` 是**设备实例级**状态，而"退出手动档"只改
+    /// **当前挂的那台设备** —— 别的镜头（上一轮挂过的那颗）会把 `.custom` / `.locked`
+    /// **留在原地**；device 对象 remove/re-add 也**不重置**。于是"新设备"常常自带
+    /// 上一轮的手动档残留，两个后果：
+    ///   1. UI 显示"自动"、设备其实是手动（回读口径被绕过）；
+    ///   2. 接着推 EV 时 `applyExposureBias` 见 `.custom` 会**回切自动并打 WRN**
+    ///      —— 用户批三实测的两次 WRN 正是这条（日志只有"只搬白平衡 + 推 EV"、
+    ///      **没有**"手动曝光已重放"）。
+    ///
+    /// 归一到自动之后，"按快照重放"的目标态就是**唯一确定**的：不再依赖新设备的陈旧档位。
+    ///
+    /// ⚠️ **调用顺序是硬约束**：必须在 `applyExposureBias(` **之前**（自检⑲ n2 守着）——
+    /// 反过来的话 EV 推送还是会撞上残留的 `.custom`，实锤 A 原样复发。
+    ///
+    /// - Returns: 各档位**原本是否有残留**（供调用方决定要不要打日志 / 复查）
+    @discardableResult
+    private func normalizeToAutoLocked(on device: AVCaptureDevice) -> (exposure: Bool, whiteBalance: Bool) {
+        let hadExposure = configurator.manualExposure(of: device) != nil
+        let hadWhiteBalance = configurator.manualWhiteBalance(of: device) != nil
+        if hadExposure {
+            try? configurator.setAutoExposure(on: device)
+        }
+        if hadWhiteBalance {
+            try? configurator.setAutoWhiteBalance(on: device)
+        }
+        return (hadExposure, hadWhiteBalance)
+    }
+
+    /// **静默换形态**（不显示转场）：后台把目标设备/形态挂好。
+    ///
+    /// ## 为什么要有它（2026-09-20 批四 · 用户要求 ③「转场边界」）
+    ///
+    /// 用户明确的转场边界：**只有切焦段**该有转场（≤1s）；切自动/手动、点对焦按钮、
+    /// 切模式 → **人眼无感**。但按需物理架构下，"切手动档 / 开对焦盘"都必须先换到物理单摄
+    /// —— 换设备硬耗时 0.6~0.75s（AVFoundation 换 input + 格式），走转场就是 ≈0.85~1.0s 的模糊。
+    ///
+    /// 解法：把换设备从"用户按下按钮那一刻"**挪到更早或更晚的非焦点时刻**：
+    ///   ① **预切换**（提前挂）：打开刻度条 / 按「对焦」入口时先挂好 ——
+    ///      等用户真去点手动开关时，`form` 已经是物理 → **零转场**；
+    ///   ② **静默回切**：全手动档退出 2s 后切回虚拟（`CameraViewModel.evaluateRevertToVirtual`）
+    ///      —— 那是 App 自己的收尾动作，不是用户的焦段操作，同样不该闪一次转场。
+    ///
+    /// ## 与 `beginFocalSwitch` 的差别（只有一处，但很关键）
+    ///
+    /// **不碰 `isLensSwitching`** —— 那个位是"UI 该显示模糊浮层"的信号，
+    /// 置位会被 `CameraView` 的 `onChange` 抓成一次淡入淡出（即便立刻复位也会闪一下）。
+    /// 静默换形态是**纯后台**的设备挂载：不置位 ⇒ 无浮层。
+    ///
+    /// ⚠️ **代价要说清**：换 input 本身有开销（0.6~0.75s），这段时间预览可能有一瞬停顿 ——
+    /// 模糊转场的价值正是盖住它。所以静默路径只用在"用户正在做别的事"的时刻
+    /// （开面板 / 收面板后 2s），不在用户盯着画面等切换的时刻用。
+    ///
+    /// - 尽力而为：录制中 / 会话未就绪 / 真转场进行中 → 直接放弃（不排队、不报错）。
+    ///   放弃没有严重后果：用户真去点手动时，`queueActionRequiringPhysical` 会走转场兜底。
+    func applyFocalTargetSilently(_ target: FocalTarget) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard !self.isRecording, self.state == .running, self.device != nil else { return }
+            // 真转场进行中 → 让路（`pendingSwitchTarget` 已存，等 UI 完成回调，别插队）
+            guard !self.isLensSwitching, self.pendingSwitchTarget == nil else { return }
+            guard self.needsSwitch(to: target) else { return }
+            DebugLog.shared.info("session", "静默换形态（后台挂设备 · 无转场）→ \(target.describe)")
+            self.performFocalSwitch(target, throughTransition: false)
         }
     }
 
     /// 换设备后的参数搬运（预检 ④⑤⑥；**必须在 `applyFormat` 之后调用** —— clamp 依赖
     /// 新设备 activeFormat）。
     ///
-    /// - 曝光 / 白平衡：换设备前从**旧设备回读**的真值重放（`.custom` / `.locked` 只能用户
-    ///   显式设置 —— 回读可信；clamp 到新设备域，逐项 try 不连坐）。
-    /// - EV：session 状态里的值 clamp 后重放（手动曝光档下系统忽略 EV，但**值保留**）。
-    /// - **对焦：显式降级**（预检 ⑤）—— `lensPosition` 量程随镜头不同，搬运必然对不上焦；
-    ///   落回连续自动 + 清意图态（`manualFocus = nil`）+ toast 由 VM 观察 `form` 变化发出。
-    /// 便捷：begin + commit 连发（**直切，无转场** —— 保留给"不需要模糊转场"的调用）。
-    /// 当前 VM 分派全部走 begin + UI 完成回调 commit（顺序触发）。
-    func applyFocalTarget(_ target: FocalTarget) {
-        beginFocalSwitch(target)
-        commitFocalSwitch()
-    }
-
+    /// 顺序**定死**（每一步都有理由）：
+    ///   0. **归一新设备**（`normalizeToAutoLocked`）—— 清上一轮残留（实锤 A）
+    ///   1. 曝光 / 白平衡：换设备前从**旧设备回读**的真值重放（`.custom` / `.locked` 只能用户
+    ///      显式设置 —— 回读可信；clamp 到新设备域，逐项 try 不连坐）
+    ///   2. EV：**仅自动曝光档**重放，且推之前再判一次新设备不在 `.custom`
+    ///   3. **对焦：显式降级**（预检 ⑤）—— `lensPosition` 量程随镜头不同，搬运必然对不上焦；
+    ///      落回连续自动 + 清意图态（`manualFocus = nil`）+ toast 由 VM 观察 `form` 变化发出
+    ///   4. **复查一行**（Mac 核法）
     private func reapplyManualStateLocked(
         on newDevice: AVCaptureDevice,
         previousExposure: (iso: Float, seconds: Double)?,
         previousWhiteBalance: (temperature: Float, tint: Float)?,
         previousBias: Float
     ) {
-        // 曝光（ISO + 快门成对）
+        // ⓪ 归一：清掉新设备可能的上一轮残留
+        let leftover = normalizeToAutoLocked(on: newDevice)
+        if leftover.exposure || leftover.whiteBalance {
+            DebugLog.shared.warn(
+                "session",
+                "新设备带上一轮手动档残留（曝光=\(leftover.exposure ? "手动" : "自动") / "
+                    + "白平衡=\(leftover.whiteBalance ? "手动" : "自动")）→ 已归一到自动档，再按快照重放"
+            )
+        }
+
+        // ① 曝光（ISO + 快门成对）
         if let prev = previousExposure {
             do {
                 try configurator.setManualExposure(iso: prev.iso, seconds: prev.seconds, on: newDevice)
@@ -772,7 +903,7 @@ final class CaptureSessionController: ObservableObject {
                 try? configurator.setAutoExposure(on: newDevice)
             }
         }
-        // 白平衡
+        // ② 白平衡
         if let prev = previousWhiteBalance {
             do {
                 try configurator.setManualWhiteBalance(temperature: prev.temperature, tint: prev.tint, on: newDevice)
@@ -782,11 +913,18 @@ final class CaptureSessionController: ObservableObject {
                 try? configurator.setAutoWhiteBalance(on: newDevice)
             }
         }
-        // EV（预检 🔴1）：**手动曝光档下不推** —— `applyExposureBias` 见 `.custom` 会把设备
+        // ③ EV（预检 🔴1）：**手动曝光档下不推** —— `applyExposureBias` 见 `.custom` 会把设备
         // 回切自动（docs/16 第五节的防线），先搬 ISO 再搬 EV 会把刚搬好的手动档**自己杀掉**
         // （Mac 复验 4 次 WRN 实锤，违反 docs/18 §2.4"手动档下不推 EV"）。
         // EV 值本来就在 session 状态里（`exposureBias`），回自动档时自动生效 —— 这里跳过即可。
         if previousExposure == nil {
+            // ⚠️ 推 EV 前**再确认**新设备此刻不在手动曝光档（⓪ 已归一 ⇒ 正常路径必为自动）。
+            // 这道断言是**防线**：将来谁把 ⓪ 那段归一删了，这里会在日志里立刻暴露，
+            // 而不是又退化成一次"静默把手动档杀掉 + 一条 WRN"。
+            if configurator.manualExposure(of: newDevice) != nil {
+                DebugLog.shared.warn("session", "EV 重放前新设备仍是手动曝光档 → 先归一（防回切 WRN）")
+                try? configurator.setAutoExposure(on: newDevice)
+            }
             do {
                 try configurator.applyExposureBias(previousBias, to: newDevice)
                 DebugLog.shared.info("session", "搬运：EV 已重放（\(String(format: "%+.1f", previousBias))）")
@@ -799,7 +937,7 @@ final class CaptureSessionController: ObservableObject {
                 "搬运：手动曝光档激活 → 跳过 EV 重放（值保留 \(String(format: "%+.1f", previousBias))，回自动档生效）"
             )
         }
-        // 对焦：显式降级（预检 ⑤）—— 意图清除 + 连续自动
+        // ④ 对焦：显式降级（预检 ⑤）—— 意图清除 + 连续自动
         publish { self.manualFocus = nil }
         do {
             try configurator.setAutoFocus(on: newDevice)
@@ -807,6 +945,15 @@ final class CaptureSessionController: ObservableObject {
         } catch {
             DebugLog.shared.warn("session", "对焦降级失败：\(error.localizedDescription)")
         }
+        // ⑤ **复查一行**（Mac 核法）：换设备/预切换后**新设备的实际档位**。
+        // 有了它，"实锤 A 有没有根治"不用再靠推断 —— 直接看这一行是不是"曝光=自动"。
+        DebugLog.shared.info(
+            "session",
+            "换设备后新设备档位复查：曝光=\(configurator.manualExposure(of: newDevice) == nil ? "自动" : "手动")"
+                + " / 白平衡=\(configurator.manualWhiteBalance(of: newDevice) == nil ? "自动" : "手动")"
+                + " / 对焦=自动（显式降级）"
+                + " / EV=\(String(format: "%+.1f", newDevice.exposureTargetBias))"
+        )
     }
 
     // MARK: - 手动对焦（B3b · 对焦圆盘接线）
@@ -814,7 +961,7 @@ final class CaptureSessionController: ObservableObject {
     /// 手动对焦（对焦圆盘拖动写硬件；虚拟多摄不支持 —— UI 已按能力分派，这里是最后防线）。
     /// 物理会话下的**同镜头平滑变焦**（预检 ⑦：35↔48 同挂一颗 Wide，ramp 到
     /// `zoomFactorOnPhysicalDevice` —— 比例真读 `mainCropFactor`，禁字面量）。
-    /// 跨镜头（↔13 / ↔120）不归本方法 —— 走 `applyFocalTarget` 换设备 + 转场。
+    /// 跨镜头（↔13 / ↔120）不归本方法 —— 走 `beginFocalSwitch` 换设备 + 转场。
     /// 录制中调用是安全的（同一颗设备内 ramp，系统支持录制中变焦 —— 拍板 ②）。
     func applyZoomOnPhysical(to preset: FocalPreset) {
         guard let device else { return }
@@ -1197,7 +1344,8 @@ final class CaptureSessionController: ObservableObject {
         if let pending = pendingFocalTarget {
             pendingFocalTarget = nil
             DebugLog.shared.info("session", "会话就绪 → 补执行排队的焦段目标（\(pending.describe)）")
-            applyFocalTarget(pending)
+            // 会话刚配置完，画面还没有"过程"要给用户看 → 走**静默**换形态（无转场）
+            applyFocalTargetSilently(pending)
         }
 
         // ⚠️ 回到相机页时，如果当前模式需要麦克风，必须把音频会话重新激活。

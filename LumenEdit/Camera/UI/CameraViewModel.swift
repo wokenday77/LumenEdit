@@ -334,16 +334,62 @@ final class CameraViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // 换设备完成边沿（isLensSwitching true→false）→ 执行**待重放动作**（拍板 ①：
-        // 虚拟会话点手动开关/对焦入口 = 先切物理，完成后自动执行原动作）。
+        // 刻度条草稿的**回读清账**（2026-09-20 批四 · 🔴 问题 1「卡点回弹 / 卡点不准确」）。
+        //
+        // ## 问题是什么
+        //
+        // 松手那一刻 VM 立刻把草稿清掉、显示交回**硬件真值** —— 但"写硬件"是异步的
+        // （sessionQueue → 设备锁 → publish → 本订阅），在回读到达之前
+        // `session.manualExposure` 还是**松手前的旧值**。于是刻度条渲染用的
+        // `currentStepIndex` 按旧值算 → **条子先弹回旧档、几十毫秒后再跳回来**
+        // （用户实测"卡点回弹"；再叠加"松手吸附值≠回读值"就表现为"对应数值不对"）。
+        //
+        // ## 修法（与 EV / 对焦同一条"回写闸门"纪律：只接受与最后推送值一致的回写）
+        //
+        // 松手**不再立刻清草稿**；改为"硬件回读与草稿一致时才作废草稿"。
+        // 期间显示值仍取草稿 = 停在用户松手的那一档 → **零回弹**。
+        // 另有 0.8s 超时兜底（`scheduleStripDraftTimeout`）：万一写入被 clamp 成另一个值，
+        // 草稿也不会永远压着显示。
+        Publishers.CombineLatest(
+            environment.session.$manualExposure,
+            environment.session.$manualWhiteBalance
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] (pair: ((iso: Float, seconds: Double)?,
+                                    (temperature: Float, tint: Float)?)) in
+            // ⚠️ 用**单个元组参数 + 显式类型**而不是 `{ exposure, whiteBalance in }`：本文件是超大类，
+            // 元组解构 + Combine 泛型推断会显著加重类型检查（同 `CombineLatest3` 那处
+            // [mac-fix] 的教训：写成显式形式，别让编译器猜）。
+            self?.settleStripDrafts(exposure: pair.0, whiteBalance: pair.1)
+        }
+        .store(in: &cancellables)
+
+        // 换设备**转场位** → 只做镜像给 UI（模糊浮层要看到 true 边沿）。
+        // ⚠️ 2026-09-20 批四：**"待执行动作"已从这里挪到下面的 `$form` 边沿** ——
+        // 预切换（`applyFocalTargetSilently`）**不置** `isLensSwitching`（那是"显示转场"的信号），
+        // 挂在它上面会让"打开刻度条 → 后台挂设备"这条路径永远不执行入口动作。
         environment.session.$isLensSwitching
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] switching in
+                self?.isLensSwitching = switching
+            }
+            .store(in: &cancellables)
+
+        // **形态落定边沿**（`form` 任何变化）→ 执行**待重放动作**（拍板 ① + 批四 ③）。
+        //
+        // 两条来源都会把 form 推到物理档，所以这一个边沿同时覆盖：
+        //   ① 真转场（begin → UI 淡入回调 → commit）；② 预切换（后台直挂，无转场）。
+        // 判据用 `form.isPhysical` + `pendingManualAction != nil`：
+        // 物理会话内换焦段（35↔48）也会发 form，但那时 pending 为空 → no-op。
+        environment.session.$form
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] form in
                 guard let self else { return }
-                // 先镜像给 UI（模糊浮层要看到 **true 边沿**；下面 pendingAction 只关心 false 边沿）
-                self.isLensSwitching = switching
-                guard !switching, let action = self.pendingManualAction else { return }
+                guard form.isPhysical, let action = self.pendingManualAction else { return }
                 self.pendingManualAction = nil
+                self.physicalFallbackTask?.cancel()
                 switch action {
                 case .toggleManualStrip(let kind):
                     self.stripAutoToggled(kind)
@@ -707,6 +753,9 @@ final class CameraViewModel: ObservableObject {
     private var isoShutterDraft: (iso: Double, seconds: Double)?
     private var whiteBalanceDraft: Double?
 
+    /// 松手后草稿的**超时兜底**任务（0.8s，见 `scheduleStripDraftTimeout`）
+    private var stripDraftTimeoutTask: Task<Void, Never>?
+
     /// ISO / 快门 是否处于**自动档** —— **派生自硬件真值**，不本地记账
     ///
     /// 为什么要回读而不是自己记：`exposureMode` 是同一个 device 实例上的真值，
@@ -777,6 +826,19 @@ final class CameraViewModel: ObservableObject {
         }
         Haptics.tick()
 
+        // **预切换**（2026-09-20 批四 · 用户要求 ③）：虚拟会话下展开刻度条时，
+        // 顺手把 `focal` 对应的**物理设备在后台挂好**（`applyFocalTargetSilently` 不置
+        // `isLensSwitching` ⇒ 无转场、无浮层）。
+        // 这样等用户真的点右端「手动」开关时，`form` 已经是物理 → **零转场**进手动档。
+        // 失败无害：真点手动时 `queueActionRequiringPhysical` 会走转场兜底。
+        if willExpand, let environment, environment.session.form == .virtual {
+            DebugLog.shared.debug("ui", "刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）")
+            environment.session.applyFocalTargetSilently(.physical(focal: focal))
+        }
+        // 参数界面开合会改变"回切防抖能不能生效"的判据 → 重新评估一次
+        // （开了 = 暂不回切；关了 = 起 2s 防抖切回虚拟）
+        evaluateRevertToVirtual(allAuto: isAllManualOff)
+
         DebugLog.shared.debug(
             "ui",
             "刻度条\(willExpand ? "展开" : "收起")（\(kind.displayName)）"
@@ -832,6 +894,44 @@ final class CameraViewModel: ObservableObject {
 
     private var pendingManualAction: PendingManualAction?
 
+    /// 预切换的**兜底定时器**（1.2s）：预切换没能把 form 推到物理档时，退回转场路径
+    /// —— 保证"点了手动开关 / 点对焦"永远有结果（本项目的"不做点了没反应"硬约束）。
+    private var physicalFallbackTask: Task<Void, Never>?
+
+    /// 参数界面（刻度条 / 对焦圆盘）是否开着。
+    ///
+    /// 用途：**预切换与回切防抖共用的一条闸门** ——
+    /// 预切换是在"打开刻度条 / 打开对焦盘"时先把物理设备挂好；
+    /// 若此刻回切防抖把设备换回虚拟，预切换就白做了。所以参数界面开着时不回切
+    /// （界面关掉时会再调一次 `evaluateRevertToVirtual`）。
+    private var isParamSurfaceOpen: Bool {
+        paramStrip != nil || isFocusDialShown
+    }
+
+    /// 排队一个"**先挂好物理设备、再执行**"的入口动作（拍板 ① + 批四 ③）。
+    ///
+    /// 两条通道（用户 2026-09-20 要求的转场边界：非焦段入口人眼无感）：
+    ///   ① **预切换**（`applyFocalTargetSilently`，不置 `isLensSwitching` ⇒ **完全无转场**）——
+    ///      绝大多数情况走这条（打开刻度条时设备就已经挂好了）；
+    ///   ② **兜底**：1.2s 内 `form` 仍未变成物理（预切换被跳过：录制中 / 会话未就绪 /
+    ///      真转场插队）→ 退回原来的 begin+commit 转场路径。宁可有一次模糊转场，
+    ///      也不能"点了没反应"。
+    private func queueActionRequiringPhysical(_ action: PendingManualAction) {
+        pendingManualAction = action
+        environment?.session.applyFocalTargetSilently(.physical(focal: focal))
+        physicalFallbackTask?.cancel()
+        physicalFallbackTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard !Task.isCancelled, let self else { return }
+            guard self.pendingManualAction != nil else { return }
+            DebugLog.shared.warn(
+                "ui",
+                "预切换 1.2s 未完成 → 退回转场路径（入口不能死在等待里）"
+            )
+            self.environment?.session.beginFocalSwitch(.physical(focal: self.focal))
+        }
+    }
+
     /// 右端「自动 / 手动」开关。
     ///
     /// ⚠️ **ISO 与快门共用一个开关**（原型 `state.auto.isoShutter`）：这是硬件约束 ——
@@ -840,18 +940,20 @@ final class CameraViewModel: ObservableObject {
     func stripAutoToggled(_ kind: ParameterStripKind) {
         guard let environment else { return }
 
-        // ⚠️ 入口分派（拍板 ①，`docs/20`）：**虚拟会话下点手动开关 = 切物理会话**，
-        // 转场完成后自动重放本开关（此时挂的是物理单摄，手动档立即可用）——
+        // ⚠️ 入口分派（拍板 ①，`docs/20`）：**虚拟会话下点手动开关 = 先挂物理会话**，
+        // 挂好后自动重放本开关（此时挂的是物理单摄，手动档立即可用）——
         // "置灰 + toast 不开盘"是虚拟设备时代的临时呈现，按需架构下退役。
         // 能力探测仍在 session 写入链兜底（setManualExposure 等的 throw）。
+        //
+        // 2026-09-20 批四 ③：换设备改走 **`queueActionRequiringPhysical`**（预切换优先、
+        // 转场兜底）—— 用户在刻度条展开时设备多半已经挂好，这里就是**零转场**。
         if environment.session.form == .virtual {
             DebugLog.shared.info(
                 "ui",
-                "点 \(kind.displayName) 手动开关 → 虚拟会话 → 切物理（完成后自动进手动档）"
+                "点 \(kind.displayName) 手动开关 → 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）"
             )
             showToast("正在切换到 \(focal.displayName) mm 物理镜头 · 完成后进入手动档")
-            pendingManualAction = .toggleManualStrip(kind)
-            environment.session.beginFocalSwitch(.physical(focal: focal))
+            queueActionRequiringPhysical(.toggleManualStrip(kind))
             return
         }
 
@@ -962,14 +1064,68 @@ final class CameraViewModel: ObservableObject {
         }
 
         if !isEditing {
-            // 松手：草稿清掉 → 显示交回**硬件真值**（异步回读一两帧内到，值本来就一致）
             DebugLog.shared.debug(
                 "ui",
                 "刻度条 \(kind.displayName) 松手吸附到 "
                     + ParameterStripCatalog.label(for: kind, value: value)
             )
-            isoShutterDraft = nil
-            whiteBalanceDraft = nil
+            // ⚠️ **草稿不在这里清**（2026-09-20 批四 · 修"卡点回弹"）：
+            // 立刻清 → 显示交回**还没更新**的硬件回读 → 条子弹回旧档再跳回来。
+            // 现在交给 `settleStripDrafts`（回读与本值一致才作废）+ 0.8s 超时兜底。
+            scheduleStripDraftTimeout()
+        }
+    }
+
+    /// 松手后草稿的"回读对齐"清账（订阅 `$manualExposure` / `$manualWhiteBalance` 调）。
+    ///
+    /// ## 判据与**渲染口径同源**：比"档位"而不是比"原始值"
+    ///
+    /// 刻度条把指针/气泡放在哪一档，靠的是 `ParameterStripCatalog.nearestStep`（最近档吸附）——
+    /// 所以"草稿可以作废"的正确判据是**回读值吸附到的档位 == 草稿吸附到的档位**，
+    /// 而不是两个 Double 逐位相等：设备对 ISO / 曝光时长有量化（写进去的值回来会差一点点），
+    /// 用逐位比较会**永远settle 不了**，草稿只能等 0.8s 超时被强清 —— 那又变回"回弹一下"。
+    private func settleStripDrafts(
+        exposure: (iso: Float, seconds: Double)?,
+        whiteBalance: (temperature: Float, tint: Float)?
+    ) {
+        if let draft = isoShutterDraft, let exposure {
+            let isoMatched = ParameterStripCatalog.nearestStep(
+                for: .iso, to: Double(exposure.iso)
+            ) == ParameterStripCatalog.nearestStep(for: .iso, to: draft.iso)
+            let secondsMatched = ParameterStripCatalog.nearestStep(
+                for: .shutter, to: exposure.seconds
+            ) == ParameterStripCatalog.nearestStep(for: .shutter, to: draft.seconds)
+            if isoMatched && secondsMatched {
+                isoShutterDraft = nil
+            }
+        }
+        if let draft = whiteBalanceDraft, let whiteBalance {
+            let matched = ParameterStripCatalog.nearestStep(
+                for: .whiteBalance, to: Double(whiteBalance.temperature)
+            ) == ParameterStripCatalog.nearestStep(for: .whiteBalance, to: draft)
+            if matched {
+                whiteBalanceDraft = nil
+            }
+        }
+        if isoShutterDraft == nil && whiteBalanceDraft == nil {
+            stripDraftTimeoutTask?.cancel()
+        }
+    }
+
+    /// 松手后草稿的**超时兜底**（0.8s）：回读始终没对齐（写入被 clamp / 被拒）时
+    /// 强制交回硬件真值 —— 宁可显示"设备实际值"，也不能让草稿永久压着显示。
+    private func scheduleStripDraftTimeout() {
+        stripDraftTimeoutTask?.cancel()
+        stripDraftTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled, let self else { return }
+            guard self.isoShutterDraft != nil || self.whiteBalanceDraft != nil else { return }
+            DebugLog.shared.debug(
+                "ui",
+                "刻度条草稿 0.8s 未与硬件回读对齐 → 强制交回硬件真值（写值可能被 clamp 过）"
+            )
+            self.isoShutterDraft = nil
+            self.whiteBalanceDraft = nil
         }
     }
 
@@ -1072,7 +1228,7 @@ final class CameraViewModel: ObservableObject {
         guard let environment else { return }
 
         // 不可用档位（**虚拟会话**：该机型镜头覆盖不到的档位，UI 置灰；物理会话下为空集，
-        // 因为跨镜头档走换设备、设备缺失由 applyFocalTarget 兜底报错）
+        // 因为跨镜头档走换设备、设备缺失由 performFocalSwitch 兜底报错）
         if environment.session.unavailableFocalIds.contains(preset.id) {
             Haptics.warning()
             DebugLog.shared.debug("ui", "焦段 \(preset.displayName)mm 在当前设备不可用（已置灰）")
@@ -1311,9 +1467,15 @@ final class CameraViewModel: ObservableObject {
     func focusDialTapped() {
         guard let environment else { return }
 
-        // ⚠️ 入口分派（拍板 ①，`docs/20`）：**虚拟会话下点「对焦」= 切物理会话**，
-        // 转场完成后自动开盘 —— B3b 的"toast 不开盘"呈现（虚拟设备时代的临时口径）
+        // ⚠️ 入口分派（拍板 ①，`docs/20`）：**虚拟会话下点「对焦」= 先挂物理会话**，
+        // 挂好后自动开盘 —— B3b 的"toast 不开盘"呈现（虚拟设备时代的临时口径）
         // 随按需架构退役。物理会话下 isManualFocusSupported = true，正常走开盘。
+        //
+        // 2026-09-20 批四 ③（用户要求"点对焦按钮人眼无感"）：换设备走
+        // **`queueActionRequiringPhysical`** —— 预切换优先（不显示转场），
+        // 1.2s 兜底退转场。⚠️ 换设备硬耗时 0.6~0.75s 是 AVFoundation 的固有代价，
+        // 所以这一步只能做到"**不出现转场/黑闪**"，做不到"零等待"；
+        // 想连等待都没有，唯一路径是**打开刻度条时就已经预切换好**（本文件同款逻辑）。
         if !environment.session.isManualFocusSupported {
             guard environment.session.form == .virtual else {
                 // 物理会话仍探测失败 —— 理论不可达（物理单摄支持手动对焦），诚实兜底
@@ -1326,11 +1488,10 @@ final class CameraViewModel: ObservableObject {
             }
             DebugLog.shared.info(
                 "ui",
-                "点「对焦」→ 虚拟会话 → 切物理（完成后自动打开对焦圆盘）"
+                "点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）"
             )
             showToast("正在切换到 \(focal.displayName) mm 物理镜头 · 完成后打开对焦圆盘")
-            pendingManualAction = .openFocusDial
-            environment.session.beginFocalSwitch(.physical(focal: focal))
+            queueActionRequiringPhysical(.openFocusDial)
             return
         }
 
@@ -1368,6 +1529,8 @@ final class CameraViewModel: ObservableObject {
             DebugLog.shared.debug("ui", "对焦圆盘收起（入口：图标行「对焦」）")
             showToast("已收起对焦圆盘")
         }
+        // 参数界面开合 → 重新评估回切防抖（开 = 暂不回切；关 = 起 2s 防抖切回虚拟）
+        evaluateRevertToVirtual(allAuto: isAllManualOff)
     }
 
     /// 对焦圆盘拖动（**每跨 0.01 一次**；`isEditing` 在拖动开始/结束由控件上报）。
@@ -1402,14 +1565,47 @@ final class CameraViewModel: ObservableObject {
     ///   实时走（不需要原型的模拟动画 —— 那是"原型没有真硬件"的代偿）。
     /// - 关：把**当前读数**写成锁定值（`setManualFocus`），数值停在原地恢复拖动
     ///   （原型同款："关 → 立刻停住，数值停在当前值"）。
+    ///
+    /// ## ⚠️ 锁定值有效性守卫（2026-09-20 批四 · 🔴 问题 4 ①）
+    ///
+    /// **真机事故**：120mm 档下关「自动对焦」→ 日志「自动对焦已关 → 手动（当前值 **0.00** 锁定）」
+    /// → 焦点被锁死在**最近端**、画面全跑焦；而此后所有点按都走"仅测光"（拍板 ③ 不改 `focusMode`）
+    /// → **整场 40 次点按，没有任何出路恢复对焦**。
+    ///
+    /// 0.00 从哪来：换到 120mm 物理单摄后新设备的 `lensPosition` 还没收敛（冷帧读回 0），
+    /// 或镜头真被推到最近端。**两者都不该被当成"用户想锁的对焦距离"**。
+    ///
+    /// 判据（与本项目"能被系统自己改写的状态只能当读数"同一条纪律）：
+    /// **推断出来的值要守卫，用户显式给的值不守卫** ——
+    ///   - 本条（"关自动开关"是**推断**"就锁在现在这里"）→ 读数无效就**不写手动档**、保持自动 + toast；
+    ///   - 圆盘拖动（用户**显式**拖到 0.00）→ 照写不误（那是用户的真实意图）。
     func focusAutoToggled() {
         guard let environment else { return }
         if isFocusAuto {
-            environment.session.setManualFocus(lensPosition: Float(focusLensPosition))
+            // 用 **session 真值**判定（不读 VM 的显示值：回写闸门可能让它停在旧读数上）
+            let reading = environment.session.currentLensPosition
+            guard Self.isValidFocusLockReading(reading) else {
+                DebugLog.shared.warn(
+                    "ui",
+                    "关自动对焦被拒：对焦读数无效（\(String(format: "%.2f", reading))，"
+                        + "0.00 端点 / 非有限值不当「当前值」锁定）→ 保持自动对焦"
+                )
+                showToast(
+                    "对焦读数尚未就绪（\(String(format: "%.2f", reading))）→ 保持自动对焦；"
+                        + "先点按取景器对焦，或直接拖动圆盘手动调"
+                )
+                Haptics.warning()
+                return
+            }
+            // 显示值与真值对齐后再写（拖动/回读可能让两者错开）
+            if abs(focusLensPosition - Double(reading)) > 0.001 {
+                focusLensPosition = Double(reading)
+            }
+            environment.session.setManualFocus(lensPosition: reading)
             Haptics.tick()
             DebugLog.shared.debug(
                 "ui",
-                "自动对焦已关 → 手动（当前值 \(String(format: "%.2f", focusLensPosition)) 锁定）"
+                "自动对焦已关 → 手动（当前值 \(String(format: "%.2f", reading)) 锁定）"
             )
             showToast("自动对焦已关：现在可以拖动圆盘手动调焦")
         } else {
@@ -1419,6 +1615,18 @@ final class CameraViewModel: ObservableObject {
             showToast("自动对焦已开：正在自动找焦点（手动拖动已锁定）")
         }
     }
+
+    /// 对焦读数是否**可以作为手锁值**（`focusAutoToggled` 的守卫判据）。
+    ///
+    /// 有效 = `finite` 且**严格大于** `focusLockMinValid`。
+    /// 为什么排掉 0.00 端点：那是"最近端 / 未收敛"的表达，锁上去必然跑焦（批三真机事故）。
+    /// 上界（1.0 = 无穷远）**不排**：锁在无穷远是完全合法的用户选择。
+    static func isValidFocusLockReading(_ value: Float) -> Bool {
+        value.isFinite && value > focusLockMinValid
+    }
+
+    /// 手锁值下限：0.00 ~ 0.01 视作"最近端死区"（含换镜头后的冷帧读数）
+    private static let focusLockMinValid: Float = 0.01
 
     // MARK: - 回切防抖（预检 ① · docs/20 第四节）
 
@@ -1435,21 +1643,33 @@ final class CameraViewModel: ObservableObject {
     }
 
     /// 三意图态合并的观察回调：全空 + 物理会话 + 非录制 → 起 2s 防抖；任一条件破坏 → 取消。
+    ///
+    /// ⚠️ **参数界面开着时不回切**（2026-09-20 批四 · 预切换的前提）：
+    /// 预切换正是在"打开刻度条 / 对焦盘"时把物理设备挂好；此刻回切会把成果冲掉
+    /// （白做一次换设备 + 多一次转场）。界面关掉的各入口会再调一次本方法。
     private func evaluateRevertToVirtual(allAuto: Bool) {
         guard let environment else { return }
         revertDebounceTask?.cancel()
         guard allAuto, environment.session.form.isPhysical, !isRecording else { return }
+        guard !isParamSurfaceOpen else {
+            DebugLog.shared.debug("ui", "全手动档退出但参数界面开着 → 暂不回切（保预切换成果）")
+            return
+        }
 
         let seconds = Double(Theme.Size.dialRevertDebounce)
         revertDebounceTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled, let self else { return }
-            guard self.isAllManualOff, !self.isRecording else { return }
+            guard self.isAllManualOff, !self.isRecording, !self.isParamSurfaceOpen else { return }
             DebugLog.shared.info(
                 "ui",
-                "全手动档退出 \(Int(seconds))s → 切回虚拟多摄（B1 平滑变焦恢复）"
+                "全手动档退出 \(Int(seconds))s → 切回虚拟多摄（B1 平滑变焦恢复 · **静默无转场**）"
             )
-            self.environment?.session.beginFocalSwitch(.virtual(focal: self.focal))
+            // ⚠️ **走静默换形态**（2026-09-20 批四 ③）：回切是 App 自己的收尾动作，
+            // 不是用户的焦段操作 —— 按"只有切焦段有转场"的口径，它不该闪一次模糊。
+            // 同一焦距下虚拟与物理的取景一致（两边都对齐到同一档），所以静默换过去
+            // 画面不跳；代价只是换 input 本身那 0.6~0.75s 停顿（此刻用户没在等切换）。
+            self.environment?.session.applyFocalTargetSilently(.virtual(focal: self.focal))
         }
     }
 
@@ -1630,7 +1850,10 @@ final class CameraViewModel: ObservableObject {
         // 收起刻度条时草稿一并作废（否则下次展开会先闪一下旧草稿值）
         isoShutterDraft = nil
         whiteBalanceDraft = nil
+        stripDraftTimeoutTask?.cancel()
         Haptics.tick()
+        // 参数界面全关 → 重新评估回切防抖
+        evaluateRevertToVirtual(allAuto: isAllManualOff)
     }
 
     // MARK: - 功能面板（#10）
@@ -1697,6 +1920,8 @@ final class CameraViewModel: ObservableObject {
         guard isFocusDialShown else { return }
         DebugLog.shared.debug("ui", "对焦圆盘收起（点别处）")
         isFocusDialShown = false
+        // 参数界面关了 → 重新评估回切防抖（全自动档时 2s 后切回虚拟）
+        evaluateRevertToVirtual(allAuto: isAllManualOff)
     }
 
     /// 点别处收起**参数刻度条**（与 #10 / #11 同款"逐点接线"）
@@ -1709,6 +1934,9 @@ final class CameraViewModel: ObservableObject {
         paramStrip = nil
         isoShutterDraft = nil
         whiteBalanceDraft = nil
+        stripDraftTimeoutTask?.cancel()
+        // 参数界面关了 → 重新评估回切防抖
+        evaluateRevertToVirtual(allAuto: isAllManualOff)
     }
 
     /// 面板第 1 格「实况」：照片模式下是否采集 Live Photo（只记状态 + 角标，接线属 B 组）

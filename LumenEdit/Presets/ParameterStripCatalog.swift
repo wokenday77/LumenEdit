@@ -44,6 +44,33 @@ struct ParameterStripStep: Identifiable, Equatable {
     var id: Double { value }
 }
 
+// MARK: - 刻度层级（视觉）
+
+/// 刻度线的**视觉层级** —— 原型 CSS `.sp-tick` 的四档，**逐字对齐原型**：
+///
+/// | 档 | 原型选择器 | 高 | 颜色 |
+/// |---|---|---|---|
+/// | `minor` | `.sp-tick` | 10 | `rgba(255,255,255,.34)` |
+/// | `mid` | `.sp-tick.mid` | **15** | `rgba(255,255,255,.48)` |
+/// | `major` | `.sp-tick.major` | 22 | `rgba(255,255,255,.82)` |
+/// | `preset` | `.sp-tick.preset` | 22 | `rgba(242,175,60,.85)` |
+///
+/// ## 为什么要有这个枚举（2026-09-20 批四，用户批三实测"细密度没生效"）
+///
+/// 原型的四档 CSS 一直都在，但 `renderStrip` 的 JS 只给 `major` / `preset` 打了类 ——
+/// `mid` 那一层**定义了却没人用**。Swift 侧照着 JS 抄，于是"主档之间的细刻度"只能
+/// 自己发明：1px 宽 / 20% 白 / 半高发丝线（`ParameterStripView` 旧实现）。
+/// 结果就是用户看到的"细线太淡 + 档距偏疏 + 白平衡无层级区分"。
+///
+/// **现在把原型那一层用起来**：细刻度 = `mid`（15pt / 48% / 1.5pt 宽），
+/// 层级由**高度 + 对比度**同时表达，不再靠"更细更淡"。
+enum ParameterStripTickTier: String, CaseIterable {
+    case minor
+    case mid
+    case major
+    case preset
+}
+
 // MARK: - 目录（单一真源）
 
 /// 参数刻度条数据 —— 三条条的**档位表 / 数值格式 / 可视步进 / 标签档 / 预设档**。
@@ -174,6 +201,59 @@ enum ParameterStripCatalog {
         case .shutter: return shutterSecondValues.count
         case .whiteBalance: return whiteBalanceValues.count
         }
+    }
+
+    // MARK: 刻度层级（渲染用；不参与与设备的"能力求交"）
+
+    /// 某个档位的刻度层级（**只依赖档位数据本身**，不依赖设备当前值）。
+    ///
+    /// 规则（三条各一条理由，都写在注释里，避免以后被"顺手统一"掉）：
+    ///
+    /// - **带数字的档 = `major`**（原型 `labelAt` 判据）—— 与原型逐条一致。
+    /// - **预设档 = `preset`**（白平衡 5 个琥珀档）—— ⚠️ 优先级**高于** `major`：
+    ///   原型 `.sp-tick.preset` 与 `.major` 同为 22pt，颜色覆盖。5200K 只出现在预设里
+    ///   （不是 500K 的整数倍 → 原型 `labelAt` 不含它）—— 旧实现让它只改色不改高（10pt），
+    ///   那是**偏离原型**，本轮修正为 22pt。
+    /// - **ISO 的整档（1 EV 步，即每 3 个 1/3 档）= `mid`**：`ISO_STRIP` 是约 1/3 档等比
+    ///   （50,64,80,100,125,160,200,…），`index % 3 == 0` 恰好是 50/100/200/400/800/1600/
+    ///   3200/6400/12000 —— 与"整档 ISO"逐项吻合。剩下的是 1/3 档 → `minor`。
+    ///   ⚠️ **ISO 不再加"合成细线"**：它那 25 条就是真实的 1/3 档档位（可吸附），
+    ///   再塞视觉细分线会与真实档位混淆 —— 层级靠 `mid/major` 表达就够了。
+    /// - **白平衡非整百五档 = `mid`**：76 档每 100K 一条，每 5 条（500K）带数字 =
+    ///   `major`，中间 4 条 = `mid` —— 这样才有"层级"（旧实现：除了 major 全是
+    ///   同一个 10pt 灰线，用户实测"无层级区分"）。
+    /// - **快门 15 档全部带数字**（原型 `labelAt: SHUTTER_LABEL.slice()`）→ 全部 `major`；
+    ///   它的"细刻度"是**档间半档**（`ParameterStripView` 里的合成 `mid` 线，
+    ///   见 `halfStepOffsets(for:)`）。
+    static func tickTier(
+        for kind: ParameterStripKind,
+        index: Int,
+        step: ParameterStripStep
+    ) -> ParameterStripTickTier {
+        if step.isPreset { return .preset }
+        if step.showsLabel { return .major }
+        switch kind {
+        case .iso:
+            return index % 3 == 0 ? .mid : .minor
+        case .shutter:
+            // 快门 15 档全是 labelAt → 走不到这里；真走到了也按 minor 兜底
+            return .minor
+        case .whiteBalance:
+            return .mid
+        }
+    }
+
+    /// 需要**合成档间细刻度**的条：只有快门。
+    ///
+    /// 为什么只有它：快门的 15 个档全是"主档"（都带数字、都 22pt），档距 56pt ——
+    /// 一条只有 15 根等高线的刻度条**看着就是稀疏**（用户批三"档距偏疏"）。
+    /// 补 14 条**半档位置**的 `mid` 线（`slot / 2` 处），密度翻倍、层级自然出现。
+    ///
+    /// ⚠️ **这些线不参与吸附**（刻度条永远是离散档位吸附）—— 它们是纯视觉细分，
+    /// 与真实档位线（`major` 82% 白）在高度/亮度上明确区分，不会让人误判"拖到这里会停"。
+    /// ISO（25 档 / 46pt）与白平衡（76 档 / 26pt）档距本就够密，**不加**合成线。
+    static func hasHalfStepTicks(_ kind: ParameterStripKind) -> Bool {
+        kind == .shutter
     }
 
     // MARK: 数值格式（与原型 `fmt` 逐字对齐）

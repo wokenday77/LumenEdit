@@ -53,23 +53,29 @@ struct ParameterStripGeometry {
 /// ## 版式（对齐原型，见 `docs/16` 第四.1 节）
 ///
 /// ```
-/// ├───────────────── 面板高 88 ──────────────────┼── 64 ──┤
+/// ├───────────────── 面板高 84 ──────────────────┼── 64 ──┤
 /// │         气泡（绿底黑字，钉在指针上方）22        │ 开关 47×29 │
 /// │             ▼ 指针三角 6×8                  30 │  「自动」   │
 /// │             │ 竖线 1.5                         │           │
-/// │  刻度 48–70（普通 10 / 主刻度 22 / WB 预设琥珀）  │           │
-/// │  数字 73–86                                    │           │
+/// │  刻度 46–68：四档层级（底边同一条基线）          │           │
+/// │      minor 10 / mid 15 / major 22 / preset 22   │           │
+/// │  数字 71.5–82                                  │           │
 /// └────────────────────────────────────────────────┴───────────┘
 /// ```
 ///
 /// ## 三个**刻意偏离原型**的点（都有理由）
 ///
-/// 1. **面板高 88（原型 96）**：净可见账卡出来的上限，见 `Theme.Size.paramStripHeight`
-/// 2. **加触觉 + 换档滞后**（原型的 `pointermove` **没有任何节流**）：沿用 `ParameterSlider`
-///    已验证的 `0.15s` / `0.75` 档（用户 2026-09-19 拍板 ⑤）。白平衡有 76 档、
-///    每档 26pt，不加滞后在边界上必然"连响"（`docs/11` 第七节踩过同一坑）
+/// 1. **面板高 84（原型 96）**：净可见账卡出来的上限，见 `Theme.Size.paramStripHeight`
+/// 2. **加触觉节流**（原型的 `pointermove` **没有任何节流**）：沿用 `ParameterSlider`
+///    已验证的 `0.15s`（用户 2026-09-19 拍板 ⑤）。白平衡有 76 档、每档 26pt，
+///    不加节流在边界上必然"连响"（`docs/11` 第七节踩过同一坑）。
+///    ⚠️ 换档"0.75 档滞后"已于 2026-09-20 删除（上报与吸附必须**同源 round**）
 /// 3. **指针与气泡 `allowsHitTesting(false)`**：拖动必须落到刻度区，指针不许抢触摸
 ///   （原型 `.sp-pointer{ pointer-events:none }`）
+///
+/// ⚠️ **刻度层级四档**（`minor/mid/major/preset`）不是本视图发明的 —— 原型
+/// `.sp-tick` / `.sp-tick.mid` / `.sp-tick.major` / `.sp-tick.preset` 四条 CSS 就是它，
+/// 只是原型的 JS 渲染只用了后两档。分级规则在 `ParameterStripCatalog.tickTier`。
 ///
 /// ## 分工
 ///
@@ -108,8 +114,13 @@ struct ParameterStripView: View {
     /// **触觉节流**：0.15s（与 `ParameterSlider` 一致；自检第 12 组守这个量级）
     private static let tickThrottle: TimeInterval = 0.15
 
-    /// **跟手倍率**（2026-09-20 Mac 复验 🟠问题 3，用户拍板 1.5:1；安全边界 ≤2:1）：
-    /// 指尖移动 1.5 个档距，盘面走 1 档（原逐档跟手实测"1 秒连推 5 档"太灵敏）
+    /// **跟手倍率**（2026-09-20 Mac 复验 🟠问题 3，用户拍板 1.5:1；安全边界 ≤2:1）。
+    ///
+    /// ⚠️ **方向**（批四修正）：这一版是**乘**不是除 ——
+    /// 「提高跟手倍率」= 指尖 1pt → 盘面走 1.5pt（走一档只需指尖移动 1/1.5 个档距）。
+    /// 批三那版写成 `translation.width / dragGain`，等于指尖要拖 1.5 个档距才走一档
+    /// —— **比改前更钝**（Mac 实锤 B：证据是"同一个值重复推 5 次"，指向不灵敏，
+    /// 不是注释里误读的"太灵敏"）。
     private static let dragGain: Double = 1.5
 
     // MARK: - 几何（从令牌推导，不在视图里写死数字）
@@ -162,20 +173,28 @@ struct ParameterStripView: View {
 
     private func scaleArea(geometry: ParameterStripGeometry) -> some View {
         ZStack(alignment: .topLeading) {
-            // 半档细刻度（2026-09-20 Mac 复验 🟠问题 4，参考图口径）：两档之间的视觉细线。
-            // 仅 ISO / 快门加 —— 白平衡是 100K 步进的**真实档位**刻度（76 档，非主档 tick
-            // 天然覆盖"每 100K 一条"），再加半档线会与档位 tick 重叠。
-            if kind == .iso || kind == .shutter {
-                ForEach(0..<(steps.count - 1), id: \.self) { gap in
+            // 档间**半档细刻度**（原型的 `.sp-tick.mid` 层级；2026-09-20 批四）。
+            //
+            // ⚠️ 与批三那版（1px 宽 / 20% 白 / 半高发丝线）的区别就在这里：那是自创的
+            // "更细更淡"，用户实测**外形没有变化**（太淡 + 档距偏疏）。现在用原型四档里的
+            // `mid`：15pt 高 / 48% 白 / 1.5pt 宽 —— 层级由高度 + 对比度同时表达。
+            //
+            // 只有**快门**加（`hasHalfStepTicks`）：它 15 档全是主档、档距 56pt，最疏。
+            // ISO 的 25 条本身就是 1/3 档真实档位、白平衡 26pt 有 76 档 —— 都不加合成线
+            // （理由见 `ParameterStripCatalog.hasHalfStepTicks` / `tickTier`）。
+            // ⚠️ 这些线**不参与吸附**：吸附永远落在 `steps` 里的真实档位。
+            if ParameterStripCatalog.hasHalfStepTicks(kind) {
+                ForEach(0..<max(0, steps.count - 1), id: \.self) { gap in
                     let x = geometry.padding + (CGFloat(gap) + 0.5) * geometry.slot
-                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
-                        .fill(Color.white.opacity(isAuto ? 0.10 : 0.20))
-                        .frame(width: 1, height: Theme.Size.paramStripTickHeight / 2)
+                    let h = Theme.Size.paramStripTickMidHeight
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(tickFill(for: .mid, isUnavailable: false))
+                        .frame(width: Theme.Size.paramStripTickWidth, height: h)
                         .position(
                             x: x,
                             y: Theme.Size.paramStripHeight
                                 - Theme.Size.paramStripTickBottomInset
-                                - Theme.Size.paramStripTickHeight / 4
+                                - h / 2
                         )
                 }
             }
@@ -219,18 +238,19 @@ struct ParameterStripView: View {
     }
 
     /// 单个档位的内容：刻度线 + （可选）数字。都用 `.position` 定位在刻度条坐标系里。
+    ///
+    /// 刻度**高度 = 层级**（原型四档：minor 10 / mid 15 / major 22 / preset 22），
+    /// 底边全部对齐同一条基线（`paramStripTickBottomInset`）—— 层级靠"往上长"表达。
     @ViewBuilder
     private func tickContent(at index: Int, geometry: ParameterStripGeometry) -> some View {
         let step = steps[index]
         let x = geometry.padding + CGFloat(index) * geometry.slot
-        let isMajor = step.showsLabel
-        let tickHeight = isMajor
-            ? Theme.Size.paramStripTickMajorHeight
-            : Theme.Size.paramStripTickHeight
         let isUnavailable = unavailableValues.contains(step.value)
+        let tier = ParameterStripCatalog.tickTier(for: kind, index: index, step: step)
+        let tickHeight = height(for: tier)
 
         RoundedRectangle(cornerRadius: 1, style: .continuous)
-            .fill(tickColor(step: step, isMajor: isMajor, isUnavailable: isUnavailable))
+            .fill(tickFill(for: tier, isUnavailable: isUnavailable))
             .frame(width: Theme.Size.paramStripTickWidth, height: tickHeight)
             .position(
                 x: x,
@@ -239,7 +259,9 @@ struct ParameterStripView: View {
                     - tickHeight / 2
             )
 
-        if isMajor {
+        // 数字只挂在**带标签**的档上（原型 `labelAt`）—— 注意这与层级是两件事：
+        // `preset` 档（如 5200K）有 22pt 的线但**不出数字**。
+        if step.showsLabel {
             Text(step.label)
                 .font(.system(size: Theme.Size.paramStripNumberFontSize, design: .rounded))
                 .foregroundStyle(numberColor(isUnavailable: isUnavailable))
@@ -254,11 +276,27 @@ struct ParameterStripView: View {
         }
     }
 
-    /// 刻度线颜色：自动态压暗 → 不可用档压暗 → 白平衡预设档（琥珀）→ 主刻度 → 普通
-    private func tickColor(step: ParameterStripStep, isMajor: Bool, isUnavailable: Bool) -> Color {
+    /// 层级 → 刻度线高（三档高度全部来自原型 CSS；`major` 与 `preset` 同高）
+    private func height(for tier: ParameterStripTickTier) -> CGFloat {
+        switch tier {
+        case .minor: return Theme.Size.paramStripTickHeight
+        case .mid: return Theme.Size.paramStripTickMidHeight
+        case .major, .preset: return Theme.Size.paramStripTickMajorHeight
+        }
+    }
+
+    /// 刻度线颜色：自动态 / 不可用档压暗 → 白平衡预设档（琥珀）→ 中间档 → 主刻度 → 普通
+    ///
+    /// ⚠️ 顺序有讲究：**自动态 / 不可用档优先**（整条压暗是"当前不可调"的统一表达），
+    /// 预设档在它之后 —— 否则自动态下还会冒出几根琥珀线，与"整条不可调"矛盾。
+    private func tickFill(for tier: ParameterStripTickTier, isUnavailable: Bool) -> Color {
         if isAuto || isUnavailable { return Theme.Palette.stripInactive }
-        if step.isPreset { return Theme.Palette.stripTickPreset }
-        return isMajor ? Theme.Palette.stripTickMajor : Theme.Palette.stripTick
+        switch tier {
+        case .preset: return Theme.Palette.stripTickPreset
+        case .major: return Theme.Palette.stripTickMajor
+        case .mid: return Theme.Palette.stripTickMid
+        case .minor: return Theme.Palette.stripTick
+        }
     }
 
     private func numberColor(isUnavailable: Bool) -> Color {
@@ -406,9 +444,11 @@ struct ParameterStripView: View {
                 }
 
                 let range = geometry.offsetRange
-                // 跟手倍率（2026-09-20 Mac 复验 🟠问题 3，用户拍板 1.5:1，安全边界 ≤2:1）：
-                // 指尖移动 1.5 个档距 = 盘面走 1 档 —— 原来逐档实锤"1 秒连推 5 档"太灵敏。
-                let raw = dragStartOffset + gesture.translation.width / Self.dragGain
+                // 跟手倍率（2026-09-20 批四修正方向：**乘**，用户拍板 1.5:1，安全边界 ≤2:1）：
+                // 指尖移 1pt → 盘面走 1.5pt ⇒ 走一档只需指尖移动 1/1.5 个档距（更跟手）。
+                // ⚠️ 批三是 `/ Self.dragGain`（指尖要拖 1.5 个档距才走一档 = 更钝），
+                //    那是 Mac 实锤 B 的方向写反，别改回去。
+                let raw = dragStartOffset + gesture.translation.width * Self.dragGain
                 dragOffset = min(max(raw, range.lowerBound), range.upperBound)
 
                 // 跨档判定（**与松手吸附同源**：都用 `round(position)`，2026-09-20 修"回弹一档"）：

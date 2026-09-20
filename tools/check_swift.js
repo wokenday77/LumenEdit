@@ -1385,18 +1385,18 @@ if (!focalFile || !capFile || !configuratorFile || !stripFile) {
   }
 
   // ⑤ **变焦路径不得重建会话**（2026-09-20 预检 ⑦ 改口：物理会话的换设备**必须**增删
-  //    input，但只允许在 applyFocalTarget / beginFocalSwitch / commitFocalSwitch 三个
-  //    形态方法里 —— 变焦路径 setZoomFactor 仍不得碰配置）
+  //    input，但只允许在 `performFocalSwitch`（三个调用者：beginFocalSwitch /
+  //    commitFocalSwitch / applyFocalTargetSilently）里 —— 变焦路径 setZoomFactor 仍不得碰配置）
   const zoomBody = methodBodyOf(sessionSrc, 'setZoomFactor');
   if (!zoomBody) {
     bad('找不到 CaptureSessionController.setZoomFactor');
   } else if (/beginConfiguration|addInput|removeInput|commitConfiguration/.test(zoomBody)) {
     bad('setZoomFactor 里出现了会话配置变更 —— 变焦**不该重建会话**（换设备是形态切换的事，'
-      + '只允许发生在 applyFocalTarget / beginFocalSwitch / commitFocalSwitch）');
+      + '只允许发生在 performFocalSwitch 一处执行体）');
   } else if (!/applyFocal/.test(sessionSrc)) {
     bad('找不到 applyFocal（档位 → zoom 的换算入口）');
   } else {
-    ok('变焦路径只做 lock → ramp → unlock；input 增删只归形态切换三方法（预检 ⑦ 改口）');
+    ok('变焦路径只做 lock → ramp → unlock；input 增删只归形态切换执行体（预检 ⑦ 改口）');
   }
 
   // ⑥ 焦段条命中高仍为条高 44（药丸视觉 30，别把命中高改成药丸高）
@@ -1935,10 +1935,13 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     const sessSupportOK = /@Published private\(set\) var isManualExposureSupported/.test(sessSrc12)
       && /@Published private\(set\) var isManualWhiteBalanceSupported/.test(sessSrc12);
     // ⚠️ 2026-09-20 拍板 ①（docs/20）：B2 的"能力闸门"（置灰 + toast 不开盘）被**入口分派**
-    // 取代 —— 虚拟会话点手动开关 = 切物理 → 转场完成自动进手动档（唯一可达路径）。
+    // 取代 —— 虚拟会话点手动开关 = 先挂物理 → 完成后自动进手动档（唯一可达路径）。
+    // ⚠️ 批四 ③：换设备从 `beginFocalSwitch`（转场）改成 `queueActionRequiringPhysical`
+    // （**预切换优先**：刻度条展开时设备已挂好 ⇒ 零转场；1.2s 未完成才退回转场）。
+    // 判据跟着改成"入口分派三要素"，不再钉死具体调用名。
     const vmGateOK = !!toggleBody16
       && /form == \.virtual/.test(toggleBody16)
-      && /beginFocalSwitch\(/.test(toggleBody16)
+      && /queueActionRequiringPhysical\(\.toggleManualStrip/.test(toggleBody16)
       && /showToast\(/.test(toggleBody16);
     if (!wbGuardOK) {
       bad('`setManualWhiteBalance` 的能力守卫不是 `isLockingWhiteBalanceWithCustomDeviceGainsSupported`'
@@ -2255,20 +2258,27 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + 'commitFocalSwitch（预检 ⑦）');
     }
 
-    // b) 搬运顺序（预检 ⑥ 可执行化）：commitFocalSwitch 体内 `applyPreferredFormatLocked`
-    //    必须出现在 `reapplyManualStateLocked` **之前**（clamp 依赖新 activeFormat，铁律 1）
-    const commitBody19 = methodBodyOf(sessionSrc19, 'commitFocalSwitch');
+    // b) 搬运顺序（预检 ⑥ 可执行化）：换设备体内 `applyPreferredFormatLocked`
+    //    必须出现在 `reapplyManualStateLocked` **之前**（clamp 依赖新 activeFormat，铁律 1）。
+    //    ⚠️ 2026-09-20 批四：换设备主体已从 `commitFocalSwitch` 抽成 **`performFocalSwitch`**
+    //    （真实转场与后台预切换共用一份执行体）—— 断言对象跟着改到新方法上，
+    //    同时要求 `commitFocalSwitch` 确实**调用**它（不然抽出来就成了死代码）。
+    const switchBody19 = methodBodyOf(sessionSrc19, 'performFocalSwitch');
     let orderOK = false, orderDetail = '';
-    if (commitBody19) {
-      const iFmt = commitBody19.indexOf('applyPreferredFormatLocked');
-      const iRe = commitBody19.indexOf('reapplyManualStateLocked');
-      if (iFmt < 0) { orderDetail = 'commitFocalSwitch 里没有 applyPreferredFormatLocked'; }
-      else if (iRe < 0) { orderDetail = 'commitFocalSwitch 里没有 reapplyManualStateLocked（搬运丢了）'; }
+    if (switchBody19) {
+      const iFmt = switchBody19.indexOf('applyPreferredFormatLocked');
+      const iRe = switchBody19.indexOf('reapplyManualStateLocked');
+      if (iFmt < 0) { orderDetail = 'performFocalSwitch 里没有 applyPreferredFormatLocked'; }
+      else if (iRe < 0) { orderDetail = 'performFocalSwitch 里没有 reapplyManualStateLocked（搬运丢了）'; }
       else if (iFmt > iRe) { orderDetail = 'applyFormat 在搬运之后（clamp 拿到的是旧格式）'; }
       else { orderOK = true; }
     }
-    if (!orderOK) {
-      bad('搬运顺序错（预检 ⑥）：' + (orderDetail || '找不到 commitFocalSwitch 顺序'));
+    const commitBody19 = methodBodyOf(sessionSrc19, 'commitFocalSwitch');
+    const commitDelegates = !!commitBody19
+      && /performFocalSwitch\(target, throughTransition: true\)/.test(commitBody19);
+    if (!orderOK || !commitDelegates) {
+      bad('搬运顺序错（预检 ⑥）：' + (orderDetail
+        || 'commitFocalSwitch 没有把换设备委托给 performFocalSwitch(target, throughTransition: true)'));
     }
 
     // c) 搬运清单齐全（预检 ④⑤）：曝光 / 白平衡 / EV / 对焦降级 四项
@@ -2298,6 +2308,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     }
 
     // e) 回切防抖（预检 ①）：令牌存在 + 量级 [1,5]s + 三态判据（判据封装在 `isAllManualOff`）
+    //    ⚠️ 批四 ③：切回动作改用 `applyFocalTargetSilently`（静默无转场）—— 见 n1b。
     const themeSrc19 = fs.readFileSync(themeFile2, 'utf8');
     const mDebounce = /dialRevertDebounce:\s*CGFloat\s*=\s*([0-9.]+)/.exec(themeSrc19);
     const debounceVal = mDebounce ? parseFloat(mDebounce[1]) : null;
@@ -2306,7 +2317,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
     const revertOK = debounceVal !== null && debounceVal >= 1 && debounceVal <= 5
       && !!vmRevert19
       && /isAllManualOff/.test(vmRevert19)
-      && /beginFocalSwitch\(/.test(vmRevert19)
+      && /applyFocalTargetSilently\(/.test(vmRevert19)
       // isAllManualOff 是计算属性（非 func）→ 用全文三态判据（三项同现才算齐）
       && /manualExposure == nil/.test(vmSrc12)
       && /manualWhiteBalance == nil/.test(vmSrc12)
@@ -2401,24 +2412,53 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + ' —— 物理会话不走虚拟阶梯，zoom 直接取 zoomFactorOnPhysicalDevice');
     }
 
-    //    m1（🔴复验批二问题1）：搬运 EV 必须有"手动档跳过"条件（applyExposureBias 见 .custom
-    //       会回切自动 → 先搬 ISO 再搬 EV = 手动档被自己杀掉，4 次 WRN 实锤）
+    //    m1（🔴复验批二问题1 + 批四实锤 A）：搬运链必须"**先归一、再重放、EV 只在自动档推**"
+    //        —— ① 有 `normalizeToAutoLocked(on: newDevice)`（清新设备上一轮 .custom/.locked 残留）；
+    //           ② 它必须出现在 `applyExposureBias(` **之前**（顺序 = 语义：先清残留再推 EV，
+    //              否则 EV 推送照旧撞上残留的 .custom → 回切自动 + WRN，实锤 A 原样复发）；
+    //           ③ EV 重放仍在 `if previousExposure == nil` 分支内。
+    const normOK1 = !!reapplyBody19
+      && /normalizeToAutoLocked\(on: newDevice\)/.test(reapplyBody19);
+    const normBeforeEv = !!reapplyBody19
+      && reapplyBody19.indexOf('normalizeToAutoLocked(on: newDevice)') >= 0
+      && reapplyBody19.indexOf('normalizeToAutoLocked(on: newDevice)')
+         < reapplyBody19.indexOf('applyExposureBias(');
     const evSkipOK = !!reapplyBody19
-      && /if previousExposure == nil \{[\s\S]{0,400}?applyExposureBias\(/.test(reapplyBody19);
-    if (!evSkipOK) {
+      && /if previousExposure == nil \{/.test(reapplyBody19)
+      && /applyExposureBias\(previousBias, to: newDevice\)/.test(reapplyBody19);
+    if (!normOK1) {
+      bad('换设备搬运缺"先把新设备归一到自动档"（🔴 实锤 A：新设备可能自带上一轮遗留的 .custom，'
+        + '推 EV 时被 applyExposureBias 回切 + 打 WRN）—— 调 normalizeToAutoLocked(on: newDevice)');
+    } else if (!normBeforeEv) {
+      bad('归一不在 EV 重放之前（顺序错 = 实锤 A 原样复发：EV 推送先撞上残留的 .custom，'
+        + '归一白做）');
+    } else if (!evSkipOK) {
       bad('搬运 EV 没有"手动档跳过"条件（🔴：先搬 ISO 再搬 EV = 手动档被自己杀掉，'
         + '违反 docs/18 §2.4"手动档下不推 EV"）');
     }
-    //    m2（🔴问题6）：切模式意图保留——switchMode 体内必须有 prev 快照 + 重放（且 EV 重放
-    //       只在自动曝光档）
+    //    m1b：`normalizeToAutoLocked` 本体必须真的把两个档位都归到自动（不能只清一半）
+    const normBody19 = methodBodyOf(sessionSrc19, 'normalizeToAutoLocked');
+    const normImplOK = !!normBody19
+      && /setAutoExposure\(on: device\)/.test(normBody19)
+      && /setAutoWhiteBalance\(on: device\)/.test(normBody19);
+    if (!normImplOK) {
+      bad('`normalizeToAutoLocked` 没有同时归一曝光与白平衡 —— 残留只清一半，'
+        + '白平衡 .locked 残留会让 UI 显示自动而设备仍在手动');
+    }
+    //    m2（🔴问题6 / 用户问题 2）：切模式**一律按快照重放**（不再"只在被清掉时重放"），
+    //       且 EV 重放仍只在自动曝光档；同样先归一。
     const modeBody19 = methodBodyOf(sessionSrc19, 'switchMode');
     const modeKeepOK = !!modeBody19
       && /prevExposure = self\.configurator\.manualExposure\(of: device\)/.test(modeBody19)
-      && /prevExposure != nil, afterExposure == nil/.test(modeBody19)
-      && /prevExposure == nil, abs\(device\.exposureTargetBias - prevBias\)/.test(modeBody19);
+      && /normalizeToAutoLocked\(on: device\)/.test(modeBody19)
+      && /if let prev = prevExposure \{[\s\S]{0,400}?setManualExposure\(/.test(modeBody19)
+      && /if let prev = prevWhiteBalance \{[\s\S]{0,400}?setManualWhiteBalance\(/.test(modeBody19)
+      && /prevExposure == nil, abs\(device\.exposureTargetBias - prevBias\)/.test(modeBody19)
+      && !/afterExposure/.test(modeBody19);
     if (!modeKeepOK) {
-      bad('切模式缺"手动参数意图保留"重放（🔴问题6：activeFormat 被系统重选 → 手动档被清）'
-        + '，或 EV 重放缺"仅自动曝光档"条件（与手动档互斥，同 🔴1）');
+      bad('切模式缺"手动参数意图保留"重放（🔴问题6 / 用户问题 2：切完参数回到自动）'
+        + '—— 口径是**先归一、再一律按快照重放**（幂等），不再用"比对 commit 前后"'
+        + '（那个判据依赖系统行为，实测漏判）；EV 重放仍须限自动曝光档');
     }
     //    m3（🟠问题2）：气泡与指针同源（气泡用 steps[currentStepIndex] 吸附）
     const bubbleOK = /ParameterStripCatalog\.label\(for: kind, value: steps\[currentStepIndex\]\.value\)/
@@ -2427,19 +2467,42 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       bad('气泡没有与指针同源吸附（🟠问题2：硬件回读值 934 与指针档位对不上）——'
         + '气泡必须显示 steps[currentStepIndex].value');
     }
-    //    m4（🟠问题3）：跟手倍率 1.5:1（用户拍板，安全边界 ≤2:1）+ 半档细刻度（🟠问题4）
+    //    m4（🟠问题3 + 批四实锤 B）：跟手倍率 1.5:1（用户拍板，安全边界 ≤2:1）且**方向是乘**
     const mGain = /dragGain: Double = ([0-9.]+)/.exec(stripCode19);
     const gainVal = mGain ? parseFloat(mGain[1]) : null;
     const gainOK = gainVal !== null && gainVal >= 1.2 && gainVal <= 2
-      && /translation\.width \/ Self\.dragGain/.test(stripCode19);
+      && /translation\.width \* Self\.dragGain/.test(stripCode19)
+      // ⚠️ 反向判据：**不得**再出现 `translation.width / Self.dragGain`
+      //    （批三那版方向写反 = 指尖要多拖 1.5 倍距离，比改前更钝 —— Mac 实锤 B）
+      && !/translation\.width \/ Self\.dragGain/.test(stripCode19);
     if (!gainOK) {
-      bad('跟手倍率缺失或越界（🟠问题3：拍板 1.5:1，安全边界 ≤2:1 —— 逐档跟手实测'
-        + '"1 秒连推 5 档"）');
+      bad('跟手倍率缺失 / 越界 / 方向写反（🟠问题3 + 实锤 B：拍板 1.5:1，安全边界 ≤2:1）'
+        + '—— 必须是 `translation.width * Self.dragGain`（乘 = 更跟手；除 = 更钝）');
     }
-    const halfTickOK = /kind == \.iso \|\| kind == \.shutter \{/.test(stripCode19)
-      && /\(CGFloat\(gap\) \+ 0\.5\) \* geometry\.slot/.test(stripCode19);
-    if (!halfTickOK) {
-      bad('ISO / 快门缺半档细刻度（🟠问题4 参考图口径；白平衡 100K 档位 tick 天然覆盖不加）');
+    //    m4b（批四 🟠问题1"细密度没生效"）：刻度层级必须用原型四档
+    //        （minor 10 / **mid 15** / major 22 / preset 22），**不许**再自创"更细更淡"的
+    //        1px/20% 半高发丝线（用户实测"外形没有变化"）。
+    const tierInCatalog = /enum ParameterStripTickTier/.test(
+      fs.readFileSync(b2CatFile, 'utf8')
+    );
+    const tierUsedInView = /ParameterStripCatalog\.tickTier\(/.test(stripCode19);
+    const tierMidToken = /paramStripTickMidHeight:\s*CGFloat\s*=\s*15/.test(themeSrc19)
+      && /stripTickMid\s*=\s*Color\.white\.opacity\(0\.48\)/.test(themeSrc19);
+    const noFakeHairline = !/Color\.white\.opacity\(isAuto \? 0\.10 : 0\.20\)/.test(stripCode19);
+    if (!tierInCatalog || !tierUsedInView || !tierMidToken) {
+      bad('刻度层级不齐（批四 🟠问题1：细刻度"外形没变化"）—— 需要 '
+        + 'ParameterStripTickTier 枚举 + 视图调用 tickTier + Theme 的 mid 令牌'
+        + '（paramStripTickMidHeight = 15 / stripTickMid = 白 48%）');
+    } else if (!noFakeHairline) {
+      bad('视图里还留着自创的 1px / 20% 白半高发丝线 —— 那是"更细更淡"的错路子，'
+        + '层级应由原型四档（高度 + 对比度）表达');
+    }
+    //    m4c：档间细刻度只给**快门**（ISO 25 档本身是 1/3 档真实档位、WB 76 档够密）
+    const halfStepGate = /func hasHalfStepTicks\(_ kind: ParameterStripKind\) -> Bool/.test(
+      fs.readFileSync(b2CatFile, 'utf8')
+    ) && /ParameterStripCatalog\.hasHalfStepTicks\(kind\)/.test(stripCode19);
+    if (!halfStepGate) {
+      bad('档间细刻度没走 `hasHalfStepTicks` 判据（只有快门该加：15 档全主档、档距 56pt 最疏）');
     }
     //    m5（🟡问题7）：同值不推硬件（iso/shutter/wb 三分支都有 current 一致性跳过）
     const sameValueOK = !!vmSrc12.match(/与当前硬件值一致 → 跳过重复写入/g)
@@ -2455,13 +2518,112 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + '依赖极短转场（换设备硬耗时 ~0.6-0.75s 被模糊盖住，压不进 0.3-0.5s 全程）');
     }
 
-    // l) 汇总（含 k/m 段）
+    // m 段（批四）
+    // ============ n 段（2026-09-20 批四：实锤 A/B + 用户 4 问题）============
+
+    //    n1（用户问题 3 · 转场边界）：**静默换形态**必须存在，且**不置 `isLensSwitching`**
+    //       —— 那个位是"UI 显示模糊浮层"的信号，置了就会闪一次转场。
+    const silentBody19 = methodBodyOf(sessionSrc19, 'applyFocalTargetSilently');
+    // ⚠️ 判据是"**不得置位**"而不是"不得出现" —— 该方法体内本来就有一句
+    //    `guard !self.isLensSwitching ...`（真转场进行中要让路），那是**读**不是写。
+    const prewarmOK = !!silentBody19
+      && /performFocalSwitch\(target, throughTransition: false\)/.test(silentBody19)
+      && !/isLensSwitching\s*=\s*true/.test(silentBody19.replace(/\/\/[^\n]*/g, ''));
+    if (!prewarmOK) {
+      bad('静默换形态缺位或不干净（批四 ③：只有切焦段该有转场，切手动/开对焦盘/回切要人眼无感）'
+        + '—— `applyFocalTargetSilently` 必须调 performFocalSwitch(target, throughTransition: false)，'
+        + '且**不得置位** `isLensSwitching`（置了 = 会闪一次模糊转场）');
+    }
+    //    n1b：**回切虚拟也必须走静默**（它是 App 的收尾动作，不是用户的焦段操作）
+    const revertBody19 = methodBodyOf(vmSrc12, 'evaluateRevertToVirtual');
+    const silentRevertOK = !!revertBody19
+      && /applyFocalTargetSilently\(\.virtual\(focal: self\.focal\)\)/.test(revertBody19)
+      && !/beginFocalSwitch\(\.virtual/.test(revertBody19);
+    if (!silentRevertOK) {
+      bad('回切虚拟走了转场（`beginFocalSwitch(.virtual...)`）—— 用户角度"什么都没做"却闪一次模糊；'
+        + '它不是焦段操作，必须走 applyFocalTargetSilently');
+    }
+    //    n2：真实转场与预切换**共用一个执行体**（两份换设备实现必然漂移），
+    //       且执行体自己**绝不置位** `isLensSwitching = true`（那只有 `beginFocalSwitch` 该做
+    //       —— 执行体是"转场第二段 / 预切换"共用，置位会让预切换闪出模糊）。
+    const oneExecutorOK = !!switchBody19
+      && /throughTransition: Bool/.test(switchBody19)
+      && /if throughTransition \{ self\.isLensSwitching = false \}/.test(switchBody19)
+      && !/isLensSwitching\s*=\s*true/.test(switchBody19.replace(/\/\/[^\n]*/g, ''));
+    if (!oneExecutorOK) {
+      bad('换设备执行体不干净：缺 `throughTransition` 开关位、或自己置位了 `isLensSwitching = true`'
+        + ' —— 真实转场与预切换必须共用 performFocalSwitch 一份实现，'
+        + '且置位只有 beginFocalSwitch 一处（否则预切换会闪出模糊转场）');
+    }
+    //    n3（用户问题 3）：入口动作挂在 **`form` 边沿**，不能挂在 `isLensSwitching` 上
+    //       —— 预切换不置那个位，挂错了会出现"用户点了手动开关什么都不发生"（点了没反应）。
+    const formSinkOK = /environment\.session\.\$form/.test(vmSrc12)
+      && /guard form\.isPhysical, let action = self\.pendingManualAction/.test(vmSrc12);
+    const oldSinkGone = !/guard !switching, let action = self\.pendingManualAction/.test(vmSrc12);
+    if (!formSinkOK || !oldSinkGone) {
+      bad('待执行动作没有挂在 `form` 边沿（或还留着挂在 `isLensSwitching` 上的旧写法）'
+        + '—— 预切换不置 isLensSwitching，挂错 = 预切换好的用户点手动开关"点了没反应"');
+    }
+    //    n4（用户问题 3）：入口排队要"预切换优先 + 转场兜底"（宁可有一次转场，不能死等）
+    const queueBody19 = methodBodyOf(vmSrc12, 'queueActionRequiringPhysical');
+    const queueEntryOK = !!queueBody19
+      && /applyFocalTargetSilently\(\.physical\(focal: focal\)\)/.test(queueBody19)
+      && /beginFocalSwitch\(\.physical\(focal: self\.focal\)\)/.test(queueBody19)
+      && /pendingManualAction = action/.test(queueBody19);
+    if (!queueEntryOK) {
+      bad('入口排队缺"预切换 + 1.2s 转场兜底"（用户问题 3）—— 预切换被跳过时（录制中/未就绪）'
+        + '入口会死在等待里 = 点了没反应，必须退回 beginFocalSwitch');
+    }
+    //    n5（批四 ③ 的副作用）：参数界面开着时**不回切虚拟**（否则预切换白做）
+    const surfaceGateOK = /private var isParamSurfaceOpen: Bool/.test(vmSrc12)
+      && /guard !isParamSurfaceOpen else \{/.test(vmSrc12)
+      && /!self\.isParamSurfaceOpen else \{ return \}/.test(vmSrc12);
+    if (!surfaceGateOK) {
+      bad('回切防抖没有"参数界面开着就不回切"的闸门（批四 ③）—— 预切换刚挂好物理设备，'
+        + '2s 防抖又把它换回虚拟，白做一次换设备 + 多一次转场');
+    }
+    //    n6（用户问题 4 ①）：关「自动对焦」= 把**推断出来的读数**锁成手动档 → 必须守卫有效性
+    const focusAutoBody19 = methodBodyOf(vmSrc12, 'focusAutoToggled');
+    const focusLockOK = !!focusAutoBody19
+      && /isValidFocusLockReading\(reading\)/.test(focusAutoBody19)
+      && /environment\.session\.currentLensPosition/.test(focusAutoBody19)
+      && /func isValidFocusLockReading\(_ value: Float\) -> Bool/.test(vmSrc12)
+      && /focusLockMinValid/.test(vmSrc12);
+    if (!focusLockOK) {
+      bad('「自动对焦」关档缺锁定值有效性守卫（用户问题 4 ①：120mm 下锁到 0.00 最近端 → '
+        + '画面跑焦 + 此后点按全走"仅测光"无出路）—— 必须用 session 真值判定且排掉 0.00 端点');
+    }
+    //    n7（用户问题 1「卡点回弹 / 对应数值不对」）：松手**不立刻清草稿**，等硬件回读对齐
+    const settleOK = /func settleStripDrafts\(/.test(vmSrc12)
+      && /scheduleStripDraftTimeout\(\)/.test(vmSrc12)
+      && /environment\.session\.\$manualExposure/.test(vmSrc12)
+      && /environment\.session\.\$manualWhiteBalance/.test(vmSrc12);
+    const svBody19 = methodBodyOf(vmSrc12, 'stripValueChanged');
+    const releaseKeepsDraft = !!svBody19
+      && /scheduleStripDraftTimeout\(\)/.test(svBody19)
+      && !/isoShutterDraft = nil/.test(svBody19);
+    if (!settleOK || !releaseKeepsDraft) {
+      bad('刻度条松手后仍立刻清草稿（用户问题 1"卡点回弹"）—— 回读是异步的，'
+        + '立刻清会让条子先弹回旧档再跳回来；必须等回读对齐（settleStripDrafts）+ 0.8s 超时兜底');
+    }
+    //    n8（Mac 核法）：换设备与切模式都要打"档位复查"一行，让复验不靠推断
+    const auditCount = (sessionSrc19.match(/档位复查/g) || []).length;
+    if (auditCount < 2) {
+      bad('换设备 / 切模式缺"档位复查"日志（现 ' + auditCount + ' 处，需 ≥2）—— '
+        + '实锤 A 与问题 2 的复验要靠这行读实际档位，不能靠推断');
+    }
+    // l) 汇总（含 k/m/n 段）
     if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK
       && fmtCacheOK && initialGuardOK && sameSourceOK && physBranchOK
-      && evSkipOK && modeKeepOK && bubbleOK && gainOK && halfTickOK && sameValueOK && a2OK) {
+      && evSkipOK && modeKeepOK && bubbleOK && gainOK && sameValueOK && a2OK
+      && normOK1 && normImplOK && tierInCatalog && tierUsedInView && tierMidToken
+      && noFakeHairline && halfStepGate
+      && prewarmOK && oneExecutorOK && formSinkOK && oldSinkGone && queueEntryOK && silentRevertOK
+      && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
-        + '顺序触发转场 / 排队补执行 / 格式缓存与初值守卫 / 同源上报 / EV 手动档跳过 / '
-        + '切模式参数保留 / 灵敏度与细刻度 / A2 极短转场 —— docs/18 预检 7+3 + 复验 12 问题全落地）');
+        + '顺序触发转场 / 排队补执行 / 格式缓存与初值守卫 / 同源上报 / 归一后重放 / '
+        + '切模式一律按快照重放 / 四档刻度层级 / 预切换无转场 / 对焦锁定值守卫 / '
+        + '松手待回读对齐 —— docs/18 预检 7+3 + 批三/批四问题全落地）');
     }
   }
 }
