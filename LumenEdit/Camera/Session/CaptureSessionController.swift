@@ -52,6 +52,34 @@ enum SessionConfigurationError: LocalizedError {
 /// 本类**不加 `@MainActor`**：`startRunning()` 是阻塞调用，绝不能在主线程执行；
 /// 会话的配置与启停全部走私有串行队列。所有 `@Published` 属性的写入都通过
 /// `publish(_:)` 统一回到主线程，避免 SwiftUI 的"后台线程更新状态"告警。
+/// 会话形态（物理架构 `docs/20`）：虚拟多摄（平滑变焦）或物理单摄（手动参数可用）。
+///
+/// - **冷启动默认 `.virtual`**（按需策略：自动档保住 B1 的平滑变焦）。
+/// - 进入任一手动档 → `.physical(当前档位)`；全手动档退出持续 2s 防抖 → 切回 `.virtual`
+///  （防抖在 VM 层，session 只执行）。
+/// - 写入点唯一：`applyFocalTarget(_:)`（自检⑲）。
+enum SessionForm: Equatable {
+    case virtual
+    case physical(FocalPreset)
+}
+
+/// 会话形态的**切换目标**（VM 把用户动作翻译成它；`applyFocalTarget` 只管执行）。
+///
+/// 两个 case 都带目标档位：切回虚拟后要把 zoom 对齐到当前档位（虚拟阶梯），
+/// 切到物理后要对齐到 `zoomFactorOnPhysicalDevice`。
+enum FocalTarget: Equatable {
+    case virtual(focal: FocalPreset)
+    case physical(focal: FocalPreset)
+
+    /// 日志用描述
+    var describe: String {
+        switch self {
+        case .virtual(let f): return "虚拟多摄（\(f.displayName) mm）"
+        case .physical(let f): return "物理单摄（\(f.displayName) mm）"
+        }
+    }
+}
+
 final class CaptureSessionController: ObservableObject {
 
     // MARK: - 对外状态
@@ -173,6 +201,16 @@ final class CaptureSessionController: ObservableObject {
 
     private var device: AVCaptureDevice?
     private var videoInput: AVCaptureDeviceInput?
+
+    /// 当前会话形态（`docs/20`）。**写入点唯一** = `applyFocalTarget`。
+    @Published private(set) var form: SessionForm = .virtual
+
+    /// 换设备进行中（模糊转场驱动位，顺序触发 —— 预检 ⑧）。
+    /// `true` = UI 淡入模糊 → 完成回调才允许真正换设备（VM `commitFocalSwitch`）。
+    @Published private(set) var isLensSwitching = false
+
+    /// 会话未就绪时排队的焦段目标（预检 ②）；`startInternal` 就绪分支补执行。
+    private var pendingFocalTarget: FocalTarget?
     private var audioInput: AVCaptureDeviceInput?
 
     private var isConfigured = false
@@ -473,6 +511,205 @@ final class CaptureSessionController: ObservableObject {
                 DebugLog.shared.error("session", "切回自动白平衡失败：\(error.localizedDescription)")
                 self.publish { self.lastErrorMessage = error.localizedDescription }
             }
+        }
+    }
+
+    // MARK: - 会话形态状态机（物理架构 · `docs/20`）
+
+    /// 用户请求切换会话形态（虚拟 ↔ 物理单摄）。
+    ///
+    /// ## 六步流程（预检 ②⑥，`docs/20` 1.3）
+    ///
+    /// ```
+    /// 前置：cancel ramp（stopZoomRamp）/ 未就绪排队（pendingFocalTarget）/ 幂等 /
+    ///       录制中跨设备拒绝（兜底，VM 分派层已拦）
+    /// ① isLensSwitching = true（UI 淡入模糊；顺序触发：UI 完成后才真正走到这里）
+    /// ② beginConfiguration → ③ removeInput(video) → ④ addInput(新) → ⑤ commit
+    /// ⑥ applyPreferredFormatLocked(新设备)   ← 铁律 1：commit 之后才能写 activeFormat
+    /// ⑦ reapplyManualStateLocked(新设备)     ← 搬运 clamp 依赖新 activeFormat，必须在 ⑥ 后
+    /// ⑧ form 发布 + isLensSwitching = false
+    /// ```
+    ///
+    /// ⚠️ **add 失败自动回滚原 input**（绝不留无视频输入的会话）。
+    /// ⚠️ **`form` / `isLensSwitching` 的写入点只有本方法**（自检⑲）。
+    func applyFocalTarget(_ target: FocalTarget) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+
+            // 幂等：目标形态 == 当前形态 → no-op（⚠️ 虚拟分支**不比档位** —— 虚拟会话内
+            // 切档走 B1 的 ramp 分派，不经过本方法；比档位会造成重复换设备）
+            let sameCase: Bool
+            switch (self.form, target) {
+            case (.virtual, .virtual):
+                sameCase = true
+            case (.physical(let a), .physical(let b)):
+                sameCase = a.id == b.id
+            default:
+                sameCase = false
+            }
+            if sameCase { return }
+
+            // 前置 a：未就绪 → 排队（startInternal 就绪分支补执行，预检 ②）
+            guard self.state == .running, self.device != nil else {
+                self.pendingFocalTarget = target
+                DebugLog.shared.info("session", "会话未就绪 → 焦段目标已排队（\(target.describe)）")
+                return
+            }
+            guard let device = self.device else { return }
+
+            // 前置 b：录制中跨设备拒绝（兜底 —— VM 分派层已拦，预检 ③）
+            if self.isRecording, case .physical(let newPreset) = target,
+               case .physical(let curPreset) = self.form,
+               newPreset.physicalDeviceTypes != curPreset.physicalDeviceTypes {
+                self.publish {
+                    self.lastErrorMessage = "录制中不能切换镜头（会中断录制）"
+                }
+                return
+            }
+
+            // 前置 c：ramp 进行中 → 停掉（预检 ②）
+            self.configurator.stopZoomRamp(on: device)
+
+            // ① 转场开
+            self.publish { self.isLensSwitching = true }
+
+            // 旧设备手动参数真值快照（搬运源 —— .custom/.locked 只能用户设，回读可信）
+            let previousExposure = self.configurator.manualExposure(of: device)
+            let previousWhiteBalance = self.configurator.manualWhiteBalance(of: device)
+            let previousBias = self.exposureBias
+
+            // ②③④⑤ 换 input（失败回滚原 input —— 绝不留无视频输入的会话）
+            let newDevice: AVCaptureDevice
+            switch target {
+            case .virtual: newDevice = CaptureCapabilities.backCamera() ?? device
+            case .physical(let preset):
+                guard let physical = CaptureCapabilities.physicalDevice(for: preset) else {
+                    self.publish {
+                        self.isLensSwitching = false
+                        self.lastErrorMessage = "本机没有 \(preset.displayName) mm 对应的镜头"
+                    }
+                    return
+                }
+                newDevice = physical
+            }
+
+            self.session.beginConfiguration()
+            if let old = self.videoInput {
+                self.session.removeInput(old)
+            }
+            do {
+                let input = try AVCaptureDeviceInput(device: newDevice)
+                guard self.session.canAddInput(input) else {
+                    throw SessionConfigurationError.cannotAddInput
+                }
+                self.session.addInput(input)
+                self.videoInput = input
+                self.device = newDevice
+            } catch {
+                if let old = self.videoInput ?? nil, self.session.canAddInput(old) {
+                    self.session.addInput(old)
+                    self.device = old.device
+                }
+                self.session.commitConfiguration()
+                self.publish {
+                    self.isLensSwitching = false
+                    self.lastErrorMessage = "切换镜头失败，已恢复原镜头（\(error.localizedDescription)）"
+                }
+                return
+            }
+            self.session.commitConfiguration()
+
+            // ⑥ 格式（铁律 1：commit 之后）
+            self.applyPreferredFormatLocked(to: newDevice)
+
+            // ⑦ 参数搬运（对焦显式降级 —— 预检 ⑤）
+            self.reapplyManualStateLocked(
+                on: newDevice,
+                previousExposure: previousExposure,
+                previousWhiteBalance: previousWhiteBalance,
+                previousBias: previousBias
+            )
+
+            // zoom 对齐：物理挂载后 = 档位原生/裁切系数；回虚拟后 = 当前档位走虚拟阶梯
+            let targetFocal: FocalPreset
+            switch target {
+            case .physical(let preset):
+                targetFocal = preset
+                self.configurator.setVideoZoomFactorDirect(preset.zoomFactorOnPhysicalDevice, on: newDevice)
+            case .virtual(let focal):
+                targetFocal = focal
+                self.applyFocal(focal, animated: false) { _, _ in }
+            }
+
+            // 音频 input 不受视频 input 增删影响（只移除了视频），无需重配。
+            self.publishManualState(newDevice)
+            let formNow: SessionForm = { switch target {
+            case .virtual: return .virtual
+            case .physical(let p): return .physical(p)
+            } }()
+            self.publish {
+                self.form = formNow
+                self.isLensSwitching = false
+                self.unavailableFocalIds = CaptureCapabilities.unavailableFocalIds(for: newDevice)
+            }
+
+            // 换设备日志（Mac 核法：deviceType 应变为物理单摄 / Live Photo 能力实测值，预检 ③）
+            DebugLog.shared.info(
+                "session",
+                "换设备完成 → \(target.describe)；当前档位 \(targetFocal.displayName) mm；"
+                    + "Live Photo 能力=\(self.photoService.output.isLivePhotoCaptureSupported)"
+            )
+        }
+    }
+
+    /// 换设备后的参数搬运（预检 ④⑤⑥；**必须在 `applyFormat` 之后调用** —— clamp 依赖
+    /// 新设备 activeFormat）。
+    ///
+    /// - 曝光 / 白平衡：换设备前从**旧设备回读**的真值重放（`.custom` / `.locked` 只能用户
+    ///   显式设置 —— 回读可信；clamp 到新设备域，逐项 try 不连坐）。
+    /// - EV：session 状态里的值 clamp 后重放（手动曝光档下系统忽略 EV，但**值保留**）。
+    /// - **对焦：显式降级**（预检 ⑤）—— `lensPosition` 量程随镜头不同，搬运必然对不上焦；
+    ///   落回连续自动 + 清意图态（`manualFocus = nil`）+ toast 由 VM 观察 `form` 变化发出。
+    private func reapplyManualStateLocked(
+        on newDevice: AVCaptureDevice,
+        previousExposure: (iso: Float, seconds: Double)?,
+        previousWhiteBalance: (temperature: Float, tint: Float)?,
+        previousBias: Float
+    ) {
+        // 曝光（ISO + 快门成对）
+        if let prev = previousExposure {
+            do {
+                try configurator.setManualExposure(iso: prev.iso, seconds: prev.seconds, on: newDevice)
+                DebugLog.shared.info("session", "搬运：手动曝光已重放（ISO \(String(format: "%.0f", prev.iso))）")
+            } catch {
+                DebugLog.shared.warn("session", "手动曝光搬运失败 → 回自动：\(error.localizedDescription)")
+                try? configurator.setAutoExposure(on: newDevice)
+            }
+        }
+        // 白平衡
+        if let prev = previousWhiteBalance {
+            do {
+                try configurator.setManualWhiteBalance(temperature: prev.temperature, tint: prev.tint, on: newDevice)
+                DebugLog.shared.info("session", "搬运：手动白平衡已重放（\(String(format: "%.0f", prev.temperature))K）")
+            } catch {
+                DebugLog.shared.warn("session", "手动白平衡搬运失败 → 回自动：\(error.localizedDescription)")
+                try? configurator.setAutoWhiteBalance(on: newDevice)
+            }
+        }
+        // EV（值保留：手动曝光档下被系统忽略，回自动档自动生效）
+        do {
+            try configurator.applyExposureBias(previousBias, to: newDevice)
+            DebugLog.shared.info("session", "搬运：EV 已重放（\(String(format: "%+.1f", previousBias))）")
+        } catch {
+            DebugLog.shared.warn("session", "EV 搬运失败（保留状态值）：\(error.localizedDescription)")
+        }
+        // 对焦：显式降级（预检 ⑤）—— 意图清除 + 连续自动
+        publish { self.manualFocus = nil }
+        do {
+            try configurator.setAutoFocus(on: newDevice)
+            DebugLog.shared.info("session", "搬运：对焦显式降级 → 连续自动（预检 ⑤）")
+        } catch {
+            DebugLog.shared.warn("session", "对焦降级失败：\(error.localizedDescription)")
         }
     }
 
@@ -844,6 +1081,13 @@ final class CaptureSessionController: ObservableObject {
         }
 
         guard configurationSucceeded else { return }
+
+        // 排队补执行（预检 ②）：会话就绪前用户点过的焦段目标，这里补上。
+        if let pending = pendingFocalTarget {
+            pendingFocalTarget = nil
+            DebugLog.shared.info("session", "会话就绪 → 补执行排队的焦段目标（\(pending.describe)）")
+            applyFocalTarget(pending)
+        }
 
         // ⚠️ 回到相机页时，如果当前模式需要麦克风，必须把音频会话重新激活。
         //

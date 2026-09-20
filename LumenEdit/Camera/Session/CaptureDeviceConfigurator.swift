@@ -257,6 +257,41 @@ final class CaptureDeviceConfigurator {
     //    `CaptureSessionController` 的 `setManualFocus` / `setAutoFocusMode`），
     //    回读只喂 `currentLensPosition`。**别把这个函数加回来。**
 
+    /// 直接设置 `videoZoomFactor`（**非动画**）—— 物理会话挂载后的档位对齐用。
+    ///
+    /// 与 `applyZoomRamp` 的分工：ramp 用于**会话内**的平滑变焦；挂载瞬间用直接赋值
+    /// （画面本就被转场盖住，不需要也不该有动画）。clamp 走 `CaptureCapabilities.zoomRange`。
+    func setVideoZoomFactorDirect(_ factor: CGFloat, on device: AVCaptureDevice) {
+        let range = CaptureCapabilities.zoomRange(of: device)
+        let target = factor.sanitized(or: range.lowerBound).clamped(to: range)
+        do {
+            try withLock(device) {
+                device.videoZoomFactor = target
+            }
+        } catch {
+            DebugLog.shared.error("device", "设置变焦失败：\(error.localizedDescription)")
+        }
+    }
+
+    /// 停止进行中的变焦 ramp（物理架构换设备前置，`docs/20` 预检 ②）。
+    ///
+    /// SDK 没有独立的 "cancel ramp" API —— 标准停法是 **lock + 把 `videoZoomFactor`
+    /// 赋成当前值**（赋值即终止 ramp，画面停在当前放大倍数）。
+    /// 没有进行中的 ramp 时是 no-op。
+    func stopZoomRamp(on device: AVCaptureDevice) {
+        guard device.rampingVideoZoom else { return }
+        try? withLock(device) {
+            device.videoZoomFactor = device.videoZoomFactor
+        }
+        DebugLog.shared.debug("device", "变焦 ramp 已停止（换设备前置）")
+    }
+
+    // ⚠️ 手动白平衡回读**已有现成方法**：`manualWhiteBalance(of:)`（见下方 `manualExposure(of:)`
+    //    同构区，B2a 就有）—— 换设备搬运直接用它，**不要**再写一份。
+    //    顺带说明：`.custom` / `.locked` 曝光与白平衡**只能由用户显式设置**（系统 AE/AWB
+    //    不会自动进入）—— 回读可信；`backlog ⑩`"硬件状态 ≠ 意图"的教训只适用于会被系统
+    //    自己改写的状态（如对焦 `.locked`），别过度推广到这两处。
+
     /// **只测光、不动焦**（拍板 ③：手动对焦锁定期间，点按取景器仅更新测光点）。
     ///
     /// 与 `setFocusAndExposurePoint` 的分工：那个是对焦+测光一起（对焦自动档）；

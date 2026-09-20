@@ -21,6 +21,9 @@ enum CaptureCapabilities {
     ]
 
     /// 按回退链取第一个可用的后置摄像头。取不到返回 nil（模拟器上就是 nil）。
+    ///
+    /// ⚠️ 虚拟多摄优先（回退链首项）—— `docs/20` 物理架构下它仍是**冷启动默认形态**：
+    /// 自动档的平滑变焦走虚拟多摄，物理单摄只在按需切手动时挂载。
     static func backCamera() -> AVCaptureDevice? {
         let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: backCameraFallbackChain,
@@ -33,6 +36,17 @@ enum CaptureCapabilities {
             }
         }
         return discovery.devices.first
+    }
+
+    /// 物理架构（`docs/20`）：按焦段档位找到应挂载的**物理单摄**设备。
+    /// 档位 → 设备类型的映射在 `FocalPreset.physicalDeviceTypes`（预设真源）。
+    /// 该档设备不存在的机型返回 `nil`（调用方按"档位不可用"处理 —— 焦段条本来就置灰）。
+    static func physicalDevice(for focal: FocalPreset) -> AVCaptureDevice? {
+        AVCaptureDevice.DiscoverySession(
+            deviceTypes: focal.physicalDeviceTypes,
+            mediaType: .video,
+            position: .back
+        ).devices.first
     }
 
     // MARK: - 焦段 → 变焦倍率（B1）

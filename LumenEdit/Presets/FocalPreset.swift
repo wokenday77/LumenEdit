@@ -86,6 +86,25 @@ struct FocalPreset: Identifiable, Equatable, Codable {
         guard let mm = millimeters else { return nil }
         return mm / 24
     }
+
+    /// 这一档在**物理会话**下应挂载的设备类型（物理架构 `docs/20`，按镜头角色同源派生）。
+    ///
+    /// 13mm → 超广角；24 / 35 / 48 → 主摄（35/48 是主摄内部数码裁切，仍挂主摄）；
+    /// 120 → 长焦。**别在 session 里再写一份 switch** —— 档位 → 设备类型的映射属于预设知识。
+    var physicalDeviceTypes: [AVCaptureDevice.DeviceType] {
+        switch lensRole {
+        case .ultraWide: return [.builtInUltraWideCamera]
+        case .telephoto: return [.builtInTelephotoCamera]
+        case .mainCrop, .wide: return [.builtInWideAngleCamera]
+        case nil: return [.builtInWideAngleCamera]
+        }
+    }
+
+    /// 物理会话下这一档的 `videoZoomFactor`：非主摄裁切档 = 1.0（原生视场），
+    /// 主摄裁切档（35 / 48）= `mainCropFactor`（真读，**禁字面量** —— 预检 ⑦）。
+    var zoomFactorOnPhysicalDevice: CGFloat {
+        lensRole == .mainCrop ? (mainCropFactor ?? 1) : 1
+    }
 }
 
 /// 焦段档位对应的镜头角色。
