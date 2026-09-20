@@ -857,30 +857,45 @@ final class CameraViewModel: ObservableObject {
 
         let wasAuto = isAutoStrip(kind)
 
-        if wasAuto {
-            // 自动 → 手动：**初值取设备当前值**（拍板 ③）—— 切档瞬间画面不跳，
-            // 用户是从"AE/AWB 刚收敛到的那一档"开始往下调的（系统相机就是这个手感）。
-            switch kind {
-            case .iso, .shutter:
-                let pair = currentExposurePair(environment)
-                DebugLog.shared.debug(
-                    "ui",
-                    "切手动曝光档：初值取设备当前值 ISO \(String(format: "%.0f", pair.iso))"
-                        + " / \(FormatText.shutterSpeed(pair.seconds))"
-                )
-                environment.session.setManualExposure(
-                    iso: Float(pair.iso),
-                    seconds: pair.seconds
-                )
-            case .whiteBalance:
-                let kelvin = environment.session.currentWhiteBalanceKelvin
-                DebugLog.shared.debug(
-                    "ui",
-                    "切手动白平衡档：初值取设备当前值 \(String(format: "%.0f", kelvin))K"
-                )
-                environment.session.setManualWhiteBalance(kelvin: kelvin)
-            }
-            showToast("\(kind.displayName) 已切手动（初值取当前画面值）· 左右滑动刻度调节")
+            if wasAuto {
+                // 自动 → 手动：**初值取设备当前值**（拍板 ③）—— 切档瞬间画面不跳，
+                // 用户是从"AE/AWB 刚收敛到的那一档"开始往下调的（系统相机就是这个手感）。
+                // ⚠️ **初值有效性守卫**（2026-09-20 Mac 复验 🔴 问题 2）：换设备后的新设备
+                //    冷帧可能回读出**无效值**（实测 ISO 0 / 1/71429s 直接写进硬件 = 极端曝光）。
+                //    无效 → 回落**档位表默认值**（ISO 800 / 1/125，`ParameterStripCatalog`）。
+                switch kind {
+                case .iso, .shutter:
+                    let pair = currentExposurePair(environment)
+                    let isoValid = pair.iso >= 1
+                    let secondsValid = pair.seconds > 0
+                    let iso = isoValid ? Float(pair.iso) : Float(ParameterStripCatalog.defaultISO)
+                    let seconds = secondsValid ? pair.seconds : ParameterStripCatalog.defaultShutterSeconds
+                    if !isoValid || !secondsValid {
+                        DebugLog.shared.warn(
+                            "ui",
+                            "切手动曝光：设备当前值无效（ISO \(String(format: "%.0f", pair.iso)) / "
+                                + "\(FormatText.shutterSpeed(pair.seconds))）→ 回落档位表默认值"
+                        )
+                    }
+                    DebugLog.shared.debug(
+                        "ui",
+                        "切手动曝光档：初值 ISO \(String(format: "%.0f", iso))"
+                            + " / \(FormatText.shutterSpeed(Double(seconds)))"
+                            + (isoValid && secondsValid ? "（设备当前值）" : "（默认值）")
+                    )
+                    environment.session.setManualExposure(
+                        iso: iso,
+                        seconds: seconds
+                    )
+                case .whiteBalance:
+                    let kelvin = environment.session.currentWhiteBalanceKelvin
+                    DebugLog.shared.debug(
+                        "ui",
+                        "切手动白平衡档：初值取设备当前值 \(String(format: "%.0f", kelvin))K"
+                    )
+                    environment.session.setManualWhiteBalance(kelvin: kelvin)
+                }
+                showToast("\(kind.displayName) 已切手动（初值取当前画面值）· 左右滑动刻度调节")
         } else {
             switch kind {
             case .iso, .shutter:

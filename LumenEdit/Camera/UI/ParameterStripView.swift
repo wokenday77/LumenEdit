@@ -102,8 +102,9 @@ struct ParameterStripView: View {
     /// 触觉节流（量级与 `ParameterSlider` 一致）
     @State private var lastTickAt: Date = .distantPast
 
-    /// **换档滞后**：离当前档位不足 0.75 档就不换（与 `ParameterSlider` 的 0.75 一致）
-    private static let hysteresisRatio: Double = 0.75
+    // ⚠️ 换档"0.75 档滞后"已于 2026-09-20 删除（Mac 复验实锤"回弹一档"）：滞后判上报、
+    //    松手按 round 吸附，两个口径不同源 → 停在 0.3~0.74 档时气泡与吸附值差一档。
+    //    现为**同源 round**（变化即上报 + 0.15s 节流防连响），见 onChanged 的跨档判定。
     /// **触觉节流**：0.15s（与 `ParameterSlider` 一致；自检第 12 组守这个量级）
     private static let tickThrottle: TimeInterval = 0.15
 
@@ -383,13 +384,16 @@ struct ParameterStripView: View {
                 let raw = dragStartOffset + gesture.translation.width
                 dragOffset = min(max(raw, range.lowerBound), range.upperBound)
 
-                // 跨档判定（带滞后）：离"上次上报的档"不足 0.75 档就不换 —— 边界不连响
+                // 跨档判定（**与松手吸附同源**：都用 `round(position)`，2026-09-20 修"回弹一档"）：
+                // 旧实现用 0.75 档滞后判上报、松手却按 round 吸附 —— 两个口径不同源，
+                // 停在 0.3~0.74 档时气泡显示旧值、松手吸附到相邻档（实锤：ISO 800 拖到松手变 640）。
+                // 现在"变化即上报"（每跨一档立即上报 + `tickThrottle` 0.15s 防连响），
+                // 上报值与松手吸附值**永远一致**。
                 let position = geometry.stepPosition(forOffset: dragOffset ?? 0)
-                if let last = lastReportedIndex,
-                   abs(position - Double(last)) < Self.hysteresisRatio {
+                let index = min(max(Int(position.rounded()), 0), steps.count - 1)
+                if index == lastReportedIndex {
                     return
                 }
-                let index = min(max(Int(position.rounded()), 0), steps.count - 1)
                 lastReportedIndex = index
                 onValueChanged(steps[index].value, true)
                 fireTickThrottled()

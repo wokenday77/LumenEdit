@@ -407,7 +407,19 @@ final class CaptureSessionController: ObservableObject {
             completion?(nil, false)
             return
         }
-        guard let zoom = CaptureCapabilities.zoomFactor(forFocal: preset, of: device) else {
+        // ⚠️ **物理会话不走虚拟阶梯**（2026-09-20 Mac 复验 🟡 问题 5）：虚拟阶梯
+        // （`zoomFactor(forFocal:of:)`）吃 `virtualDeviceSwitchOverVideoZoomFactors`，
+        // 物理单摄上为空 → 解析失败 → "焦段 xx mm 在本机没有对应镜头，未推硬件"
+        // （会话重启后档位对齐静默失败实锤）。物理会话下设备已由 `applyFocalTarget`
+        // 挂好，zoom 直接取 `zoomFactorOnPhysicalDevice`（挂载时已对齐，此处理论上是 no-op，
+        // 放这里是为了**会话重启后的对齐路径**同样正确）。
+        let zoom: CGFloat?
+        if case .physical = form {
+            zoom = preset.zoomFactorOnPhysicalDevice
+        } else {
+            zoom = CaptureCapabilities.zoomFactor(forFocal: preset, of: device)
+        }
+        guard let zoom else {
             // 该档在这台设备上表达不了（缺那颗镜头）。正常路径上 UI 已置灰 + 会给 toast；
             // 万一还是漏到这里，也**不推硬件** —— 不装作切过去了。
             DebugLog.shared.debug(
@@ -1276,7 +1288,40 @@ final class CaptureSessionController: ObservableObject {
     /// 所以这里按候选顺序逐个应用，**取第一个 Live Photo 能力为 true 的**；
     /// 若全都不支持（或探测本身不可靠），退回第一个候选，
     /// 行为与改动前一致，不影响普通拍照。
+    /// (设备 uniqueID + 模式) → 已探测成功的采集格式。
+    ///
+    /// ## 为什么要有它（2026-09-20 Mac 复验 🔴 问题 1）
+    ///
+    /// 这个探测循环本是**冷启动一次性**口径；物理架构换设备后**每次都跑**：
+    /// 12~41 个候选逐个 `applyFormat`（每个 300~800ms）→ 换设备糊屏 **4.5~11.9s**。
+    /// 命中缓存的格式**一次 apply 直达**（毫秒级）；探测失败会清缓存回退完整探测。
+    private var formatProbeCache: [String: AVCaptureDevice.Format] = [:]
+
     private func applyPreferredFormatLocked(to device: AVCaptureDevice) {
+        // ⚠️ 视频 / Log 模式下照片输出**不挂载** → `isLivePhotoCaptureSupported` 恒 false
+        // （2026-09-20 Mac 复验 🟠 问题 4）—— Live 挑选循环永远选不出（41 候选跑满 9.1s
+        // 落第一个候选）。这两个模式**不需要 Live**：直接走"第一个候选"（最小 1080p 档），
+        // 不进 Live 探测循环；同样写缓存（模式在 key 里，回照片模式仍会完整探测一次）。
+        let needsLiveProbe = mode == .photo || mode == .livePhoto
+        let cacheKey = "\(device.uniqueID)|\(mode.rawValue)"
+
+        if let cached = formatProbeCache[cacheKey] {
+            do {
+                try configurator.applyFormat(cached, frameRate: 30, to: device)
+                DebugLog.shared.info(
+                    "session",
+                    "采集格式命中缓存（跳过探测循环）：\(CaptureCapabilities.formatSummary(cached))"
+                )
+                return
+            } catch {
+                DebugLog.shared.warn(
+                    "session",
+                    "缓存的采集格式应用失败 → 回退完整探测：\(error.localizedDescription)"
+                )
+                formatProbeCache[cacheKey] = nil
+            }
+        }
+
         let candidates = CaptureCapabilities.formatCandidates(
             for: device,
             minimumWidth: 1920,
@@ -1299,6 +1344,11 @@ final class CaptureSessionController: ObservableObject {
                 continue
             }
             if fallback == nil { fallback = candidate }
+            // 视频 / Log：不需要 Live —— 第一个候选（最小档）即可，写缓存直达
+            if !needsLiveProbe {
+                chosen = fallback
+                break
+            }
             if photoService.output.isLivePhotoCaptureSupported {
                 chosen = candidate
                 break
@@ -1317,11 +1367,12 @@ final class CaptureSessionController: ObservableObject {
         }
 
         guard let final else { return }
+        formatProbeCache[cacheKey] = final
         DebugLog.shared.info(
             "session",
             "选用采集格式 \(CaptureCapabilities.formatSummary(final))"
-            + "，Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
-            + "（候选共 \(candidates.count) 个）"
+                + "，Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
+                + "（候选共 \(candidates.count) 个，已缓存）"
         )
     }
 
