@@ -249,15 +249,13 @@ final class CaptureDeviceConfigurator {
         }
     }
 
-    /// 读回手动对焦档的**实际值**（`nil` = 当前不是锁定档）。
-    ///
-    /// 与 `manualExposure(of:)` / `manualWhiteBalance(of:)` 同构（B3b 补齐对焦的回读三件套）：
-    /// `focusMode` 是同一个 device 实例上的真值 —— 本地记账必然出现
-    /// "UI 说手动、设备是自动"（点按对焦/换设备都会打回自动）。
-    func manualFocus(of device: AVCaptureDevice) -> Float? {
-        guard device.focusMode == .locked else { return nil }
-        return device.lensPosition
-    }
+    // ⚠️ **`manualFocus(of:)` 已于 2026-09-20 正源修删除（`backlog ⑩`）**：
+    //    它按 `focusMode == .locked` 推断"用户锁了手动对焦"，但 SDK 明文（`:1053-1054`）
+    //    `.autoFocus` 对焦一次后**系统自动转 `.locked`** —— 硬件状态 ≠ 用户意图，
+    //    点按一次对焦就死锁成"永久仅测光"（真机实测，Mac 最小修 `670970b` 只用能力门
+    //    压住虚拟设备、架构后必复发）。`manualFocus` 现由**UI 意图驱动**（写入点仅在
+    //    `CaptureSessionController` 的 `setManualFocus` / `setAutoFocusMode`），
+    //    回读只喂 `currentLensPosition`。**别把这个函数加回来。**
 
     /// **只测光、不动焦**（拍板 ③：手动对焦锁定期间，点按取景器仅更新测光点）。
     ///

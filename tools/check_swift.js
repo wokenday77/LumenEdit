@@ -2134,31 +2134,44 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
           + '，或误调 dismissTransientPopovers（展开者会收掉自己）');
       }
 
-      // f) 回读三件套（对焦此前没有）：configurator.manualFocus(of:) → session 发布 → VM 派生
-      const cfgReaderFocus = /func manualFocus\(of device: AVCaptureDevice\)[\s\S]{0,200}?focusMode == \.locked/
-        .test(cfgSrc18);
+      // f) 对焦状态 = **用户意图**（2026-09-20 正源修，`backlog ⑩`）：
+      //    ① configurator **不得再有** `manualFocus(of:)` 硬件回读推断
+      //      （`.autoFocus` 完成后系统也置 `.locked`，回读分不清"用户锁"和"系统锁"，
+      //       Mac 复验 ③ 的死锁根因）；
+      //    ② `publishManualState` 方法体**不得写 `self.manualFocus =`** —— 写入点只允许
+      //       `setManualFocus` / `setAutoFocusMode` 两个意图入口（同源污染守卫）；
+      //    ③ session 三个 @Published 照旧（manualFocus / currentLensPosition / isManualFocusSupported）。
+      const noCfgReader = !/func manualFocus\(of device: AVCaptureDevice\)/.test(cfgSrc18);
+      const publishBody18 = methodBodyOf(sessSrc12, 'publishManualState');
+      const noIntentLeak = !!publishBody18 && !/self\.manualFocus\s*=/.test(publishBody18);
       const sessFocusOK = /@Published private\(set\) var manualFocus:/.test(sessSrc12)
         && /@Published private\(set\) var currentLensPosition:/.test(sessSrc12)
         && /@Published private\(set\) var isManualFocusSupported/.test(sessSrc12);
-      if (!cfgReaderFocus) {
-        bad('configurator 缺 `manualFocus(of:)` 真值回读（focusMode == .locked）'
-          + ' —— 没有它对焦只能本地记账');
+      if (!noCfgReader) {
+        bad('configurator 里又出现了 `manualFocus(of:)` 硬件回读推断 —— 硬件状态回读 ≠ 用户意图'
+          + '（`.autoFocus` 完成后系统也置 `.locked`，点按对焦会死锁，`backlog ⑩`）');
+      } else if (!noIntentLeak) {
+        bad('`publishManualState` 里在写 `self.manualFocus` —— 对焦档状态是**用户意图**，'
+          + '写入点只允许 `setManualFocus` / `setAutoFocusMode` 两个入口（同源污染复发）');
       } else if (!sessFocusOK) {
         bad('session 没有发布 manualFocus / currentLensPosition / isManualFocusSupported'
-          + ' —— 对焦回读三件套不齐');
+          + ' —— 对焦意图态 + 读数 + 能力位三件套不齐');
       }
 
-      // g) 闸门同构：focusDialValueChanged → focusEditingChanged（含 lastPushedLensPosition + setManualFocus）
+      // g) 闸门同构：focusDialValueChanged → focusEditingChanged（含 lastPushedLensPosition +
+      //    setManualFocus）。⚠️ **不得再含 `isFocusAuto` 拦截**（2026-09-20 正源修）：
+      //    第一次拖动就是"进入手动对焦"的意图表达（此刻 manualFocus 还是 nil = 自动），
+      //    按自动态拦截 = 拖动永远无效；自动档下盘面已由 DialView 的 autoMode 锁住拖动。
       const vmFocusChange = methodBodyOf(vmSrc12, 'focusDialValueChanged');
       const vmFocusGate = methodBodyOf(vmSrc12, 'focusEditingChanged');
       const focusGateOK = !!vmFocusChange && /focusEditingChanged\(/.test(vmFocusChange)
         && !!vmFocusGate
         && /lastPushedLensPosition/.test(vmFocusGate)
         && /setManualFocus\(lensPosition:/.test(vmFocusGate)
-        && /isFocusAuto/.test(vmFocusGate);
+        && !/isFocusAuto/.test(vmFocusGate);
       if (!focusGateOK) {
-        bad('对焦拖动没走 `focusEditingChanged`（或闸门缺 lastPushedLensPosition / '
-          + 'setManualFocus / 自动档拦截）—— docs/14 环路会在对焦盘复发');
+        bad('对焦拖动没走 `focusEditingChanged`（或闸门缺 lastPushedLensPosition / setManualFocus），'
+          + '**或又加回了 isFocusAuto 拦截** —— 第一次拖动就是进入手动的意图，拦掉 = 拖动永远无效');
       }
 
       // h) 点按分流（拍板 ③）：手动对焦锁定期间点取景器 → 只测光（setExposurePointOnly）
@@ -2205,9 +2218,9 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
 
       // j) 汇总
       if (radialOK && convOK && focusCfgOK && evCfgOK && focusWriterOK && entryOK
-        && cfgReaderFocus && sessFocusOK && focusGateOK && tapSplitOK) {
+        && noCfgReader && noIntentLeak && sessFocusOK && focusGateOK && tapSplitOK) {
         ok('对焦圆盘齐备（共用 DialView 唯一盘底 / 两盘工厂分派 / 对焦写硬件唯一入口 / '
-          + '能力分派 toast 不开盘 / 回读三件套 / docs/14 闸门 / 点按只测光分流）');
+          + '能力分派 toast 不开盘 / 对焦档 = 用户意图态（回读只喂读数）/ docs/14 闸门 / 点按只测光分流）');
       }
     }
   }

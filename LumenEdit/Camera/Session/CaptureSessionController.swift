@@ -87,10 +87,23 @@ final class CaptureSessionController: ObservableObject {
     /// 手动白平衡档的当前值（`nil` = 自动档）。同样从设备回读。
     @Published private(set) var manualWhiteBalance: (temperature: Float, tint: Float)?
 
-    /// 手动对焦档的当前值（`nil` = 自动档；锁定时 = `lensPosition` 0~1）。从设备回读。
+    /// 手动对焦档（**用户意图态** · 2026-09-20 正源修）。
     ///
-    /// B3b 补齐对焦回读三件套（此前只有曝光/白平衡有）：本地记账必然出现
-    /// "UI 说手动、设备是自动"（点按对焦/换设备都会打回自动）。
+    /// ## 为什么不能从硬件回读推断（Mac 复验 ③ 的根因链，`backlog ⑩`）
+    ///
+    /// SDK 行为：`.autoFocus` **对焦一次完成后系统自动转 `.locked`** —— 硬件回读
+    /// `focusMode == .locked` 分不清"用户在对焦盘锁的"和"系统自动锁的"。
+    /// 曾经从回读推断 → 点按对焦一次后 `manualFocus` 非 nil → `isFocusManual` 永久为真
+    /// → 点按全走"仅测光"（该路径不碰 focusMode）→ **死锁：点按对焦永久失效**（真机实测）。
+    ///
+    /// ## 正源修：意图驱动
+    ///
+    /// - **写入点只有两个意图入口**：`setManualFocus(lensPosition:)`（盘上拖动 / 关自动开关）
+    ///   置值；`setAutoFocusMode()` 置 `nil`。**`publishManualState` 绝不写它**
+    ///   （自检⑱守着：同源污染回归当场 FAIL）。
+    /// - **回读只喂 `currentLensPosition`**（读数，自动/手动都跟硬件）。
+    /// - 换设备（物理架构 `docs/18` 2.4）后按方案**显式降级**：换设备方法置 `nil`（意图清除），
+    ///   不靠回读推断。
     @Published private(set) var manualFocus: Float?
 
     /// 设备**当前**的镜头位置（0~1；**自动档也有效** —— 自动对焦进行中实时跟随）。
@@ -466,6 +479,11 @@ final class CaptureSessionController: ObservableObject {
     // MARK: - 手动对焦（B3b · 对焦圆盘接线）
 
     /// 手动对焦（对焦圆盘拖动写硬件；虚拟多摄不支持 —— UI 已按能力分派，这里是最后防线）。
+    /// 手动对焦（对焦圆盘拖动 / 「自动对焦」开关关闭时）。
+    ///
+    /// ⚠️ **这是 `manualFocus` 的意图写入点之一**：调用 = 用户表达"进入/保持手动对焦档"
+    /// —— 这里发布 `manualFocus = lensPosition`（意图态），**不是**从硬件回读推断
+    /// （`.autoFocus` 完成后系统也置 `.locked`，回读分不清两种锁，Mac 复验 ③ 根因）。
     func setManualFocus(lensPosition: Float) {
         guard let device else { return }
         sessionQueue.async { [weak self] in
@@ -473,6 +491,7 @@ final class CaptureSessionController: ObservableObject {
             do {
                 try self.configurator.setManualFocus(lensPosition: lensPosition, on: device)
                 self.publishManualState(device)
+                self.publish { self.manualFocus = lensPosition }
                 self.refreshSnapshot()
             } catch {
                 DebugLog.shared.error("session", "手动对焦失败：\(error.localizedDescription)")
@@ -482,6 +501,10 @@ final class CaptureSessionController: ObservableObject {
     }
 
     /// 切到**自动对焦**（对焦盘「自动对焦」开关打开时）
+    ///
+    /// ⚠️ **这是 `manualFocus` 的意图写入点之二**：调用 = 用户表达"退出手动对焦档"
+    /// —— 这里发布 `manualFocus = nil`。此后点按对焦（`.autoFocus` → 系统转 `.locked`）
+    /// 不会再被误判成"用户手动锁定"（正源修，`backlog ⑩`）。
     func setAutoFocusMode() {
         guard let device else { return }
         sessionQueue.async { [weak self] in
@@ -489,6 +512,7 @@ final class CaptureSessionController: ObservableObject {
             do {
                 try self.configurator.setAutoFocus(on: device)
                 self.publishManualState(device)
+                self.publish { self.manualFocus = nil }
                 self.refreshSnapshot()
             } catch {
                 DebugLog.shared.error("session", "切自动对焦失败：\(error.localizedDescription)")
@@ -533,7 +557,6 @@ final class CaptureSessionController: ObservableObject {
         let currentSeconds = device.exposureDuration.safeSeconds
         let currentKelvin = configurator.currentTemperature(of: device)
         let currentLens = device.lensPosition
-        let focus = configurator.manualFocus(of: device)
         var unavailable: [ParameterStripKind: Set<Double>] = [:]
         for kind in ParameterStripKind.allCases {
             unavailable[kind] = CaptureCapabilities.unavailableStripValues(for: kind, on: device)
@@ -558,17 +581,15 @@ final class CaptureSessionController: ObservableObject {
             self.unavailableStripValues = unavailable
             self.isManualExposureSupported = manualExposureOK
             self.isManualWhiteBalanceSupported = manualWhiteBalanceOK
-            // 对焦（B3b 补齐回读三件套）
-            // ⚠️ **必须加能力门**（2026-09-20 真机复验抓到，[mac-fix]）：`focusMode == .locked`
-            // 是"一次性 AF 完成后"的**正常状态**（SDK 明文 `AVCaptureDevice.h:1053-1054`：
-            // `.autoFocus` = 对焦一次后**自动转 `.locked`**），**不等于**"用户锁了手动对焦"。
-            // 直接回读赋值 → 点按对焦一次后 `manualFocus` 就非 nil → `isFocusManual` 永久为真
-            // → 后续点按全部走"仅测光、不动焦"（`CameraViewModel.focusTapped`），而该路径
-            // **不碰 focusMode** → `.locked` 永久保留 → **死锁：点按对焦永久失效**（真机实测）。
-            // 本机 `对焦(锁定位置)=false` → 手动对焦根本进不去 → 状态必须恒 nil，
-            // 精确恢复 B3b 前行为。（正源修由 WB 做：手动档状态改由 **UI 意图** 驱动，
-            // 回读只喂 `currentLensPosition`。）
-            self.manualFocus = manualFocusOK ? focus : nil
+            // 对焦：**回读只喂 `currentLensPosition`**（读数，自动/手动都跟硬件）。
+            // ⚠️ `manualFocus` **绝不能在这里赋值**（2026-09-20 正源修，`backlog ⑩`）：
+            // `focusMode == .locked` 是"一次性 AF 完成后"的正常状态（SDK `:1053-1054`：
+            // `.autoFocus` 对焦一次后自动转 `.locked`），**不等于**"用户锁了手动对焦"。
+            // 从回读推断 → 点按一次后 `isFocusManual` 永久为真 → 点按全走"仅测光"
+            // → **死锁：点按对焦永久失效**（真机实测，Mac 最小修 `670970b` 临时压住，
+            // 本笔正源修根治）。`manualFocus` 的写入点只有两个**意图入口**：
+            // `setManualFocus(lensPosition:)` / `setAutoFocusMode()`（见各自注释），
+            // 自检⑱守着"publishManualState 不得写 manualFocus"。
             self.currentLensPosition = currentLens
             self.isManualFocusSupported = manualFocusOK
         }

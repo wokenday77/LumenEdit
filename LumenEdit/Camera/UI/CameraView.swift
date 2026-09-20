@@ -459,10 +459,11 @@ struct CameraView: View {
                 )
                 .transition(.opacity)
             } else if viewModel.isFocusDialShown {
-                // 对焦圆盘（#8 后半 · B3b）：与 EV 盘**共用 DialView**（差异在 DialConfig），
-                // 三条交互约定（半透明盘底 / 字号缩放 / 相对位移拖拽）自动继承。
-                // 读数 = focusLensPosition（自动/手动都跟硬件回写走）；
-                // 「自动对焦」开关状态 = isFocusAuto（硬件真值回读，不本地记账）。
+                    // 对焦圆盘（#8 后半 · B3b）：与 EV 盘**共用 DialView**（差异在 DialConfig），
+                    // 三条交互约定（半透明盘底 / 字号缩放 / 相对位移拖拽）自动继承。
+                    // 读数 = focusLensPosition（currentLensPosition 回写喂入，自动/手动都跟）；
+                    // 「自动对焦」开关状态 = isFocusAuto（**用户意图态** `manualFocus` 派生，
+                    // 正源修后不从硬件 focusMode 推断 —— backlog ⑩）。
                 DialView(
                     config: .focus,
                     value: viewModel.focusLensPosition,

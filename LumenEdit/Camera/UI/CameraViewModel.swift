@@ -102,10 +102,13 @@ final class CameraViewModel: ObservableObject {
     /// （`docs/14` 同构，见 `attach()` 里的对焦订阅）。
     @Published var focusLensPosition: Double = 0.56
 
-    /// 是否处于**手动对焦档**（派生自硬件真值：`manualFocus != nil` = 已锁定）。
+    /// 是否处于**手动对焦档**（2026-09-20 正源修：派生自**用户意图态**
+    /// `session.manualFocus != nil`，不再从硬件 `focusMode == .locked` 推断 ——
+    /// `.autoFocus` 完成后系统也置 `.locked`，回读分不清两种锁，Mac 复验 ③ 根因）。
     var isFocusManual: Bool { environment?.session.manualFocus != nil }
 
-    /// 是否处于**自动对焦**（对焦盘「自动对焦」开关的显示状态，派生不记账）。
+    /// 是否处于**自动对焦**（对焦盘「自动对焦」开关的显示状态，派生不记账；
+    /// 同 `isFocusManual` —— 意图态，非硬件回读）。
     var isFocusAuto: Bool { environment?.session.manualFocus == nil }
 
     // MARK: - 功能面板（#10）
@@ -1248,18 +1251,16 @@ final class CameraViewModel: ObservableObject {
         focusEditingChanged(isEditing)
     }
 
-    /// 对焦编辑态闸门（`docs/14` 同构；另守"自动对焦开着时不推手动对焦"）。
+    /// 对焦编辑态闸门（`docs/14` 同构：拖动期不回写 + 只接受最后推送值）。
+    ///
+    /// ⚠️ **2026-09-20 正源修：删掉原来的 `guard !isFocusAuto` 拦截** ——
+    /// 那道拦截和意图态有时序矛盾：**第一次拖动就是"进入手动对焦"的意图表达**
+    /// （此刻 `manualFocus` 还是 `nil` = "自动"），按旧逻辑会被自己拦掉，拖动永远
+    /// 无效。自动档下盘面本来就被 `DialView` 的 `autoMode` 锁住拖动（到不了这里），
+    /// 所以这里只剩闸门本职 + 把意图交给 `setManualFocus`（session 侧置 `manualFocus`）。
     func focusEditingChanged(_ isEditing: Bool) {
         if isFocusEditing != isEditing {
             isFocusEditing = isEditing
-        }
-        guard !isFocusAuto else {
-            lastPushedLensPosition = nil
-            DebugLog.shared.warn(
-                "ui",
-                "自动对焦开着时收到手动拖动 → 已拦下（盘面本应锁定，出现这条说明拦漏了）"
-            )
-            return
         }
         lastPushedLensPosition = Float(focusLensPosition)
         environment?.session.setManualFocus(lensPosition: Float(focusLensPosition))
