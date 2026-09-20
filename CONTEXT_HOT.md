@@ -1,6 +1,6 @@
 # CONTEXT_HOT · 对话续接摘要
 
-> 更新：2026-09-19 深夜（**B3b 对焦圆盘交付：共享 DialView 重构 + 能力分派 + 点按只测光（拍板 ③）**；前一版：EV 三改复验通过 `651cc5c` / Mac 复验 B2 修复 `598d4cd`）。新会话开场：**整份贴 `docs/00-启动包.md`**（本文件按需查，不再整份贴）。
+> 更新：2026-09-20（**B3b 复验通过：③ 点按对焦回归经 Mac 最小修后复验 ✅（20 次点按全走对焦点、零漏焦、零 ERR；正源修待 WB）**；前一版：B3b 交付 / EV 三改复验 `651cc5c` / Mac 复验 B2 修复 `598d4cd`）。新会话开场：**整份贴 `docs/00-启动包.md`**（本文件按需查，不再整份贴）。
 > 配套文档：`docs/01~04`（方案与交接）、`README.md`（运行与验收）、
 > `docs/08`（Swift 同步任务书 · **当前主任务书**）、`docs/00-启动包.md`（**新会话唯一入口**）。
 
@@ -12,7 +12,9 @@
 > Swift 端**当前主任务书是 `docs/08`**，新会话**启动包是 `docs/00-启动包.md`**（开场**只贴这一份**，本文件按需查），两者配套读。
 
 ### 进度基线
-- ✅ **B3b 对焦圆盘已交付（2026-09-19 深夜，等 Mac 复验）**：两盘共用 **DialView**
+- ✅ **B3b 对焦圆盘已交付（2026-09-19 深夜）→ Mac 复验通过（2026-09-20，③ 经最小修复验 ✅）**
+  （③ 回归根因：B3b「回读三件套」把硬件 `.locked` 当用户意图 → 死锁；Mac 最小修已 push 且复验
+  通过，**正源修待 WB** —— 详见 Mac 快照段「B3b 复验记录」）：两盘共用 **DialView**
   （`ExposureDialView.swift` 泛化重构——Mac 架构指示"抽共享盘底不要抄第二份"落地；
   Theme 令牌 evDial*→dial*，新增 dialAutoSwitch* 五个 + dialSwitchOn/Off 色分派）。
   **能力分派（拍板 ①·A）**：虚拟多摄点「对焦」= toast「手动对焦：当前多摄虚拟设备不支持 ·
@@ -244,6 +246,40 @@ A 组 4 笔（`fe88bd6` / `e2b81f2` / `ecfbe74` / `e3f426e`）**已于 2026-09-1
 📌 B3b 对焦盘落地时必须同步的三条口径见 backlog ⑨（半透明盘底 / 字号按 400 坐标系缩放 /
 相对位移拖拽模型 + 方向约定）。
 
+**B3b 复验记录（2026-09-20 · `4b79e46`）—— 3/4 通过，③ 点按对焦回归（已定位+最小修）**：
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| ① 点「对焦」→ toast + warn、不开盘 | ✅ | 3 次 `WRN 点「对焦」手动圆盘被拒` + toast，日志**无**对焦盘展开行 |
+| ② 冷启动能力行 | ✅ | `手动参数能力：… / 对焦(锁定位置)=false` |
+| ③ 点取景器对焦照常 | ❌ **回归** | 圈出现但**永不合焦** → 根因链见下 |
+| ④ EV 盘回归（DialView 共享重构） | ✅ | 开/收 ×2 留痕（11:38 / 11:41）；拖动·归零实测无退化（该两项无日志点） |
+| 拍照 | ✅ | 11:39:39 快门 → 1.17MB 入库 →「已保存到相册」；全程零 ERR |
+
+**③ 根因链（硬证据，WB 正源修依据）**：
+- **SDK 明文**（`AVCaptureDevice.h:1053-1054`）：`.autoFocus` = "autofocus once and then **change
+  the focus mode to AVCaptureFocusModeLocked**" —— 一次性 AF 完成后**设备自动转 `.locked`**；
+- B3b「回读三件套」`manualFocus(of:) = focusMode == .locked ? lensPosition : nil`
+  （`CaptureDeviceConfigurator.swift:257-260`）把**硬件状态**当**用户意图**用；
+- `focus(atDevicePoint:)` 设完 `.autoFocus` 后立刻 `publishManualState`（`CaptureSessionController`
+  :578）→ 读到 `.locked` → `manualFocus` 非 nil（:562）→ `isFocusManual`（`CameraViewModel:106`）= true；
+- 之后所有点按走「仅测光、不动焦」（`CameraViewModel.focusTapped` :577-585，拍板 ③），
+  而该路径**不碰 focusMode** → `.locked` 永久保留 → **死锁：点按对焦永久失效**；
+- 日志实锤：11:38:01.904/.908 两次点按还走「对焦点 →」；**11:38:10 起 10+ 次点按全为**
+  「手动对焦锁定中 → 点按仅测光」；
+- ⚠️ **与虚拟设备无关**：物理架构落地后照样犯（任何一次点按对焦都会把 app 打进"手动锁定"态）。
+
+**Mac 最小修（已 push）**：`CaptureSessionController.swift:562` → `self.manualFocus = manualFocusOK ? focus : nil`
+（本机 `对焦(锁定位置)=false` → 手动对焦进不去 → 状态恒 nil，精确恢复 B3b 前行为）。
+**最小修后复验（2026-09-20）✅**：20 次点按（不同位置/近远切换）**全部**走「对焦点 → (…)」、
+**零**「手动对焦锁定中 → 点按仅测光」、零 ERR；拍照 1.81MB 正常入库 —— ③ 通过，
+**B3b 复验全项清零**（正源修仍待 WB）。
+**WB 正源修（已转）**：「是否手动对焦」改由 **UI 意图**（对焦圆盘锁焦状态）驱动，硬件回读只喂
+`currentLensPosition`；`isFocusAuto`（`CameraViewModel:109`）同源污染需一并处理。
+⚠️ **通用教训（已记长期记忆）**：**硬件状态回读不能直接当用户意图用** —— 评估任何"回读当状态"
+的设计时先问：这个硬件值会不会在正常操作中自发出现？（`.custom`/白平衡 `.locked` 不会 → 回读安全；
+对焦 `.locked` 会 → 回读不安全）
+
 **架构级发现 · 正式记录（2026-09-19 · 供 WB/新会话当硬事实引用）**：
 iOS 26 SDK `AVCaptureDevice.h:538-541` 明文 —— **`builtInTripleCamera` 等虚拟多摄设备不支持**：
 ① `AVCaptureExposureModeCustom`（自定义 ISO/快门）；② 锁定对焦到非 Current 的镜头位置；
@@ -318,7 +354,14 @@ iOS 26 SDK `AVCaptureDevice.h:538-541` 明文 —— **`builtInTripleCamera` 等
 ② **字号按 400 坐标系缩放**：刻度数字 = `13 × size/400`（≈8pt@246，原型 SVG 文本口径；
 EV 盘曾误写死 13pt、偏大 62%，已修）；
 ③ **拖拽 = 相对位移模型**（顺滑顺走 + 点击不改值）：指尖角位移 1:1 传给盘面（ΔRing = Δcss），
-零位移松手不推值；⚠️ 该模型下**顺时针滑 = 值减小**（数字顺时针递增 + 盘面跟手，物理转盘语义）
+零位移松手不推值；⚠️ 该模型下**顺时针滑 = 值减小**（数字顺时针递增 + 盘面跟手，物理转盘语义）；
+⑩ **对焦回读语义 bug（B3b 带出，2026-09-20 复验发现 · Mac 已最小修，等 WB 正源修）**：
+`focusMode == .locked` 是"一次性 AF 完成后的**正常状态**"（SDK 明文：`.autoFocus` 对焦一次后
+自动转 `.locked`），**不是**"用户锁了手动对焦"。回读直接赋值 → 点按对焦一次后 `isFocusManual`
+永久为真 → 后续点按全走"仅测光、不动焦"（该路径不碰 focusMode → **永久死锁**）。
+详见 Mac 快照段「B3b 复验记录」；⚠️ **通用教训（已记长期记忆）**：**硬件状态回读不能直接当用户
+意图用** —— 先问"这个硬件值会不会在正常操作中自发出现"（**Mac 最小修后已复验通过 2026-09-20**；
+正源修 —— 手动档状态改由 UI 意图驱动 —— 仍待 WB）
 
 **Mac 环境备忘（新会话必读）**：
 - **真机截图用 `pymobiledevice3 developer dvt screenshot out.png`**（PATH 加 `$HOME/Library/Python/3.9/bin`；已 pip3 install --user 11.15.1，自动走原生隧道无需 sudo）。`idevicescreenshot` 在 iOS 26 确定性损坏（libimobiledevice issue #1465），重启/重插无效，别再试

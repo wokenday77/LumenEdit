@@ -559,7 +559,16 @@ final class CaptureSessionController: ObservableObject {
             self.isManualExposureSupported = manualExposureOK
             self.isManualWhiteBalanceSupported = manualWhiteBalanceOK
             // 对焦（B3b 补齐回读三件套）
-            self.manualFocus = focus
+            // ⚠️ **必须加能力门**（2026-09-20 真机复验抓到，[mac-fix]）：`focusMode == .locked`
+            // 是"一次性 AF 完成后"的**正常状态**（SDK 明文 `AVCaptureDevice.h:1053-1054`：
+            // `.autoFocus` = 对焦一次后**自动转 `.locked`**），**不等于**"用户锁了手动对焦"。
+            // 直接回读赋值 → 点按对焦一次后 `manualFocus` 就非 nil → `isFocusManual` 永久为真
+            // → 后续点按全部走"仅测光、不动焦"（`CameraViewModel.focusTapped`），而该路径
+            // **不碰 focusMode** → `.locked` 永久保留 → **死锁：点按对焦永久失效**（真机实测）。
+            // 本机 `对焦(锁定位置)=false` → 手动对焦根本进不去 → 状态必须恒 nil，
+            // 精确恢复 B3b 前行为。（正源修由 WB 做：手动档状态改由 **UI 意图** 驱动，
+            // 回读只喂 `currentLensPosition`。）
+            self.manualFocus = manualFocusOK ? focus : nil
             self.currentLensPosition = currentLens
             self.isManualFocusSupported = manualFocusOK
         }
