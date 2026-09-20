@@ -310,6 +310,13 @@ final class CaptureSessionController: ObservableObject {
         DebugLog.shared.info("session", "切换模式 \(mode.displayName) → \(newMode.displayName)")
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            // 问题 6（Mac 复验）：切模式重配 outputs 时系统可能**重选 activeFormat**，
+            // 手动档（.custom / .locked）会被一并清掉 —— 但**切模式不是退出手动的意图**，
+            // 用户设置的参数必须保留（`docs/20` 复验补充）。先快照、commit 后比对重放。
+            let prevExposure = self.configurator.manualExposure(of: device)
+            let prevWhiteBalance = self.configurator.manualWhiteBalance(of: device)
+            let prevBias = device.exposureTargetBias
+
             self.session.beginConfiguration()
             self.configureAudioInputLocked(for: newMode)
             self.reconfigureOutputsLocked(for: newMode)
@@ -318,8 +325,37 @@ final class CaptureSessionController: ObservableObject {
             self.preparePhotoTemplateIfNeeded(for: newMode)
             self.publish { self.mode = newMode }
             // 切模式重配了输出、`activeFormat` 可能跟着变 → 手动档真值与刻度条可用域重算一次
-            // （手动档本身会活下来：换的是 output，不是 device）
+            // （换的是 output，不是 device；**手动参数意图保留**：被系统清了就重放 —— 问题 6）
             if let device = self.device {
+                let afterExposure = self.configurator.manualExposure(of: device)
+                if prevExposure != nil, afterExposure == nil {
+                    // 手动曝光被系统清 → 重放（值就是快照里的，无需 clamp 变化）
+                    try? self.configurator.setManualExposure(
+                        iso: prevExposure!.iso, seconds: prevExposure!.seconds, on: device
+                    )
+                    DebugLog.shared.info(
+                        "session",
+                        "切模式清掉了手动曝光 → 已重放（ISO \(String(format: "%.0f", prevExposure!.iso))）"
+                    )
+                }
+                let afterWhiteBalance = self.configurator.manualWhiteBalance(of: device)
+                if prevWhiteBalance != nil, afterWhiteBalance == nil {
+                    try? self.configurator.setManualWhiteBalance(
+                        temperature: prevWhiteBalance!.temperature,
+                        tint: prevWhiteBalance!.tint,
+                        on: device
+                    )
+                    DebugLog.shared.info(
+                        "session",
+                        "切模式清掉了手动白平衡 → 已重放（\(String(format: "%.0f", prevWhiteBalance!.temperature))K）"
+                    )
+                }
+                // EV 重放与手动曝光互斥（同 🔴1：applyExposureBias 见 .custom 会回切自动）——
+                // 只在"切模式前就是自动曝光档"时才重放；手动档下 EV 值本就无效、保留状态即可。
+                if prevExposure == nil, abs(device.exposureTargetBias - prevBias) > 0.001 {
+                    try? self.configurator.applyExposureBias(prevBias, to: device)
+                    DebugLog.shared.info("session", "切模式重置了 EV → 已重放（\(String(format: "%+.1f", prevBias))）")
+                }
                 self.publishManualState(device)
             }
             self.refreshSnapshot()
@@ -742,12 +778,22 @@ final class CaptureSessionController: ObservableObject {
                 try? configurator.setAutoWhiteBalance(on: newDevice)
             }
         }
-        // EV（值保留：手动曝光档下被系统忽略，回自动档自动生效）
-        do {
-            try configurator.applyExposureBias(previousBias, to: newDevice)
-            DebugLog.shared.info("session", "搬运：EV 已重放（\(String(format: "%+.1f", previousBias))）")
-        } catch {
-            DebugLog.shared.warn("session", "EV 搬运失败（保留状态值）：\(error.localizedDescription)")
+        // EV（预检 🔴1）：**手动曝光档下不推** —— `applyExposureBias` 见 `.custom` 会把设备
+        // 回切自动（docs/16 第五节的防线），先搬 ISO 再搬 EV 会把刚搬好的手动档**自己杀掉**
+        // （Mac 复验 4 次 WRN 实锤，违反 docs/18 §2.4"手动档下不推 EV"）。
+        // EV 值本来就在 session 状态里（`exposureBias`），回自动档时自动生效 —— 这里跳过即可。
+        if previousExposure == nil {
+            do {
+                try configurator.applyExposureBias(previousBias, to: newDevice)
+                DebugLog.shared.info("session", "搬运：EV 已重放（\(String(format: "%+.1f", previousBias))）")
+            } catch {
+                DebugLog.shared.warn("session", "EV 搬运失败（保留状态值）：\(error.localizedDescription)")
+            }
+        } else {
+            DebugLog.shared.info(
+                "session",
+                "搬运：手动曝光档激活 → 跳过 EV 重放（值保留 \(String(format: "%+.1f", previousBias))，回自动档生效）"
+            )
         }
         // 对焦：显式降级（预检 ⑤）—— 意图清除 + 连续自动
         publish { self.manualFocus = nil }

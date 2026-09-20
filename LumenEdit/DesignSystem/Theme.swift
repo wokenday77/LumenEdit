@@ -572,10 +572,12 @@ enum Theme {
         /// 全手动档退出 → 切回虚拟多摄的**防抖时长**（`docs/20` 2.2b，量级守卫 [1,5]s）
         static let dialRevertDebounce: CGFloat = 2.0
 
-        /// 换设备模糊转场：**淡入**时长（预检 ⑧ 顺序触发第一段；量级守卫 [0.1,0.5]s）
-        static let dialBlurIn: CGFloat = 0.15
-        /// 换设备模糊转场：**淡出**时长（量级守卫 [0.1,0.5]s）
-        static let dialBlurOut: CGFloat = 0.25
+        /// 换设备模糊转场：**淡入**时长（预检 ⑧ 顺序触发第一段；量级守卫 [0.1,0.5]s）。
+        /// 🔴5 拍板 A2（极短转场）：0.15 → **0.10**（下限）—— 手动参数切换"瞬发"体验；
+        /// ⚠️ 换设备硬耗时 ~0.6-0.75s（AVFoundation input 切换）被模糊盖住，压不进 0.3-0.5s。
+        static let dialBlurIn: CGFloat = 0.10
+        /// 换设备模糊转场：**淡出**时长（A2 压缩：0.25 → 0.15）
+        static let dialBlurOut: CGFloat = 0.15
 
         // MARK: 取景器辅助线（三分构图线）
 

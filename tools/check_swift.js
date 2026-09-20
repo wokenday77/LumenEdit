@@ -2355,6 +2355,114 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
         + '顺序触发转场 / 排队补执行 —— docs/18 预检 7+3 全落地）');
     }
+
+    // k) Mac 复验 5 问题对应的守卫（2026-09-20 修复批）
+    //    k1（🔴问题1+🟠问题4）：格式探测缓存 + 视频/Log 直达链（不再 12~41 候选逐个 apply）
+    const fmtBody19 = methodBodyOf(sessionSrc19, 'applyPreferredFormatLocked');
+    const fmtCacheOK = !!fmtBody19
+      && /if let cached = formatProbeCache\[cacheKey\]/.test(fmtBody19)
+      && /needsLiveProbe/.test(fmtBody19)
+      && /mode == \.photo \|\| mode == \.livePhoto/.test(fmtBody19);
+    if (!fmtCacheOK) {
+      bad('采集格式探测缺缓存 / 视频/Log 直达链（Mac 复验 🔴问题1 换设备 4.5~11.9s、'
+        + '🟠问题4 Live 判据恒 false）—— (设备,模式) 命中缓存一次直达；视频/Log 不进 Live 探测循环');
+    }
+    //    k2（🔴问题2）：刻度条初值有效性守卫（无效 → 回落档位表默认值）
+    const vmToggle19 = methodBodyOf(vmSrc12, 'stripAutoToggled');
+    const initialGuardOK = !!vmToggle19
+      && /isoValid = pair\.iso >= 1/.test(vmToggle19)
+      && /secondsValid = pair\.seconds > 0/.test(vmToggle19)
+      && /ParameterStripCatalog\.defaultISO/.test(vmToggle19)
+      && /ParameterStripCatalog\.defaultShutterSeconds/.test(vmToggle19);
+    if (!initialGuardOK) {
+      bad('`stripAutoToggled` 缺初值有效性守卫（Mac 复验 🔴问题2：换设备冷帧回读 '
+        + 'ISO 0 / 1/71429s 写进硬件 = 极端曝光）—— 无效必须回落档位表默认值');
+    }
+    //    k3（🟠问题3）：上报与吸附同源（滞后 0.75 已删，round 同源 + 节流防连响）
+    const stripFile19 = files.find(f => path.basename(f) === 'ParameterStripView.swift');
+    const stripCode19 = stripFile19
+      ? fs.readFileSync(stripFile19, 'utf8').replace(/\/\/[^\n]*/g, '')
+      : '';
+    const sameSourceOK = !!stripCode19
+      && !/hysteresisRatio/.test(stripCode19)
+      && /Int\(position\.rounded\(\)\)/.test(stripCode19)
+      && /if index == lastReportedIndex/.test(stripCode19);
+    if (!sameSourceOK) {
+      bad('刻度条上报与吸附不同源（Mac 复验 🟠问题3"回弹一档"复发）—— 拖动上报必须与松手'
+        + '吸附同用 round(position)，滞后 0.75 已废弃（变化即上报 + 0.15s 节流）');
+    }
+    //    k4（🟡问题5）：applyFocal 物理分支补映射（物理会话不走虚拟阶梯）
+    const vmFocalApply19 = methodBodyOf(sessionSrc19, 'applyFocal');
+    const physBranchOK = !!vmFocalApply19
+      && /if case \.physical = form/.test(vmFocalApply19)
+      && /zoomFactorOnPhysicalDevice/.test(vmFocalApply19);
+    if (!physBranchOK) {
+      bad('`applyFocal` 缺物理分支映射（Mac 复验 🟡问题5：会话重启后物理档位对齐静默失败）'
+        + ' —— 物理会话不走虚拟阶梯，zoom 直接取 zoomFactorOnPhysicalDevice');
+    }
+
+    //    m1（🔴复验批二问题1）：搬运 EV 必须有"手动档跳过"条件（applyExposureBias 见 .custom
+    //       会回切自动 → 先搬 ISO 再搬 EV = 手动档被自己杀掉，4 次 WRN 实锤）
+    const evSkipOK = !!reapplyBody19
+      && /if previousExposure == nil \{[\s\S]{0,400}?applyExposureBias\(/.test(reapplyBody19);
+    if (!evSkipOK) {
+      bad('搬运 EV 没有"手动档跳过"条件（🔴：先搬 ISO 再搬 EV = 手动档被自己杀掉，'
+        + '违反 docs/18 §2.4"手动档下不推 EV"）');
+    }
+    //    m2（🔴问题6）：切模式意图保留——switchMode 体内必须有 prev 快照 + 重放（且 EV 重放
+    //       只在自动曝光档）
+    const modeBody19 = methodBodyOf(sessionSrc19, 'switchMode');
+    const modeKeepOK = !!modeBody19
+      && /prevExposure = self\.configurator\.manualExposure\(of: device\)/.test(modeBody19)
+      && /prevExposure != nil, afterExposure == nil/.test(modeBody19)
+      && /prevExposure == nil, abs\(device\.exposureTargetBias - prevBias\)/.test(modeBody19);
+    if (!modeKeepOK) {
+      bad('切模式缺"手动参数意图保留"重放（🔴问题6：activeFormat 被系统重选 → 手动档被清）'
+        + '，或 EV 重放缺"仅自动曝光档"条件（与手动档互斥，同 🔴1）');
+    }
+    //    m3（🟠问题2）：气泡与指针同源（气泡用 steps[currentStepIndex] 吸附）
+    const bubbleOK = /ParameterStripCatalog\.label\(for: kind, value: steps\[currentStepIndex\]\.value\)/
+      .test(stripCode19);
+    if (!bubbleOK) {
+      bad('气泡没有与指针同源吸附（🟠问题2：硬件回读值 934 与指针档位对不上）——'
+        + '气泡必须显示 steps[currentStepIndex].value');
+    }
+    //    m4（🟠问题3）：跟手倍率 1.5:1（用户拍板，安全边界 ≤2:1）+ 半档细刻度（🟠问题4）
+    const mGain = /dragGain: Double = ([0-9.]+)/.exec(stripCode19);
+    const gainVal = mGain ? parseFloat(mGain[1]) : null;
+    const gainOK = gainVal !== null && gainVal >= 1.2 && gainVal <= 2
+      && /translation\.width \/ Self\.dragGain/.test(stripCode19);
+    if (!gainOK) {
+      bad('跟手倍率缺失或越界（🟠问题3：拍板 1.5:1，安全边界 ≤2:1 —— 逐档跟手实测'
+        + '"1 秒连推 5 档"）');
+    }
+    const halfTickOK = /kind == \.iso \|\| kind == \.shutter \{/.test(stripCode19)
+      && /\(CGFloat\(gap\) \+ 0\.5\) \* geometry\.slot/.test(stripCode19);
+    if (!halfTickOK) {
+      bad('ISO / 快门缺半档细刻度（🟠问题4 参考图口径；白平衡 100K 档位 tick 天然覆盖不加）');
+    }
+    //    m5（🟡问题7）：同值不推硬件（iso/shutter/wb 三分支都有 current 一致性跳过）
+    const sameValueOK = !!vmSrc12.match(/与当前硬件值一致 → 跳过重复写入/g)
+      && (vmSrc12.match(/与当前硬件值一致 → 跳过重复写入/g) || []).length >= 3;
+    if (!sameValueOK) {
+      bad('刻度条写入缺"同值不推硬件"守卫（🟡问题7：松手吸附与最后上报同值时的冗余写入）');
+    }
+    //    m6（🔴问题5 拍板 A2）：转场压缩参数（in 0.10 / out 0.15）
+    const a2OK = blurIn !== null && Math.abs(blurIn - 0.10) < 0.001
+      && blurOut !== null && Math.abs(blurOut - 0.15) < 0.001;
+    if (!a2OK) {
+      bad('转场参数不是 A2 拍板口径（in 0.10 / out 0.15）—— 手动参数切换的"瞬发"体验'
+        + '依赖极短转场（换设备硬耗时 ~0.6-0.75s 被模糊盖住，压不进 0.3-0.5s 全程）');
+    }
+
+    // l) 汇总（含 k/m 段）
+    if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK
+      && fmtCacheOK && initialGuardOK && sameSourceOK && physBranchOK
+      && evSkipOK && modeKeepOK && bubbleOK && gainOK && halfTickOK && sameValueOK && a2OK) {
+      ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
+        + '顺序触发转场 / 排队补执行 / 格式缓存与初值守卫 / 同源上报 / EV 手动档跳过 / '
+        + '切模式参数保留 / 灵敏度与细刻度 / A2 极短转场 —— docs/18 预检 7+3 + 复验 12 问题全落地）');
+    }
   }
 }
 

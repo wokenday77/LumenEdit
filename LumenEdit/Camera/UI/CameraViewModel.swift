@@ -928,6 +928,12 @@ final class CameraViewModel: ObservableObject {
             var draft = isoShutterDraft ?? currentExposurePair(environment)
             draft.iso = value
             isoShutterDraft = draft
+            // 🟡7 同值不推硬件（Mac 复验：松手吸附与最后上报同值时的冗余写入）
+            let current = currentExposurePair(environment)
+            guard abs(draft.iso - current.iso) > 0.5 || abs(draft.seconds - current.seconds) > 0.0001 else {
+                DebugLog.shared.debug("ui", "ISO \(String(format: "%.0f", draft.iso)) 与当前硬件值一致 → 跳过重复写入")
+                break
+            }
             environment.session.setManualExposure(
                 iso: Float(draft.iso),
                 seconds: draft.seconds
@@ -936,12 +942,22 @@ final class CameraViewModel: ObservableObject {
             var draft = isoShutterDraft ?? currentExposurePair(environment)
             draft.seconds = value
             isoShutterDraft = draft
+            let current = currentExposurePair(environment)
+            guard abs(draft.iso - current.iso) > 0.5 || abs(draft.seconds - current.seconds) > 0.0001 else {
+                DebugLog.shared.debug("ui", "快门 \(FormatText.shutterSpeed(draft.seconds)) 与当前硬件值一致 → 跳过重复写入")
+                break
+            }
             environment.session.setManualExposure(
                 iso: Float(draft.iso),
                 seconds: draft.seconds
             )
         case .whiteBalance:
             whiteBalanceDraft = value
+            let currentKelvin = environment.session.currentWhiteBalanceKelvin
+            guard abs(value - Double(currentKelvin)) > 25 else {
+                DebugLog.shared.debug("ui", "白平衡 \(String(format: "%.0f", value))K 与当前硬件值一致 → 跳过重复写入")
+                break
+            }
             environment.session.setManualWhiteBalance(kelvin: Float(value))
         }
 

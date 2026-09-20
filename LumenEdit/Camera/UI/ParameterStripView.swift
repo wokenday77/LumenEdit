@@ -108,6 +108,10 @@ struct ParameterStripView: View {
     /// **触觉节流**：0.15s（与 `ParameterSlider` 一致；自检第 12 组守这个量级）
     private static let tickThrottle: TimeInterval = 0.15
 
+    /// **跟手倍率**（2026-09-20 Mac 复验 🟠问题 3，用户拍板 1.5:1；安全边界 ≤2:1）：
+    /// 指尖移动 1.5 个档距，盘面走 1 档（原逐档跟手实测"1 秒连推 5 档"太灵敏）
+    private static let dragGain: Double = 1.5
+
     // MARK: - 几何（从令牌推导，不在视图里写死数字）
 
     /// 指针竖线上端 = 三角下沿
@@ -158,6 +162,23 @@ struct ParameterStripView: View {
 
     private func scaleArea(geometry: ParameterStripGeometry) -> some View {
         ZStack(alignment: .topLeading) {
+            // 半档细刻度（2026-09-20 Mac 复验 🟠问题 4，参考图口径）：两档之间的视觉细线。
+            // 仅 ISO / 快门加 —— 白平衡是 100K 步进的**真实档位**刻度（76 档，非主档 tick
+            // 天然覆盖"每 100K 一条"），再加半档线会与档位 tick 重叠。
+            if kind == .iso || kind == .shutter {
+                ForEach(0..<(steps.count - 1), id: \.self) { gap in
+                    let x = geometry.padding + (CGFloat(gap) + 0.5) * geometry.slot
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
+                        .fill(Color.white.opacity(isAuto ? 0.10 : 0.20))
+                        .frame(width: 1, height: Theme.Size.paramStripTickHeight / 2)
+                        .position(
+                            x: x,
+                            y: Theme.Size.paramStripHeight
+                                - Theme.Size.paramStripTickBottomInset
+                                - Theme.Size.paramStripTickHeight / 4
+                        )
+                }
+            }
             ForEach(steps.indices, id: \.self) { index in
                 tickContent(at: index, geometry: geometry)
             }
@@ -286,10 +307,14 @@ struct ParameterStripView: View {
         .allowsHitTesting(false)
     }
 
-    /// 气泡文本：自动态显示「自动」，否则显示当前档位（原型 `fmt`）
+    /// 气泡文本：自动态显示「自动」，否则显示当前档位（原型 `fmt`）。
+    ///
+    /// ⚠️ **与指针同源**（2026-09-20 Mac 复验 🟠问题 2）：显示值吸附到**最近档**
+    /// （`steps[currentStepIndex].value`）—— 硬件回读值（如 ISO 934）不落在档位上时，
+    /// 气泡若显示原始值就与指针档位对不上。拖动期草稿值同理吸附。
     private var bubbleText: String {
-        guard !isAuto, let value = displayValue else { return "自动" }
-        return ParameterStripCatalog.label(for: kind, value: value)
+        guard !isAuto, displayValue != nil else { return "自动" }
+        return ParameterStripCatalog.label(for: kind, value: steps[currentStepIndex].value)
     }
 
     // MARK: - 右端自动 / 手动开关
@@ -374,14 +399,16 @@ struct ParameterStripView: View {
                 guard isHorizontalDrag == true else { return }
 
                 if dragOffset == nil {
-                    // 起手：从"当前档位"开始跟手，并记住起始下标（滞后判定以此为基准）
+                    // 起手：从"当前档位"开始跟手，并记住起始下标（上报判定以此为基准）
                     dragStartOffset = geometry.offset(forStep: currentStepIndex)
                     dragOffset = dragStartOffset
                     lastReportedIndex = currentStepIndex
                 }
 
                 let range = geometry.offsetRange
-                let raw = dragStartOffset + gesture.translation.width
+                // 跟手倍率（2026-09-20 Mac 复验 🟠问题 3，用户拍板 1.5:1，安全边界 ≤2:1）：
+                // 指尖移动 1.5 个档距 = 盘面走 1 档 —— 原来逐档实锤"1 秒连推 5 档"太灵敏。
+                let raw = dragStartOffset + gesture.translation.width / Self.dragGain
                 dragOffset = min(max(raw, range.lowerBound), range.upperBound)
 
                 // 跨档判定（**与松手吸附同源**：都用 `round(position)`，2026-09-20 修"回弹一档"）：
