@@ -1,0 +1,223 @@
+LumenEdit 日志启动 2026-09-21 22:52:47
+device=iPhone17,1  system=26.6.0
+============================================================
+[22:52:47.940] INF [render] CIContext 初始化完成，后端=Apple A18 Pro GPU
+[22:52:47.973] INF [app] AppEnvironment 初始化完成，hud=true grid=true tone=true
+[22:52:47.996] INF [ui] 相机页已装配
+[22:52:48.012] DBG [perm] 刷新权限 camera=已授权 mic=已授权 albumAdd=已授权 albumRead=未决定
+[22:52:48.012] DBG [thumb] 无相册读取权限，跳过最新照片缩略图
+[22:52:48.012] DBG [perm] 刷新权限 camera=已授权 mic=已授权 albumAdd=已授权 albumRead=未决定
+[22:52:48.017] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:48.017] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:48.018] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:48.018] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:48.019] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:48.020] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:52:48.020] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:52:48.021] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:52:48.021] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:52:48.022] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:52:48.022] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:52:48.023] INF [device] 格式已应用 Back Triple Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284 fps=30
+[22:52:48.024] INF [session] 选用采集格式 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284，Live Photo 能力=true（候选共 31 个，已缓存并落盘）
+[22:52:48.024] INF [photo] 照片编码格式：hvc1
+[22:52:48.025] INF [session] 变焦拓扑：deviceType=AVCaptureDeviceTypeBuiltInTripleCamera · constituents=3 · 角色=[超广角,广角,长焦] · switchOver=[2.000, 10.000] · 原生阶梯=[1.000, 2.000, 10.000] · 档位=13→1.000 / 24→2.000 / 35→2.917 / 48→4.000 / 120→10.000 · 不可用=无 · zoomRange=[1.00, 189.00]
+[22:52:48.025] INF [session] 手动参数能力：曝光(custom)=false / 白平衡(锁定增益)=false / 对焦(锁定位置)=false
+[22:52:48.025] INF [session] 会话配置完成，Live Photo 支持=true
+[22:52:48.025] INF [session] startRunning()
+[22:52:48.030] INF [hardware] 相机控制按钮交互已挂载（无该按钮的设备上不会触发）
+[22:52:48.036] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:52:48.036] INF [session] 预热决策：开始预热，待探 3 颗（Back Ultra Wide Camera / Back Camera / Back Telephoto Camera）—— 串行逐颗，一旦打断直播会话就整体放弃
+[22:52:49.397] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:52:49.397] DBG [preview] 预览层已绑定会话
+[22:52:49.427] INF [session] startRunning()
+[22:52:49.551] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:49.552] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:49.553] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:49.554] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:49.555] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:49.556] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:52:49.557] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:52:49.558] INF [device] 格式已应用 Back Ultra Wide Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:52:49.559] INF [device] 格式已应用 Back Ultra Wide Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:52:49.560] INF [device] 格式已应用 Back Ultra Wide Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:52:49.561] INF [device] 格式已应用 Back Ultra Wide Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:52:49.562] INF [device] 格式已应用 Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:52:49.562] INF [session] 预热探到格式：Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048（候选 35 个）
+[22:52:49.833] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:52:49.834] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:52:49.834] INF [session] 预热跳过：已在预热中
+[22:52:49.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 27.9MB
+[22:52:49.838] DBG [ui] 会话就绪 · 焦段 24mm 已对齐（变焦 2.00×）
+[22:52:50.354] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:50.832] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:51.062] INF [session] 切换模式 照片 → 视频
+[22:52:51.118] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 1/0） · 内存 28.2MB · 预期 input ≤ 1 / output ≤ 1
+[22:52:51.118] INF [session] 已加入麦克风输入
+[22:52:51.142] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:52:51.142] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 2/0） · output 活 0（累计增/删 1/1） · 内存 28.3MB · 预期 input ≤ 1 / output ≤ 1
+[22:52:51.143] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 2/1） · 内存 28.3MB · 预期 input ≤ 1 / output ≤ 1
+[22:52:51.144] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:52:51.144] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:52:51.146] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:52:51.146] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:52:51.146] INF [session] 切模式耗时 0.08s（视频；含 outputs 重配与参数重放）
+[22:52:51.273] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:51.521] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:51.533] DBG [ui] toast: 剩余可用存储 43.21 GB
+[22:52:51.632] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:52:51.840] INF [resource] 模式 视频 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 2/1） · 内存 28.8MB
+[22:52:51.878] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:52:51.899] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:52:51.900] INF [session] 切换模式 视频 → Log 实况
+[22:52:51.902] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:52:51.902] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:52:51.902] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:52:51.902] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:52:51.902] INF [session] 切模式耗时 0.00s（Log 实况；含 outputs 重配与参数重放）
+[22:52:51.960] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:52:52.226] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:52:52.504] INF [session] 切换模式 Log 实况 → 实况
+[22:52:52.508] INF [photo] Live Photo 采集 已开启
+[22:52:52.509] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:52:52.510] INF [photo] 照片编码格式：hvc1
+[22:52:52.510] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:52:52.510] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:52:52.510] INF [session] 切模式耗时 0.01s（实况；含 outputs 重配与参数重放）
+[22:52:52.574] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:52:52.919] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:52:53.033] INF [session] 切换模式 实况 → 照片
+[22:52:53.034] INF [session] 已移除麦克风输入
+[22:52:53.101] INF [audio] 音频会话已释放
+[22:52:53.106] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:52:53.106] INF [photo] 照片编码格式：hvc1
+[22:52:53.107] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:52:53.107] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:52:53.107] INF [session] 切模式耗时 0.07s（照片；含 outputs 重配与参数重放）
+[22:52:53.262] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:52:53.718] INF [device] 格式已应用 Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:52:53.718] INF [session] 预热探到格式：Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048（候选 41 个）
+[22:52:53.851] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 5/4） · 内存 28.0MB
+[22:52:53.984] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:52:53.984] DBG [ui] 刻度条展开（ISO）
+[22:52:53.984] DBG [ui] toast: ISO：自动（点右侧开关切手动）
+[22:52:53.984] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:52:54.032] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:52:54.423] INF [session] 预热让路：直播要换设备 → 已等预热收手 0.44s（不置放弃标记：下次启动仍会预热）
+[22:52:54.427] INF [device] 格式已应用 Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:52:54.427] INF [session] 采集格式命中**缓存**（跳过探测循环）：4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048
+[22:52:54.427] INF [session] 搬运：EV 已重放（+0.0）
+[22:52:54.427] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:52:54.427] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:52:54.428] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=true；耗时 0.00s
+[22:52:54.428] INF [session] 静默换形态耗时 0.44s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:52:54.428] INF [session] 预热结束：耗时 6.39s
+[22:52:54.558] DBG [ui] 刻度条收起（ISO）
+[22:52:54.558] DBG [ui] toast: ISO 刻度条已收起
+[22:52:56.572] INF [ui] 全手动档退出 2s → 切回虚拟多摄（B1 平滑变焦恢复 · **静默无转场**）
+[22:52:56.572] INF [session] 静默换形态（后台挂设备 · 无转场）→ 虚拟多摄（24 mm）
+[22:52:57.709] INF [device] 格式已应用 Back Triple Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284 fps=30
+[22:52:57.709] INF [session] 采集格式命中**缓存**（跳过探测循环）：4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284
+[22:52:57.709] INF [session] 搬运：EV 已重放（+0.0）
+[22:52:57.710] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:52:57.710] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:52:57.711] INF [session] 换设备完成（静默·无转场）→ 虚拟多摄（24 mm）；当前档位 24 mm；Live Photo 能力=true；耗时 1.14s
+[22:52:57.711] INF [session] 静默换形态耗时 1.14s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:52:57.841] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 29.4MB
+[22:53:02.872] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:07.841] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:12.869] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:17.841] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:22.870] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:27.841] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:32.869] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:37.840] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:42.869] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:47.840] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:52.869] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:53:57.840] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:54:02.870] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:54:07.840] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:54:12.869] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:54:17.840] INF [resource] 模式 照片 · input 活 1（累计增/删 4/3） · output 活 1（累计增/删 5/4） · 内存 28.8MB
+[22:54:21.918] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:54:21.918] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:54:21.919] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:54:21.919] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:54:22.422] INF [device] 格式已应用 Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:54:22.423] INF [session] 采集格式命中**缓存**（跳过探测循环）：4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048
+[22:54:22.423] INF [session] 搬运：EV 已重放（+0.0）
+[22:54:22.423] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:54:22.423] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:54:22.423] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=true；耗时 0.50s
+[22:54:22.423] INF [session] 静默换形态耗时 0.50s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:54:22.427] DBG [ui] 静默换形态完成 → 由 form 边沿执行入口动作
+[22:54:22.427] DBG [ui] 对焦圆盘展开（入口：图标行「对焦」）
+[22:54:22.427] DBG [ui] toast: 手动对焦：拖动圆盘调焦（0.0 近 → ∞ 远） · 再点收起
+[22:54:22.427] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:54:22.869] INF [resource] 模式 照片 · input 活 1（累计增/删 5/4） · output 活 1（累计增/删 5/4） · 内存 29.4MB
+[22:54:23.366] DBG [preview] 点按对焦 view=(50,404) device=(0.52,0.76)
+[22:54:23.366] DBG [ui] 对焦圆盘收起（点别处）
+[22:54:23.368] DBG [device] 对焦点 → (0.52, 0.76)
+[22:54:23.369] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:54:24.436] DBG [ui] 物理会话同镜头变焦 → 35 mm（zoom 1.46×）
+[22:54:24.436] DBG [ui] toast: 焦段 35 mm · 变焦 1.46×
+[22:54:25.038] DBG [ui] 物理会话同镜头变焦 → 48 mm（zoom 2.00×）
+[22:54:25.038] DBG [ui] toast: 焦段 48 mm · 变焦 2.00×
+[22:54:25.389] DBG [device] 变焦 ramp 已停止（换设备前置）
+[22:54:25.389] INF [session] 换设备开始（模糊淡入中）→ 物理单摄（120 mm）
+[22:54:25.402] INF [ui] 全手动档退出 2s → 切回虚拟多摄（B1 平滑变焦恢复 · **静默无转场**）
+[22:54:25.402] INF [session] 静默换形态跳过：真转场进行中（让路）
+[22:54:26.276] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:54:26.825] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:54:27.343] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:54:27.698] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:54:27.816] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:54:28.147] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:54:28.279] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:54:28.694] INF [device] 格式已应用 Back Telephoto Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:54:29.108] INF [device] 格式已应用 Back Telephoto Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:54:29.523] INF [device] 格式已应用 Back Telephoto Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:54:29.938] INF [device] 格式已应用 Back Telephoto Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:54:30.495] INF [device] 格式已应用 Back Telephoto Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024 fps=30
+[22:54:30.496] INF [session] 选用采集格式 4032x3024 1-30fps 4:3 photoMax=4032x3024，Live Photo 能力=true（候选共 35 个，已缓存并落盘）
+[22:54:30.497] INF [session] 搬运：EV 已重放（+0.0）
+[22:54:30.497] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:54:30.497] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:54:30.498] INF [session] 换设备完成（转场）→ 物理单摄（120 mm）；当前档位 120 mm；Live Photo 能力=true；耗时 4.96s
+[22:54:30.499] INF [resource] 模式 照片 · input 活 1（累计增/删 6/5） · output 活 1（累计增/删 5/4） · 内存 29.1MB
+[22:54:31.538] INF [session] 换设备开始（模糊淡入中）→ 物理单摄（13 mm）
+[22:54:32.130] INF [device] 格式已应用 Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:54:32.130] INF [session] 采集格式命中**缓存**（跳过探测循环）：4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048
+[22:54:32.130] INF [session] 搬运：EV 已重放（+0.0）
+[22:54:32.130] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:54:32.130] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:54:32.131] INF [session] 换设备完成（转场）→ 物理单摄（13 mm）；当前档位 13 mm；Live Photo 能力=true；耗时 0.44s
+[22:54:32.131] INF [resource] 模式 照片 · input 活 1（累计增/删 7/6） · output 活 1（累计增/删 5/4） · 内存 29.2MB
+[22:54:36.840] INF [resource] 模式 照片 · input 活 1（累计增/删 7/6） · output 活 1（累计增/删 5/4） · 内存 29.1MB
+[22:54:38.072] INF [session] 切换模式 照片 → 实况
+[22:54:38.076] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 5/4） · 内存 29.1MB · 预期 input ≤ 1 / output ≤ 1
+[22:54:38.076] INF [session] 已加入麦克风输入
+[22:54:38.183] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:54:38.184] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 0（累计增/删 5/5） · 内存 29.3MB · 预期 input ≤ 1 / output ≤ 1
+[22:54:38.187] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.3MB · 预期 input ≤ 1 / output ≤ 1
+[22:54:38.188] INF [photo] Live Photo 采集 已开启
+[22:54:38.668] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:54:38.668] INF [photo] 照片编码格式：hvc1
+[22:54:38.668] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:54:38.668] INF [session] 切模式耗时 0.60s（实况；含 outputs 重配与参数重放）
+[22:54:38.668] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.3MB · 预期 input ≤ 1 / output ≤ 1
+[22:54:40.869] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.4MB
+[22:54:45.840] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:54:50.869] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:54:55.840] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:00.869] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:05.840] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:10.870] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:15.840] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:20.869] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:25.840] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:30.869] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:35.841] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+[22:55:40.872] INF [resource] 模式 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 6/5） · 内存 29.2MB
+
