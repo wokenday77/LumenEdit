@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreVideo
 import Foundation
 
 /// 能力探测。
@@ -393,6 +394,65 @@ enum CaptureCapabilities {
                 }
                 return left.width * left.height < right.width * right.height
             }
+    }
+
+    // MARK: - Live Photo 优先序（批六 ② 候选 2 · P-b1）
+
+    /// 该格式的像素格式是不是 **4:2:0 video-range**（FourCC `420v` / `0x34323076`）。
+    ///
+    /// ## 为什么按它筛（**真表实测，不是猜**）
+    ///
+    /// 2026-09-21 夜真机把 `device.formats` 全表打出来（`reference/batch6-runB-2026-09-21/device-formats-全表.log`，
+    /// 386 行 · iPhone17,1 三颗后摄），配合"真跑探测"的结果对照：
+    ///
+    /// - Live Photo 命中的格式，三颗**全部**是 `4032x3024 | 420v | 1-30fps | binned=N`；
+    /// - 同为 4032x3024 但 **`420f`（full range）的档全部未命中**。
+    ///
+    /// ⚠️ 这是**启发式**（单机型三颗镜头的证据），不保证跨机型 / 跨系统版本成立 ——
+    /// 所以调用侧必须保留三层兜底：**命中即停 · 未命中继续循环 · 缓存 Live 自愈**。
+    static func isVideoRangeFormat(_ format: AVCaptureDevice.Format) -> Bool {
+        format.formatDescription.mediaSubType.rawValue
+            == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    }
+
+    /// **Live Photo 优先序**的候选表 —— 排序键 =（`420v` 优先，**面积降序**）。
+    ///
+    /// ## 为什么这么排（实测：把命中档从"第 12 位"提到"第 1 位"）
+    ///
+    /// 在真表上用脚本复算（现序 = `formatCandidates` 的"4:3 优先 + 面积升序"）：
+    ///
+    /// | 设备 | 候选数 | 现序命中位次 | 本序命中位次 |
+    /// |---|---|---|---|
+    /// | Back Ultra Wide | 35 | 12 | **1** |
+    /// | Back | 41 | 12 | **1** |
+    /// | Back Telephoto | 35 | 12 | **1** |
+    ///
+    /// 而"每次 `applyFormat`"在**设备正被运行中的直播会话使用**时实测 ≈**0.295s**
+    /// （同一颗设备在会话未跑时只要 ≈0.85ms）—— 所以 12 次 ≈ **3.5s**，1 次 ≈ **0.3s**。
+    /// 这就是「13mm→120mm 长转场」能被压到 ≈1.45s 的**唯一**来源：
+    /// 换 input 那 0.6~0.75s 与模糊 0.15/0.25s 都是固有成本。
+    ///
+    /// ⚠️ **单靠"420v 优先"不够**：候选里 420v 有 12~13 个，必须再配"面积降序"才钉得住第 1 位。
+    ///
+    /// ⚠️ **只给 Live 探测循环用**：视频 / Log 模式取的是"第一个候选"（现有语义 = 最小档），
+    /// 若把它也换成这个顺序，视频档位会变成 `4032x3024` —— 那是行为改变，不是优化。
+    static func liveProbePreferredCandidates(
+        for device: AVCaptureDevice,
+        minimumWidth: Int32 = 1920,
+        targetFrameRate: Double = 30
+    ) -> [AVCaptureDevice.Format] {
+        formatCandidates(
+            for: device,
+            minimumWidth: minimumWidth,
+            targetFrameRate: targetFrameRate
+        ).sorted { lhs, rhs in
+            let leftIsVideoRange = isVideoRangeFormat(lhs)
+            let rightIsVideoRange = isVideoRangeFormat(rhs)
+            if leftIsVideoRange != rightIsVideoRange { return leftIsVideoRange }
+            let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+            let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+            return left.width * left.height > right.width * right.height
+        }
     }
 
     /// 候选中的首选格式（不探测 Live Photo 能力时使用）
