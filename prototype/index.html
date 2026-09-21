@@ -544,10 +544,11 @@
   }
   .screen.strip-auto .sp-clip{cursor:default;}
   .sp-scale{position:absolute;left:0;top:0;bottom:0;will-change:transform;}
-  .sp-tick{position:absolute;bottom:20px;width:1.5px;border-radius:1px;background:rgba(255,255,255,.34);height:10px;}
-  .sp-tick.mid{height:15px;background:rgba(255,255,255,.48);}
-  .sp-tick.major{height:22px;background:rgba(255,255,255,.82);}
-  .sp-tick.preset{height:22px;background:rgba(242,175,60,.85);}
+  /* 刻度线：**单档口径**（2026-09-21 批六 · 复刻飓风）—— 每档一根 **14px 高 / 1.33px 宽**，
+     无 `mid`/`major` 层级（旧的两档随 `labelAt` 机制一起退场）；预设档（白平衡琥珀）**与普通档同高**，
+     只靠颜色区分。⚠️ 与 `Theme.Size.paramStripTickHeight / Width` 同口径（Swift 侧 14 / 1.33pt）。 */
+  .sp-tick{position:absolute;bottom:20px;width:1.33px;border-radius:1px;background:rgba(255,255,255,.82);height:14px;}
+  .sp-tick.preset{background:rgba(242,175,60,.85);}
   .sp-num{
     position:absolute;bottom:2px;transform:translateX(-50%);
     font-size:10.5px;color:rgba(255,255,255,.62);white-space:nowrap;
@@ -1750,11 +1751,17 @@
     paintPreviewInto($('styleThumbInner'));
   }
 
-  /* 快门档位表：**15 档，左慢右快**（1s → 1/12000，2026-09-17 按用户口径）。
+  /* 快门档位表：**42 档，左慢右快**（1 → 1/8000，2026-09-21 批六 · 复刻飓风 + 行业主流）。
+     口径（用户 2026-09-21 拍板）：整档表**补成 1/3 档**（含 1/1.3 · 1/1.6 · 1/2.5 · 1/3 · 1/5 ·
+     1/6 · 1/10 · 1/13 · 1/20 · 1/25 · 1/40 · 1/50 · 1/80 · 1/1250 · 1/2500 · 1/5000 这些整档表里
+     没有的中间值）+ **两个影院值** `1/96`·`1/120`（180° 快门角）；**删掉**我们独有的 `1/12000`
+     （行业表没有它，且 7 字符在 40pt 档距 + 全标签下必然与邻档叠字）。
+     ⚠️ 与 `ParameterStripCatalog.shutterSecondValues / shutterLabels` **逐项一致**
+     （`tools/check_presets.js` 第 6 组守着，改一边必须同步另一边）。
      刻度条按数组顺序从左往右画，所以顺序即方向；标度换算（simulatedShutter / 参数导入吸附）
      都按"对数距离取最近"，与顺序无关 —— 反转只影响显示方向。 */
-  var SHUTTER_VAL   = [1,1/2,1/4,1/8,1/15,1/30,1/60,1/125,1/250,1/500,1/1000,1/2000,1/4000,1/8000,1/12000];
-  var SHUTTER_LABEL = ['1','1/2','1/4','1/8','1/15','1/30','1/60','1/125','1/250','1/500','1/1000','1/2000','1/4000','1/8000','1/12000'];
+  var SHUTTER_VAL   = [1,1/1.3,1/1.6,1/2,1/2.5,1/3,1/4,1/5,1/6,1/8,1/10,1/13,1/15,1/20,1/25,1/30,1/40,1/50,1/60,1/80,1/96,1/100,1/120,1/125,1/160,1/200,1/250,1/320,1/400,1/500,1/640,1/800,1/1000,1/1250,1/1600,1/2000,1/2500,1/3200,1/4000,1/5000,1/6400,1/8000];
+  var SHUTTER_LABEL = ['1','1/1.3','1/1.6','1/2','1/2.5','1/3','1/4','1/5','1/6','1/8','1/10','1/13','1/15','1/20','1/25','1/30','1/40','1/50','1/60','1/80','1/96','1/100','1/120','1/125','1/160','1/200','1/250','1/320','1/400','1/500','1/640','1/800','1/1000','1/1250','1/1600','1/2000','1/2500','1/3200','1/4000','1/5000','1/6400','1/8000'];
 
   function simulatedShutter(ev){
     var target = (1/125) * Math.pow(2, -ev);   // 基准 1/125，每 +1 EV 快门快一倍
@@ -2736,7 +2743,7 @@
       if (isNaN(iso)) return null;
       /* 导入 ISO/快门/白平衡 → 对应条**自动切手动**，否则导入值在自动态下不显示 */
       state.auto.isoShutter = false;
-      state.cal.iso = presetSnap(presetClamp(iso, 50, 12000), ISO_STRIP);
+      state.cal.iso = presetSnap(presetClamp(iso, 50, 12096), ISO_STRIP);
       return 'ISO ' + state.cal.iso + '（已切手动 · 真机 P2 生效）';
     }
     if (key === 'shutter'){
@@ -3076,7 +3083,11 @@
        ISO 与快门**共用一个自动状态**（AVCaptureDevice：锁了 ISO 就得接管曝光时长）。
        数据表只在这里定义一次：渲染 / 拖动 / 吸附 / 参数导入全从它读，不在别处抄第二份。
      ========================================================= */
-  var ISO_STRIP = [50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1200,1600,2000,2500,3200,4000,5000,6400,8000,10000,12000];
+  /* ISO 档位值：**25 档，约 1/3 档等比**，50 → **12096**（2026-09-21 批六 · 复刻飓风）。
+     ⚠️ 末档**不是**行业表的 12800 —— `12096` = **设备实读 `maxISO`**（飓风截图末档即此值，
+     我们日志也读到同值）。Swift 侧 `isoValues(deviceISOMax:)` 运行时会按当前设备再覆盖一次末档。
+     与 `ParameterStripCatalog.isoValues` 逐项一致（check_presets 第 6 组守着）。 */
+  var ISO_STRIP = [50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1200,1600,2000,2500,3200,4000,5000,6400,8000,10000,12096];
   var WB_STRIP  = (function(){ var a = []; for (var k=2500;k<=10000;k+=100) a.push(k); return a; })();
 
   function shutterText(sec){
@@ -3084,10 +3095,13 @@
     return '1/' + Math.round(1 / sec);
   }
 
+  /* 三条刻度条（2026-09-21 批六 · 复刻飓风 = 方案 A，用户拍板）：
+     - **档距统一 `slot:40`**（飓风实测 120px ÷ 3 = 40.0pt/档；旧口径是 ISO 46 / 快门 56 / WB 26）；
+     - **`labelAt`（只标主档）机制已退场** → **每档都带标签**（飓风做法；渲染处见 `renderStrip`）；
+     - 代价（用户已接受）：一条 40pt 档距走三条 → 可视 8~9 档，全靠左右滑滚动消化档数差。 */
   var STRIPS = {
     iso: {
-      name:'ISO', slot:46, seed:800, ticks:ISO_STRIP,
-      labelAt:[400,800,1200,1600,3200,6400,12000],
+      name:'ISO', slot:40, seed:800, ticks:ISO_STRIP,
       label:function(v){ return String(v); },
       fmt:function(v){ return String(Math.round(v)); },
       /* 连续值：相邻两档在对数空间插值（1600 与 1200 之间能停在 1573 这种数上） */
@@ -3097,8 +3111,7 @@
       }
     },
     shutter: {
-      name:'快门', slot:56, seed:'1/125', ticks:SHUTTER_LABEL,
-      labelAt:SHUTTER_LABEL.slice(),
+      name:'快门', slot:40, seed:'1/125', ticks:SHUTTER_LABEL,
       label:function(v){ return v; },
       fmt:function(v){ return (typeof v === 'string') ? v : shutterText(v); },
       valAt:function(i){
@@ -3107,9 +3120,9 @@
       }
     },
     wb: {
-      name:'白平衡', slot:26, seed:'5600K', ticks:WB_STRIP,
-      /* 主档每 500K；预设档（白炽灯 3000 / 荧光灯 4000 / 日光 5200 / 阴天 6000 / 阴影 7500）加琥珀标记 */
-      labelAt:(function(){ var a=[]; for (var k=3000;k<=10000;k+=500) a.push(k); return a; })(),
+      name:'白平衡', slot:40, seed:'5600K', ticks:WB_STRIP,
+      /* 预设档（白炽灯 3000 / 荧光灯 4000 / 日光 5200 / 阴天 6000 / 阴影 7500）**保留琥珀色**，
+         但按批六口径**与普通档同高**（飓风没有层级）—— 只靠颜色区分，不靠高度。 */
       preset:[3000,4000,5200,6000,7500],
       label:function(v){ return v + 'K'; },
       fmt:function(v){ return Math.round(v) + 'K'; },
@@ -3146,13 +3159,14 @@
     if (force || scale.dataset.strip !== id){
       scale.dataset.strip = id;
       var h = '';
+      // ⚠️ 批六 · 复刻飓风：**`labelAt`（只标主档）机制已退场** ——
+      //    每档一根**同高**刻度（14px，见 `.sp-tick`）+ **每档都带标签**（飓风实测：细:主 = 1:1、无层级）。
+      //    `preset`（白平衡琥珀）**只改颜色、不改高度**。
       cfg.ticks.forEach(function(t, i){
-        var cls = 'sp-tick' + (cfg.labelAt.indexOf(t) >= 0 ? ' major' : '')
-                + (cfg.preset && cfg.preset.indexOf(t) >= 0 ? ' preset' : '');
+        var cls = 'sp-tick' + (cfg.preset && cfg.preset.indexOf(t) >= 0 ? ' preset' : '');
         h += '<i class="' + cls + '" style="left:' + (SP.pad + i * cfg.slot) + 'px"></i>';
       });
       cfg.ticks.forEach(function(t, i){
-        if (cfg.labelAt.indexOf(t) < 0) return;
         h += '<span class="sp-num" style="left:' + (SP.pad + i * cfg.slot) + 'px">'
            + cfg.label(t) + '</span>';
       });

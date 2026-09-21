@@ -88,7 +88,10 @@ enum ParameterStripCatalog {
     /// - `false`：两边应当逐条全等，本组收紧为 FAIL。
     ///
     /// ⚠️ 必须是 `var`/`let` 静态常量且**只有这一处**（改口径时改这里，别在别的文件再写一个开关）。
-    static let isSwiftAheadOfPrototype: Bool = true
+    ///
+    /// ✅ **2026-09-21 CB 已同步原型**（ISO 末档 12096 / 快门 42 档 / slot 统一 40 / `labelAt` 退场
+    /// 改全标签 + 刻度单档 CSS）→ 标记改回 `false`，`check_presets` 第 6 组自动收紧为"逐条全等"。
+    static let isSwiftAheadOfPrototype: Bool = false
 
     /// 现行口径的名字（日志 / WARN 里带出来，避免"哪一版口径"说不清）。
     static let specVersion: String = "hurricane-A（2026-09-21 批六 · 复刻飓风）"
