@@ -2930,6 +2930,102 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + '超出即 DebugLog.warn（"⚠️ 资源超出预期"）；memoryFootprintMB 必须用 phys_footprint；'
         + '且 refreshSnapshot 里要有 snapshotTick % 5 的周期汇总 —— 掉帧排查要靠这条账定性泄漏');
     }
+    //    o5（批六 ② **修复** · 2026-09-21 真机复验不过之后）：判据脱钩 / 留痕 / 白名单 / 映射。
+    //       这一组的由来：预热**从未跑过、且一行日志都没有** —— 判据读的是 @Published `state`，
+    //       而 `state = .running` 写在 `startInternal` 的 `publish{}` 里（主线程异步），
+    //       调用点却在它之前 → 必然读到 `.idle`。四条断言各对应一处真机结论。
+    const prewarmPrologueO = prewarmCodeO.split('prewarmQueue.asyncAfter')[0];
+
+    // o5-a 判据必须**脱钩 `state`**：用两个同步量（configurationSucceeded + session.isRunning），
+    //      且不许再读 @Published 的 `mode`（改用同步镜像 `modeLocked`）。
+    const syncFlagOK5 = /configurationSucceeded,\s*session\.isRunning/.test(prewarmCodeO);
+    const stateGoneOK5 = !/\bstate\s*[!=]=/.test(prewarmCodeO);
+    const modeMirrorOK5 = /modeLocked/.test(prewarmCodeO)
+      && !/\bmode\b/.test(prewarmCodeO.replace(/modeLocked/g, ''));
+    const o5aOK = syncFlagOK5 && stateGoneOK5 && modeMirrorOK5;
+    if (!o5aOK) {
+      bad('预热判据没脱钩（批六 ② 真机不过的根因）：必须换成**同步量** '
+        + '`configurationSucceeded, session.isRunning`（不能再读 @Published 的 `state` —— '
+        + '`state = .running` 在 `publish{}` 里异步回主线程，调用点又在它之前，必读旧值），'
+        + '并且不许再读 @Published 的 `mode`（改读同步镜像 `modeLocked`，否则格式缓存会写到错的模式键下）');
+    }
+
+    // o5-b **每条早退都要留痕**：预热"序言"（`prewarmQueue.asyncAfter` 之前）里的每个 guard，
+    //      其后 3 行内必须有 `prewarmSkip(` —— 旧实现里那条静默 `return` 是"零日志"的直接成因。
+    //      ⚠️ 排除 `return nil` 那一类：那是 `compactMap` 闭包里"这一颗探不到"的返回值，
+    //      不是"预热早退"路径（留痕要求只对**裸 `return` 的早退**成立）。
+    const prologueLines5 = prewarmPrologueO.split('\n');
+    const silent5 = [];
+    let guards5 = 0;
+    for (let i = 0; i < prologueLines5.length; i++) {
+      if (!/^\s*guard\s/.test(prologueLines5[i])) continue;
+      const window5 = prologueLines5.slice(i, i + 4).join('\n');
+      if (/return\s+nil/.test(window5)) continue;
+      guards5++;
+      if (!/prewarmSkip\(/.test(window5)) silent5.push(i + 1);
+    }
+    const o5bOK = guards5 >= 5 && silent5.length === 0;
+    if (!o5bOK) {
+      bad('预热早退没留痕（批六 ② P0-3）：序言里的 guard 有 ' + guards5 + ' 条，其中静默的 '
+        + '（其后 3 行内没有 `prewarmSkip(`）在行 ' + (silent5.join('/') || '—')
+        + ' —— 真机复验就是被这条静默 return 害得"零日志、看不出跑没跑"');
+    }
+
+    // o5-c 打断闸门必须是**白名单**：只排"进后台"这一类（`benign` 返回值恰好 1 处、且紧挨
+    //      `videoDeviceNotAvailableInBackground`），而**致命那条必须保留闸门作用**
+    //      （`videoDeviceInUseByAnotherClient` 必须 `false` —— 写成"排除所有非致命"就会连它一起放过）。
+    const mapBody5 = methodBodyOf(sessionSrc19, 'interruptionReason');
+    const mapCode5 = mapBody5 ? mapBody5.replace(/\/\/[^\n]*/g, '') : '';
+    const benignCount5 = (mapCode5.match(/,\s*true\s*\)/g) || []).length;
+    const benignIsBackground5 =
+      /videoDeviceNotAvailableInBackground[\s\S]{0,200}?,\s*true\s*\)/.test(mapCode5);
+    const fatalKeepsGate5 =
+      /videoDeviceInUseByAnotherClient[\s\S]{0,200}?,\s*false\s*\)/.test(mapCode5);
+    const gateAfterGuard5 = /guard\s*!reason\.benign\s*else/.test(obsCodeO)
+      && /prewarmAbandoned = true/.test(obsCodeO);
+    const o5cOK = benignCount5 === 1 && benignIsBackground5 && fatalKeepsGate5 && gateAfterGuard5;
+    if (!o5cOK) {
+      bad('打断闸门不是白名单（批六 ② P0-4）：良性返回值必须**恰好 1 处**且只属于'
+        + '`videoDeviceNotAvailableInBackground`（现 ' + benignCount5 + ' 处），'
+        + '`videoDeviceInUseByAnotherClient` 必须仍是 `false` 并保留 '
+        + '`guard !reason.benign else` → `prewarmAbandoned = true` 的闸门作用'
+        + '（写成"排除所有非致命 reason"= 把黑屏那条一起放过）');
+    }
+
+    // o5-d reason 映射齐全：按**枚举名**匹配（不按 raw 常量猜 —— 真机实测 raw 1/4/6 全落进
+    //      `其它`，说明经典 raw 表在本机不成立）+ `@unknown default` 兜底 + raw 进日志。
+    const o5dOK = !!mapCode5
+      && /AVCaptureSession\.InterruptionReason\(rawValue:/.test(mapCode5)
+      && /@unknown default/.test(mapCode5)
+      && /videoDeviceNotAvailableInBackground/.test(mapCode5)
+      && /videoDeviceNotAvailableWithMultipleForegroundApps/.test(mapCode5)
+      && /raw \\\(raw\)/.test(obsCodeO);
+    if (!o5dOK) {
+      bad('打断原因映射不齐（批六 ② P0-5）：要按 `AVCaptureSession.InterruptionReason(rawValue:)` '
+        + '具名匹配 + `@unknown default` 兜底（未知一律**非良性**）+ 日志里带 `（raw \\(raw)）` '
+        + '—— 真机实测 raw 1/4/6 全被打成「其它(N)」，按 raw 常量猜是不可靠的');
+    }
+
+    //    o6（批六 ② P0-6）：预热**让路**齐备 —— 修好判据后预热第一次真跑，就会和"点焦段 / 开对焦盘"
+    //       抢同一颗物理设备（撞上就是 `canAddInput` 失败 → 回滚 + 报错 toast）。
+    const yieldBody6 = methodBodyOf(sessionSrc19, 'prewarmYieldToLiveSwitchIfNeeded');
+    const yieldCode6 = yieldBody6 ? yieldBody6.replace(/\/\/[^\n]*/g, '') : '';
+    const switchBody6 = methodBodyOf(sessionSrc19, 'performFocalSwitch');
+    const switchCode6 = switchBody6 ? switchBody6.replace(/\/\/[^\n]*/g, '') : '';
+    const o6OK = !!yieldCode6 && !!switchCode6
+      && /prewarmYieldRequested = true/.test(yieldCode6)
+      && /prewarmQueue\.sync/.test(yieldCode6)          // 屏障 = 回执（不盲等超时）
+      && /prewarmYieldToLiveSwitchIfNeeded\(\)/.test(switchCode6)
+      && /isFocalSwitchInFlight = true/.test(switchCode6)
+      && /defer \{ isFocalSwitchInFlight = false \}/.test(switchCode6)
+      && /prewarmYieldRequested \|\| self\.shouldYieldPrewarmToLiveSession/.test(prewarmCodeO)
+      && /prewarmYieldRequested \|\| shouldYieldPrewarmToLiveSession/.test(probeCodeO);
+    if (!o6OK) {
+      bad('预热让路不齐备（批六 ② P0-6）：换设备侧要有 `prewarmYieldToLiveSwitchIfNeeded()` + '
+        + '`isFocalSwitchInFlight` 置位与 `defer` 复位；让路侧要有 `prewarmYieldRequested = true` + '
+        + '`prewarmQueue.sync {}` 屏障（等预热收手，不盲等超时）+ 预热循环/探格式里的让路判定 —— '
+        + '少了它，修好的预热会和点焦段/开对焦盘抢物理设备（黑屏或"切换镜头失败"）');
+    }
     // l) 汇总（含 k/m/n 段）
     if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK
       && fmtCacheOK && fmtPersistOK && initialGuardOK && sameSourceOK && physBranchOK
@@ -2940,14 +3036,16 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       && prewarmOK && oneExecutorOK && formSinkOK && oldSinkGone && queueEntryOK && silentRevertOK
       && outcomeOK && silentSignalOK && queueOutcomeOK && entryRaceOK && oneExecOK
       && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2
-      && o1OK && o2OK && o3OK && o4OK) {
+      && o1OK && o2OK && o3OK && o4OK && o5aOK && o5bOK && o5cOK && o5dOK && o6OK) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
         + '顺序触发转场 / 排队补执行 / 格式缓存**落盘**与初值守卫 / 同源上报 / 归一后重放 / '
         + '切模式一律按快照重放 + **延迟复查补写** / **刻度单档口径（复刻飓风：40pt 档距 · '
         + '单档 14×1.33 · 选中 22+2 绿 · 无细分线 · 每档全标签）** / '
         + '静默换形态**结果回执**（不再盲等超时）与竞态出口 / 对焦锁定值守卫 / '
         + '松手待回读对齐 / **批六 o1~o4：埋点逐点计数（漏埋即 FAIL）· 预热三层兜底齐备 · '
-        + '点按意图重放手动档 · 资源周期账（超预期 WARN + phys_footprint）** —— '
+        + '点按意图重放手动档 · 资源周期账（超预期 WARN + phys_footprint）** / '
+        + '**批六 ② 修复（o5/o6）：判据脱钩 @Published（同步量 + mode 镜像）· 早退必留痕 · '
+        + '打断闸门白名单（只排后台）· reason 具名映射 · 预热让路（屏障回执 + 换设备互斥）** —— '
         + 'docs/18 预检 7+3 + 批三/四/五/六问题全落地）');
     }
   }

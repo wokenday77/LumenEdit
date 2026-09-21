@@ -262,6 +262,32 @@ final class CaptureSessionController: ObservableObject {
     /// 不能直接用 `isConfigured`（@Published）做流程判断——那个值是通过 `publish`
     /// **异步**回到主线程才更新的，在 sessionQueue 上立刻读到可能还是 false。
     private var configurationSucceeded = false
+
+    /// `mode` 的**同步镜像**（批六 ② 修复 · P0-2 · 2026-09-21）。
+    ///
+    /// ## 为什么必须镜像（与 `configurationSucceeded` 同一类坑）
+    ///
+    /// `mode` 是 `@Published`，**唯一写入点**在 `switchMode` 的 `publish{}` 里 —— 也就是
+    /// **主线程、异步**（`publish` 在非主线程时走 `DispatchQueue.main.async`）。而
+    /// `startPrewarmIfNeeded` 跑在 `sessionQueue` 上，直接读 `mode` 会拿到**旧值**。
+    ///
+    /// 预热拿 `mode` 做两件事，读旧值**两件都错**：
+    /// ① 判断"当前模式该不该预热"（旧值 → 该跳的时候不跳、不该探的时候乱探）；
+    /// ② 拼格式缓存键 `"<设备 uniqueID>|<模式>"` —— **会把缓存写到错的模式键下**
+    ///    （后果：白探一次、下次仍走冷探测；不是崩溃，但等于预热白做）。
+    ///
+    /// ⚠️ 只修 `state` 不修 `mode` = 半修（两者是同一类 race）。
+    /// 写入点与 `mode` 同处：`switchMode` 里 `publish{}` **外**、`sessionQueue` 上（唯一一处）。
+    private var modeLocked: CaptureSessionMode = .photo
+
+    /// 换设备**正在进行**（批六 ② P0-6）—— 预热让路的同步信号之一。
+    ///
+    /// 与 `pendingFocalTarget`（"排队中"）互补：那个只在"会话未就绪"时才有值，
+    /// 这个覆盖"真在换"的窗口（`performFocalSwitch` 全程，0.6~0.75s，冷探测时更长）。
+    /// ⚠️ 只读同步量 —— **不能读 `@Published` 的 `isLensSwitching`**（主线程写，同类 race）。
+    /// 写入：`performFocalSwitch` 入口置位 + `defer` 复位（该函数体是**同步**的，全程在 `sessionQueue`）。
+    private var isFocalSwitchInFlight = false
+
     private var isAppActive = true
     private var isVisible = false
 
@@ -378,6 +404,9 @@ final class CaptureSessionController: ObservableObject {
                     + " / 快照=曝光\(prevExposure == nil ? "自动" : "手动")·白平衡\(prevWhiteBalance == nil ? "自动" : "手动")"
             )
             self.preparePhotoTemplateIfNeeded(for: newMode)
+            // P0-2：同步镜像与 `mode` 同处赋值 —— 必须在 `publish{}` **外**（本行在 sessionQueue 上，
+            // 预热读的就是它）；写在 `publish{}` 里等于没镜像（那是在主线程上异步写的）。
+            self.modeLocked = newMode
             self.publish { self.mode = newMode }
             // ⚠️ 切模式**一律按快照重放**（2026-09-20 批四 · 🔴 问题 2）。
             //
@@ -758,6 +787,11 @@ final class CaptureSessionController: ObservableObject {
     /// - Parameter throughTransition: `true` = 由 UI 淡入完成回调驱动的真实转场
     ///   （结束时要复位 `isLensSwitching`）；`false` = 后台静默（**绝不碰它**）。
     private func performFocalSwitch(_ target: FocalTarget, throughTransition: Bool) {
+        // ② P0-6（2026-09-21）：让预热侧也能看到"正在换设备" —— 它读 `shouldYieldPrewarmToLiveSession`。
+        // 覆盖范围 = 从这一行到函数返回（本函数体是同步的，全程在 sessionQueue 上）。
+        isFocalSwitchInFlight = true
+        defer { isFocalSwitchInFlight = false }
+
         // 幂等（静默换形态可能与真转场竞争）
         guard needsSwitch(to: target) else {
             if throughTransition { publish { self.isLensSwitching = false } }
@@ -767,6 +801,12 @@ final class CaptureSessionController: ObservableObject {
             if throughTransition { publish { self.isLensSwitching = false } }
             return
         }
+
+        // ② P0-6 预热让路（**反方向**）：走到这里就是"真要换设备"了 —— 预热可能正持着我们即将
+        // 要挂的那颗物理镜头。不先把它请走，下面的 `canAddInput` 会失败 → 回滚 + 报错 toast
+        // （用户在"点焦段 / 开对焦盘"时看到"切换镜头失败"，正是判据 b 要防的）。
+        // ⚠️ 放在两道 guard **之后**：目标形态已满足 / 无设备的空跑不该白杀掉一次预热。
+        prewarmYieldToLiveSwitchIfNeeded()
 
         // 旧设备手动参数真值快照（搬运源 —— .custom/.locked 只能用户设，回读可信）
         let previousExposure = configurator.manualExposure(of: device)
@@ -1788,7 +1828,21 @@ final class CaptureSessionController: ObservableObject {
     private var isPrewarming = false
     /// **本次运行内放弃预热**（直播会话被打断过一次就不再试）
     private var prewarmAbandoned = false
+    /// **让路请求**（P0-6）：直播要换设备了 → 预热须尽快收手、把物理设备让出去。
+    ///
+    /// 与 `prewarmAbandoned` 的区别：让路**不是预热惹的祸** → 不置放弃标记，
+    /// 下次 `startInternal()` 还能再试。写到 `true` = 直播侧（sessionQueue）；
+    /// 读到 = 预热侧（prewarmQueue）；新一轮开始时复位（见 `startPrewarmIfNeeded`）。
+    private var prewarmYieldRequested = false
     private var interruptionObserverRegistered = false
+
+    /// 预热让路的**同步信号**（P0-6）：换设备"排队中或进行中"时，预热必须让出物理设备。
+    ///
+    /// 两个来源都是同步量：`pendingFocalTarget`（会话未就绪时排队的焦段目标）+
+    /// `isFocalSwitchInFlight`（真在换）。⚠️ **不能读 `@Published` 的 `isLensSwitching`**。
+    private var shouldYieldPrewarmToLiveSession: Bool {
+        pendingFocalTarget != nil || isFocalSwitchInFlight
+    }
     /// 预热开关（给复验做 A/B 用，不必重新出构建）：
     /// `-lumen.camera.prewarm.disabled YES`（启动参数）/ `defaults` 同名键
     private var isPrewarmDisabled: Bool {
@@ -1820,17 +1874,40 @@ final class CaptureSessionController: ObservableObject {
     ///
     /// 收益：第一次切镜头 / 点对焦的设备挂载 ≈0.3~0.8s（命中缓存），4.27s 静止帧消失。
     private func startPrewarmIfNeeded() {
-        guard !prewarmAbandoned, !isPrewarming else { return }
+        // P0-3：**每一次进入都必须留下一行决策日志**。本轮真机复验不过的现场之所以"零日志、
+        // 完全看不出预热跑没跑"，就是因为早退路径里有一条是**静默 return**。现在所有早退
+        // 统一走 `prewarmSkip(_:)`（它就是"预热决策"那行的出口），一条都不能再少。
+        guard !prewarmAbandoned, !isPrewarming else {
+            prewarmSkip(prewarmAbandoned ? "本次运行已放弃预热（曾被真打断过）" : "已在预热中")
+            return
+        }
         guard !isPrewarmDisabled else {
-            DebugLog.shared.info("session", "预热跳过：开关已关（lumen.camera.prewarm.disabled）")
+            prewarmSkip("开关已关（lumen.camera.prewarm.disabled）")
             return
         }
         // 只预热当前模式用得到的缓存键（缓存 key = `设备|模式`；预切换发生在照片 / 实况下）
-        guard mode == .photo || mode == .livePhoto else {
-            DebugLog.shared.info("session", "预热跳过：当前模式 \(mode.displayName)（缓存按模式分键）")
+        // ⚠️ P0-2：读 `modeLocked`（同步镜像）—— 不能读 `mode`（@Published、主线程异步写）
+        guard modeLocked == .photo || modeLocked == .livePhoto else {
+            prewarmSkip("当前模式 \(modeLocked.displayName)（缓存按模式分键）")
             return
         }
-        guard state == .running, !form.isPhysical else { return }
+        // 🔴 P0-1 判据**必须脱钩 `state`** —— 这是本轮真机复验不过的根因：
+        //   · `state` 是 `@Published`，`state = .running` 写在 `startInternal()` 的 `publish{}` 里
+        //     → **主线程、异步**；而本函数跑在 sessionQueue 上、调用点就在那个 `publish{}` **之前**
+        //     → 永远读到 `.idle`（冷启动必经的"后台→前台"往返又让 `stopInternal` 把它打回 `.idle`，
+        //     第二次调用照样早退 —— 所以预热**从未跑过**）。
+        //   · 换成两个**同步量**：`configurationSucceeded`（普通 var，`startInternal` 里早于本调用
+        //     就置真）+ `session.isRunning`（`startRunning()` 是阻塞调用，返回后即为真值）。
+        //   · 原 `!form.isPhysical` 一并退场：`form` 同样是 `@Published`（同一类 race，留在判据里
+        //     = 留隐患）；它的原意"别和直播会话抢同一颗设备"由 `prewarmProbe` 的 `canAddInput`
+        //     预检 + 打断闸门承担 —— 那里判得更准。
+        guard configurationSucceeded, session.isRunning else {
+            prewarmSkip(
+                "会话未就绪（configurationSucceeded=\(configurationSucceeded)"
+                    + " / session.isRunning=\(session.isRunning)）"
+            )
+            return
+        }
 
         // 逐颗去重（同一颗物理镜头可能对应多个焦段档）
         var seen = Set<String>()
@@ -1839,28 +1916,36 @@ final class CaptureSessionController: ObservableObject {
                 guard let physical = CaptureCapabilities.physicalDevice(for: preset),
                       !seen.contains(physical.uniqueID) else { return nil }
                 seen.insert(physical.uniqueID)
-                return (physical, "\(physical.uniqueID)|\(mode.rawValue)")
+                return (physical, "\(physical.uniqueID)|\(modeLocked.rawValue)")   // P0-2：读同步镜像
             }
         // 只探"缓存里还没有"的
         let todo = probes.filter { formatProbeIdentities[$0.cacheKey] == nil }
         guard !todo.isEmpty else {
-            DebugLog.shared.info("session", "预热跳过：\(probes.count) 颗镜头的格式都已在缓存里")
+            prewarmSkip("\(probes.count) 颗镜头的格式都已在缓存里")
             return
         }
 
+        isPrewarming = true
+        prewarmYieldRequested = false          // P0-6：新一轮开始 → 清掉上一轮的让路请求
+        let started = Date()
         DebugLog.shared.info(
             "session",
-            "预热开始：待探 \(todo.count) 颗（"
+            "预热决策：开始预热，待探 \(todo.count) 颗（"
                 + todo.map { $0.device.localizedName }.joined(separator: " / ")
                 + "）—— 串行逐颗，一旦打断直播会话就整体放弃"
         )
-        isPrewarming = true
-        let started = Date()
         // 延后 1.2s 再动：先把"会话启动 + 首帧"让过去，别和启动抢设备
         prewarmQueue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
             guard let self else { return }
+            var yieldedForSwitch = false
             for item in todo {
                 if self.prewarmAbandoned { break }
+                // P0-6 让路：直播要换设备（排队中 / 进行中）→ 立刻收手，把物理设备让出去。
+                // 不置 `prewarmAbandoned`：让路不是"预热惹的祸"，下次启动还能再试。
+                if self.prewarmYieldRequested || self.shouldYieldPrewarmToLiveSession {
+                    yieldedForSwitch = true
+                    break
+                }
                 guard let identity = self.prewarmProbe(device: item.device) else { continue }
                 // ⚠️ 缓存字典的唯一属主是 `sessionQueue`（预热队列只算不写 —— 防数据竞争）
                 self.sessionQueue.async { [weak self] in
@@ -1869,17 +1954,63 @@ final class CaptureSessionController: ObservableObject {
                     self.persistFormatProbeIdentities()
                 }
             }
+            // ⚠️ P0-6：`isPrewarming` 与 `prewarmSession` 由**预热队列**收尾（**不放进
+            //    `sessionQueue.async` 里**）—— 让路屏障 `prewarmQueue.sync {}` 是**在 sessionQueue 上**
+            //    等预热的收手回执；若收尾动作排在 sessionQueue 自己后面，屏障期间永远看不到它。
+            //    这两个量本来就只由预热队列写（`prewarmSession` 更是只在本队列上碰）。
+            self.isPrewarming = false
+            self.prewarmSession = nil
             self.sessionQueue.async { [weak self] in
                 guard let self else { return }
-                self.isPrewarming = false
                 DebugLog.shared.info(
                     "session",
                     "预热结束：耗时 \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
                         + (self.prewarmAbandoned ? " · **被打断过 → 本次运行内已放弃预热**" : "")
+                        + (yieldedForSwitch ? " · **被换设备让路截断 → 未放弃，下次启动再试**" : "")
                 )
                 self.refreshResourceSummary()
             }
         }
+    }
+
+    /// 预热早退的**统一出口**（P0-3）。
+    ///
+    /// 存在的理由是一次真机复验：预热从未跑过、且**一行日志都没有**（旧实现里有条静默
+    /// `return`），现场完全分不清"没跑"和"跑了但没探到"。现在每一次进入
+    /// `startPrewarmIfNeeded()` 都必然留下 `预热决策：…` 或 `预热跳过：…` 两行之一。
+    private func prewarmSkip(_ reason: String) {
+        DebugLog.shared.info("session", "预热跳过：\(reason)")
+    }
+
+    /// 直播要换设备了 → 若预热正在跑，**同步**把它请走（P0-6 反方向）。
+    ///
+    /// ## 为什么必须"等它真的收手"（不是发个通知就走）
+    ///
+    /// 预热持有的是**物理设备的独占权**（私有会话 `startRunning()` 中）。若不等它松手就去
+    /// `session.addInput(我们要挂的那颗镜头)`，`canAddInput` 会返回 false → 抛
+    /// `cannotAddInput` → 回滚 + 用户看到"切换镜头失败，已恢复原镜头"。所以这里要一个**回执**。
+    ///
+    /// ## 怎么做（flag + 队列屏障，不用盲等超时）
+    ///
+    /// 1. `prewarmYieldRequested = true` —— 预热侧的循环在每个候选**之前**检查它，看到就 break
+    ///    （单次粒度 ≈ 一个 `applyFormat`，最坏 ~0.8s）；
+    /// 2. `prewarmQueue.sync {}` —— **屏障**：等预热队列上已排队的活彻底做完。它同时就是回执
+    ///    （`isPrewarming` / `prewarmSession` 由预热队列在收尾时置空，见 `startPrewarmIfNeeded`）。
+    ///
+    /// ⚠️ 无死锁：预热队列只向 sessionQueue **async**（从不 sync），所以 sessionQueue → 预热的
+    ///    `sync` 不会成环。这也是**故意不走"盲等 + 超时"**的原因（纪律：等异步任务用回执）。
+    /// ⚠️ 代价：最坏给换设备加 ~0.8s（只在"预热正探到一半"时发生，且日志会打出实际等待）。
+    private func prewarmYieldToLiveSwitchIfNeeded() {
+        guard isPrewarming else { return }
+        prewarmYieldRequested = true
+        let started = Date()
+        prewarmQueue.sync { }
+        let waited = Date().timeIntervalSince(started)
+        DebugLog.shared.info(
+            "session",
+            "预热让路：直播要换设备 → 已等预热收手 \(String(format: "%.2f", waited))s"
+                + "（不置放弃标记：下次启动仍会预热）"
+        )
     }
 
     /// 探一颗物理镜头的格式，返回**格式标识**（不写缓存 —— 见调用处的"唯一属主"说明）。
@@ -1888,6 +2019,8 @@ final class CaptureSessionController: ObservableObject {
     /// 区别只有：用私有会话自带的一次性 output。**不命中就返回 nil** ——
     /// 那只是"这次没预到"（后台真用时会走完整探测），不会让链路更坏。
     private func prewarmProbe(device probeDevice: AVCaptureDevice) -> String? {
+        // P0-6 让路（第一道 · 最便宜）：直播要换设备时**连 input 都不建**，别去碰设备。
+        if prewarmYieldRequested || shouldYieldPrewarmToLiveSession { return nil }
         guard let input = try? AVCaptureDeviceInput(device: probeDevice) else {
             DebugLog.shared.warn("session", "预热：\(probeDevice.localizedName) 建 input 失败，跳过")
             return nil
@@ -1926,7 +2059,9 @@ final class CaptureSessionController: ObservableObject {
         }
         var chosen: AVCaptureDevice.Format?
         for candidate in candidates {
-            if prewarmAbandoned { return nil }
+            // P0-6 让路（第二道 · 细粒度）：每个候选之前都看一眼 —— 一个候选的代价 ≈ 一次
+            // `applyFormat`（300~800ms），这就是让路的最坏延迟粒度。
+            if prewarmAbandoned || prewarmYieldRequested || shouldYieldPrewarmToLiveSession { return nil }
             guard (try? configurator.applyFormat(candidate, frameRate: 30, to: probeDevice)) != nil else {
                 continue
             }
@@ -1964,18 +2099,17 @@ final class CaptureSessionController: ObservableObject {
         ) { [weak self] note in
             guard let self else { return }
             let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int) ?? -1
-            let reasonText: String
-            switch raw {
-            case AVCaptureSession.InterruptionReason.videoDeviceInUseByAnotherClient.rawValue:
-                reasonText = "视频设备被另一个客户端占用"
-            case AVCaptureSession.InterruptionReason.audioDeviceInUseByAnotherClient.rawValue:
-                reasonText = "音频设备被另一个客户端占用"
-            case AVCaptureSession.InterruptionReason.videoDeviceNotAvailableDueToSystemPressure.rawValue:
-                reasonText = "系统压力导致设备不可用"
-            default:
-                reasonText = "其它(\(raw))"
+            let reason = Self.interruptionReason(raw)
+            DebugLog.shared.warn("session", "⚠️ 直播会话被打断：\(reason.text)（raw \(raw)）")
+            // P0-4 **白名单制**：只把"进后台"这一类当良性（它与预热无关 —— 冷启动必经的
+            // "后台→前台"往返就会来一发；旧实现"任意 reason 都放弃"会让一次切后台就把本次运行的
+            // 预热判死，等于预热永远活不过第一次前后台切换）。
+            // 🔴 绝不能写成"排除所有非致命 reason"：`videoDeviceInUseByAnotherClient`
+            //    （另一客户端占用视频设备）正是**预热抢设备**时要拦的那条致命信号，必须保留闸门。
+            guard !reason.benign else {
+                DebugLog.shared.info("session", "打断原因属良性（进后台）→ 不拆预热")
+                return
             }
-            DebugLog.shared.warn("session", "⚠️ 直播会话被打断：\(reasonText)")
             self.prewarmQueue.async { [weak self] in
                 guard let self else { return }
                 guard self.isPrewarming || self.prewarmSession != nil else { return }
@@ -1987,6 +2121,45 @@ final class CaptureSessionController: ObservableObject {
                 self.prewarmSession?.stopRunning()
                 self.prewarmSession = nil
             }
+        }
+    }
+
+    /// 打断原因 →（文案，**是否良性**）（批六 ② P0-4 / P0-5）。
+    ///
+    /// ## 判据按**枚举名**，不按 raw 常量猜
+    ///
+    /// 真机实测：raw **1 / 4 / 6** 全部落进旧的 `default`（打成「其它(N)」）—— 说明"经典 raw 表"
+    /// （1=后台 / 2=音频 / 3=视频 / 4=分屏 / 5=系统压力）在本机机型 + iOS 26 上**不成立**。
+    /// 所以一律用 `AVCaptureSession.InterruptionReason(rawValue:)` 具名匹配；`raw` 只进日志（留反查）。
+    ///
+    /// ## ⚠️ 两处待 Mac 用 `AVCaptureSession.h` 确认
+    ///
+    /// 1. `.videoDeviceNotAvailableInBackground` —— **白名单就是它**。若该 case 在当前 SDK 已被
+    ///    改名/移除，编译会当场报错（这是**故意**的：按名字写错会响，按 raw 猜错会静默失效）→
+    ///    改成 `isBenign = (raw == <Mac 确认的值>)` 即可，语义（只排这一类）不变。
+    /// 2. `.videoDeviceNotAvailableWithMultipleForegroundApps` —— 若已移除，删掉这一个 case
+    ///    即可（`@unknown default` 会兜住它）。
+    ///
+    /// ⚠️ 未知原因一律 `benign = false`（**保守**）：闸门对未知情况继续生效。
+    private static func interruptionReason(_ raw: Int) -> (text: String, benign: Bool) {
+        guard let reason = AVCaptureSession.InterruptionReason(rawValue: raw) else {
+            return ("未知原因", false)
+        }
+        switch reason {
+        case .videoDeviceNotAvailableInBackground:
+            // 🔴 白名单里的**唯一一条**：与预热无关（进后台 / 回前台必然来一发）
+            return ("后台不可用（良性 · 与预热无关）", true)
+        case .audioDeviceInUseByAnotherClient:
+            return ("音频设备被另一个客户端占用", false)
+        case .videoDeviceInUseByAnotherClient:
+            // 🔴 预热抢设备时会出现的那条 —— **必须保留闸门作用**（黑屏就是它）
+            return ("视频设备被另一个客户端占用", false)
+        case .videoDeviceNotAvailableWithMultipleForegroundApps:
+            return ("多前台 App 分屏导致不可用", false)
+        case .videoDeviceNotAvailableDueToSystemPressure:
+            return ("系统压力导致不可用", false)
+        @unknown default:
+            return ("其它原因", false)
         }
     }
 
