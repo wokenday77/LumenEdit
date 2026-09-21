@@ -1720,6 +1720,9 @@ final class CaptureSessionController: ObservableObject {
         refreshResourceSummary()
         // ② 冷启动预热（空闲时才动；见 `startPrewarmIfNeeded` 的风险与兜底）
         startPrewarmIfNeeded()
+        // ⚠️ 临时诊断（WB 的 P-b 取证 · 2026-09-21 夜 · **取到数据即删**）：
+        //    device.formats 全表打进日志（每进程一次，见 FormatTableDump 文件头）。
+        FormatTableDump.logOnce(cachedHits: formatProbeIdentities)
 
         publish {
             // ⚠️ **同值不重发**（`@Published` 是 willSet 语义 —— 赋一个相同的值同样会发通知）。
