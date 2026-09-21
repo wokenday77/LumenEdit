@@ -647,7 +647,11 @@ struct CameraView: View {
                     // 参数刻度条（#9 / B2）：三条一次只显示一条（`paramStrip` 单值寄存保证）
                     ParameterStripView(
                         kind: stripKind,
-                        steps: ParameterStripCatalog.steps(for: stripKind),
+                        steps: ParameterStripCatalog.steps(
+                            for: stripKind,
+                            // ISO 末档按**设备实读** maxISO 覆盖（批六 ①；本机 12096，不是 12800）
+                            deviceISOMax: viewModel.stripISOMax
+                        ),
                         // 显示值：拖动期是本地草稿（跟手）、其余时刻是**硬件真值** —— 见 VM
                         displayValue: viewModel.stripDisplayValue(stripKind),
                         isAuto: viewModel.isAutoStrip(stripKind),

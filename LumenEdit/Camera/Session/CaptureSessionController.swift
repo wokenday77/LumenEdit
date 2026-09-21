@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreGraphics
+import Darwin
 import Foundation
 
 // MARK: - 会话配置错误
@@ -146,6 +147,14 @@ final class CaptureSessionController: ObservableObject {
 
     /// 手动白平衡档的当前值（`nil` = 自动档）。同样从设备回读。
     @Published private(set) var manualWhiteBalance: (temperature: Float, tint: Float)?
+
+    /// 设备**当前格式**实读的 ISO 上限（`activeFormat.maxISO`）—— ISO 刻度条的**末档**。
+    ///
+    /// 2026-09-21 批六（复刻飓风 · 方案 A）：用户拍板末档用**设备实读值**，不写行业表的 12800
+    /// （本机三摄实读 = **12096**，与日志实锤同值）。
+    /// ⚠️ 只从会话往外发（UI 层不碰设备，`docs/04` 分层纪律）—— 视图拿它重建档位表，
+    /// `CaptureCapabilities` 那边仍按 `activeFormat.minISO...maxISO` 做"可用域求交"。
+    @Published private(set) var stripISOMax: Double?
 
     /// 手动对焦档（**用户意图态** · 2026-09-20 正源修）。
     ///
@@ -337,6 +346,9 @@ final class CaptureSessionController: ObservableObject {
         DebugLog.shared.info("session", "切换模式 \(mode.displayName) → \(newMode.displayName)")
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            // ④ 耗时埋点：切模式 = 一次 begin/commit（+ 可能的格式重选），
+            //    掉帧排查要的是"切一次花多久、切多了会不会越来越慢"
+            let switchStarted = Date()
             // 切模式重配 outputs 时系统可能**重选 activeFormat**，手动档（.custom / .locked）
             // 会被一并清掉 —— 但**切模式不是退出手动的意图**，用户设置的参数必须保留。
             // 做法（2026-09-20 批四改口径）：**先快照意图、commit 后一律重放**（见下方 ① ②）。
@@ -433,6 +445,13 @@ final class CaptureSessionController: ObservableObject {
                     reason: "切模式复查"
                 )
             }
+            // ④ 耗时 + 资源账（切模式 = 重配 outputs + 可能的 input 增删，是泄漏的头号嫌疑路径）
+            DebugLog.shared.info(
+                "session",
+                "切模式耗时 \(String(format: "%.2f", Date().timeIntervalSince(switchStarted)))s"
+                    + "（\(newMode.displayName)；含 outputs 重配与参数重放）"
+            )
+            self.refreshResourceSummary()
             self.refreshSnapshot()
         }
     }
@@ -753,6 +772,9 @@ final class CaptureSessionController: ObservableObject {
         let previousExposure = configurator.manualExposure(of: device)
         let previousWhiteBalance = configurator.manualWhiteBalance(of: device)
         let previousBias = exposureBias
+        // ④ 耗时埋点：本函数是**换设备的唯一执行体**，转场 / 静默两条路都从这里过 ——
+        //    在这里量一次，两边的耗时都可比（静默路径另有一行"静默换形态耗时"，口径一致）
+        let switchStarted = Date()
 
         // ②③④⑤ 换 input（失败回滚原 input —— 绝不留无视频输入的会话）
         let newDevice: AVCaptureDevice
@@ -772,6 +794,7 @@ final class CaptureSessionController: ObservableObject {
         session.beginConfiguration()
         if let old = videoInput {
             session.removeInput(old)
+            resourceInputRemoved()      // ④ 埋点：紧邻裸调用，见本文件「资源计数」节
         }
         do {
             let input = try AVCaptureDeviceInput(device: newDevice)
@@ -779,11 +802,13 @@ final class CaptureSessionController: ObservableObject {
                 throw SessionConfigurationError.cannotAddInput
             }
             session.addInput(input)
+            resourceInputAdded()        // ④ 埋点
             videoInput = input
             self.device = newDevice
         } catch {
             if let old = videoInput ?? nil, session.canAddInput(old) {
                 session.addInput(old)
+                resourceInputAdded()    // ④ 埋点（回滚，同样是一次增）
                 self.device = old.device
             }
             session.commitConfiguration()
@@ -835,11 +860,13 @@ final class CaptureSessionController: ObservableObject {
         }
 
         // 换设备日志（Mac 核法：deviceType 应变为物理单摄 / Live Photo 能力实测值，预检 ③）
+        // ④ 耗时一并留在这一行（用户在"点对焦 / 切焦段"时等的那一下就是这个数）
         DebugLog.shared.info(
             "session",
             "换设备完成（\(throughTransition ? "转场" : "静默·无转场")）→ \(target.describe)；"
                 + "当前档位 \(targetFocal.displayName) mm；"
-                + "Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)"
+                + "Live Photo 能力=\(photoService.output.isLivePhotoCaptureSupported)；"
+                + "耗时 \(String(format: "%.2f", Date().timeIntervalSince(switchStarted)))s"
         )
 
         // 延迟复查（批五 · 问题 3 同因）：新设备的格式落地同样可能晚于搬运 ——
@@ -1259,6 +1286,8 @@ final class CaptureSessionController: ObservableObject {
             self.currentExposure = (currentISO, currentSeconds)
             self.currentWhiteBalanceKelvin = currentKelvin
             self.unavailableStripValues = unavailable
+            // ISO 末档 = 设备当前格式实读的 maxISO（批六 ①：不写行业表的 12800）
+            self.stripISOMax = Double(device.activeFormat.maxISO)
             self.isManualExposureSupported = manualExposureOK
             self.isManualWhiteBalanceSupported = manualWhiteBalanceOK
             // 对焦：**回读只喂 `currentLensPosition`**（读数，自动/手动都跟硬件）。
@@ -1276,16 +1305,82 @@ final class CaptureSessionController: ObservableObject {
     }
 
     /// 点按对焦 / 测光。参数是预览层换算出来的**设备归一化坐标**。
+    ///
+    /// ## 2026-09-21 批六 · ③「**不选自动就永远手动**」（用户拍板 · 核心口径）
+    ///
+    /// 系统语义：`setFocusAndExposurePoint` 会把 `exposureMode` 设成 `.continuousAutoExposure`
+    /// —— 手动 ISO / 快门**会被它顶掉**。旧口径是"重发真值让 UI 立刻回到自动"，
+    /// 那等于 **App 自己替用户退出手动档**（用户实测日志链：
+    /// `11:45:10.006 手动 799 / 1/60 → 11:45:13.242 点按对焦 → 15.302 退出 → 16.329「曝光=自动」`）。
+    ///
+    /// 现口径：**点按只是"重新对焦"，不是退出曝光手动的意图** —— 点按前取**意图快照**、
+    /// 点按后**按快照重放**（与切模式 `switchMode` 同一套写入）。白平衡 / EV 同理。
+    ///
+    /// ⚠️ 与 `CameraViewModel` 的**方案 A** 不冲突：方案 A 解的是「手动**对焦**档」这条轴
+    /// （点按 = 重新对焦 + 解除手动对焦，防"无出路"），本方法保的是**曝光 / 白平衡**这两条轴。
+    ///
+    /// ⚠️ 顺序有讲究：先把系统设的连续自动曝光**按快照写回 `.custom`**，**最后**才推 EV
+    /// —— `applyExposureBias` 见 `.custom` 会回切自动档（`docs/16` 第五节那条防线）。
+    ///
+    /// ⚠️ "只测光"那条路径（`setExposurePointOnly`）**不需要本套**：它自带
+    /// `device.exposureMode != .custom` 守卫，本来就不会碰手动档。
     func focus(atDevicePoint point: CGPoint) {
         guard let device else { return }
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            let prevExposure = self.configurator.manualExposure(of: device)
+            let prevWhiteBalance = self.configurator.manualWhiteBalance(of: device)
+            let prevBias = device.exposureTargetBias
             do {
                 try self.configurator.setFocusAndExposurePoint(point, on: device)
-                // ⚠️ 点按对焦会把 `exposureMode` 设成**连续自动曝光** —— 也就是说
-                // 手动 ISO/快门 档会被它顶掉（这是系统语义，不是 bug）。
-                // 所以必须重发手动档真值，让 UI 立刻回到"自动"（否则用户会以为还锁着）。
+                // ① 曝光：意图是手动 → 按快照重放（顶掉系统设的连续自动曝光）
+                if let prev = prevExposure {
+                    try? self.configurator.setManualExposure(
+                        iso: prev.iso, seconds: prev.seconds, on: device
+                    )
+                    DebugLog.shared.info(
+                        "session",
+                        "点按对焦后按意图重放手动曝光（ISO \(String(format: "%.0f", prev.iso))"
+                            + " / \(FormatText.shutterSpeed(prev.seconds))）"
+                    )
+                }
+                // ② 白平衡：同上
+                if let prev = prevWhiteBalance {
+                    try? self.configurator.setManualWhiteBalance(
+                        temperature: prev.temperature, tint: prev.tint, on: device
+                    )
+                    DebugLog.shared.info(
+                        "session",
+                        "点按对焦后按意图重放手动白平衡（\(String(format: "%.0f", prev.temperature))K）"
+                    )
+                }
+                // ③ EV：只在"意图本来就是自动曝光档"时重放（手动档下 EV 无效，同 ① 的互斥口径）
+                if prevExposure == nil, abs(device.exposureTargetBias - prevBias) > 0.001 {
+                    try? self.configurator.applyExposureBias(prevBias, to: device)
+                    DebugLog.shared.info(
+                        "session",
+                        "点按对焦后按意图重放 EV（\(String(format: "%+.1f", prevBias))）"
+                    )
+                }
                 self.publishManualState(device)
+                // 复查一行（Mac 核法）：点按后档位到底保住没有，一眼可读
+                DebugLog.shared.info(
+                    "session",
+                    "点按对焦后档位：曝光="
+                        + "\(self.configurator.manualExposure(of: device) == nil ? "自动" : "手动")"
+                        + " / 白平衡="
+                        + "\(self.configurator.manualWhiteBalance(of: device) == nil ? "自动" : "手动")"
+                        + " / 意图=曝光\(prevExposure == nil ? "自动" : "手动")"
+                        + "·白平衡\(prevWhiteBalance == nil ? "自动" : "手动")"
+                )
+                // 点按不重配会话，但系统可能在 AF 收敛前后**再改一次**曝光档 → 两拍复查（500/800ms）
+                self.reverifyManualIntent(
+                    2,
+                    exposure: prevExposure,
+                    whiteBalance: prevWhiteBalance,
+                    bias: prevBias,
+                    reason: "点按对焦复查"
+                )
                 self.refreshSnapshot()
             } catch {
                 DebugLog.shared.error("session", "设置对焦点失败：\(error.localizedDescription)")
@@ -1444,6 +1539,15 @@ final class CaptureSessionController: ObservableObject {
         if snapshotTick % 10 == 1 {
             freeSpaceText = DeviceStorage.freeSpaceText()
         }
+        // ④ 资源账（每 5s 一行）：掉帧排查要的就是"跑一段时间之后的 input/output 数 + 内存"，
+        //    必须**周期性**留痕 —— 只在增删时打日志，恰恰看不到"没增没删但内存一路涨"。
+        if snapshotTick % 5 == 1 {
+            sessionQueue.async { [weak self] in
+                guard let self else { return }
+                self.refreshResourceSummary()
+                DebugLog.shared.info("resource", self.resourceSummaryText)
+            }
+        }
         snapshot.freeSpaceText = freeSpaceText
 
         debugSnapshot = snapshot
@@ -1558,6 +1662,8 @@ final class CaptureSessionController: ObservableObject {
         }
 
         if !session.isRunning {
+            // 打断观察必须在开始跑之前挂上（预热的安全闸门，批六 ②）
+            observeInterruptionsIfNeeded()
             DebugLog.shared.info("session", "startRunning()")
             session.startRunning()
         }
@@ -1569,6 +1675,11 @@ final class CaptureSessionController: ObservableObject {
         if let device {
             publishManualState(device)
         }
+
+        // ④ 资源计数：就绪后先攒一份汇总（预热 / 首次冷探测的计数都从这里开始有基线）
+        refreshResourceSummary()
+        // ② 冷启动预热（空闲时才动；见 `startPrewarmIfNeeded` 的风险与兜底）
+        startPrewarmIfNeeded()
 
         publish {
             // ⚠️ **同值不重发**（`@Published` 是 willSet 语义 —— 赋一个相同的值同样会发通知）。
@@ -1603,6 +1714,282 @@ final class CaptureSessionController: ObservableObject {
         stopSnapshotTimer()
     }
 
+    // MARK: - 资源计数与耗时（2026-09-21 批六 · ④「取景器掉帧」排查）
+
+    // 用户场景：点开所有功能 → 切手动 → 依次切 照片 / 实况 / log / 视频，之后开始掉帧，
+    // 且**重启 App 立刻恢复**。Mac CB 的判据：热降频 / 系统节流不会因重启 App 快速恢复，
+    // 而 App 侧资源泄漏（模式切换 / 静默预切换没拆净的 input / output）会随次数累积 ——
+    // 所以这一段只干一件事：**把"活的有几个、增删对不对得上"变成日志里一眼可读的数字**。
+    //
+    // ⚠️ 埋点纪律：每一处 `session.addInput / removeInput / addOutput / removeOutput` 的
+    //    **紧邻 3 行内**必须有对应的计数调用 —— `check_swift` 第 19 组 o1 逐点比对，
+    //    漏埋一处就 FAIL（计数本身错了比没有计数更坏：会让人往错的方向排查）。
+    private var inputAddCount = 0
+    private var inputRemoveCount = 0
+    private var outputAddCount = 0
+    private var outputRemoveCount = 0
+    /// 上一次攒好的汇总（在 `sessionQueue` 上写、1s 定时器读字符串 —— 不会读到半个数字）
+    private var resourceSummaryText = "资源：尚未采集"
+
+    private func resourceInputAdded() { inputAddCount += 1; refreshResourceSummary() }
+    private func resourceInputRemoved() { inputRemoveCount += 1; refreshResourceSummary() }
+    private func resourceOutputAdded() { outputAddCount += 1; refreshResourceSummary() }
+    private func resourceOutputRemoved() { outputRemoveCount += 1; refreshResourceSummary() }
+
+    /// 该模式下**应当**挂着的 input / output 数量 —— 超出即泄漏（比"累计增删对不上"更早报出来）
+    private var expectedResourceCounts: (inputs: Int, outputs: Int) {
+        (mode.requiresMicrophone ? 2 : 1, 1)
+    }
+
+    /// 汇总 + **超出预期就喊**（掉帧排查的主信号）
+    private func refreshResourceSummary() {
+        let liveInputs = session.inputs.count
+        let liveOutputs = session.outputs.count
+        let expected = expectedResourceCounts
+        let memory = Self.memoryFootprintMB().map { String(format: "%.1fMB", $0) } ?? "取不到"
+        resourceSummaryText = "模式 \(mode.displayName) · input 活 \(liveInputs)"
+            + "（累计增/删 \(inputAddCount)/\(inputRemoveCount)）"
+            + " · output 活 \(liveOutputs)（累计增/删 \(outputAddCount)/\(outputRemoveCount)）"
+            + " · 内存 \(memory)"
+        if liveInputs > expected.inputs || liveOutputs > expected.outputs {
+            DebugLog.shared.warn(
+                "resource",
+                "⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：\(resourceSummaryText)"
+                    + " · 预期 input ≤ \(expected.inputs) / output ≤ \(expected.outputs)"
+            )
+        }
+    }
+
+    /// 进程**物理内存占用**（MB）—— `TASK_VM_INFO.phys_footprint`（"活动监视器"里那个数）。
+    ///
+    /// 为什么不用 `resident_size`：它含可回收页，App 内存涨了它常常不动 → 读不出泄漏。
+    /// 取不到就返回 nil —— 诊断信息不该成为风险源（**绝不影响主链路**）。
+    private static func memoryFootprintMB() -> Double? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return Double(info.phys_footprint) / 1024 / 1024
+    }
+
+    // MARK: - 冷启动预热（2026-09-21 批六 · ②「刚进 App 点对焦 → 4.27s 静止帧」）
+
+    /// 预热专用串行队列 —— 预热要跑 4~5s（逐候选试格式），**绝不能占着 `sessionQueue`**
+    /// （那条队列还要服务点按 / 切档）。
+    private let prewarmQueue = DispatchQueue(label: "com.lumenedit.prewarm", qos: .utility)
+    /// 预热期间存在的独立会话（拆掉后置 nil）
+    private var prewarmSession: AVCaptureSession?
+    private var isPrewarming = false
+    /// **本次运行内放弃预热**（直播会话被打断过一次就不再试）
+    private var prewarmAbandoned = false
+    private var interruptionObserverRegistered = false
+    /// 预热开关（给复验做 A/B 用，不必重新出构建）：
+    /// `-lumen.camera.prewarm.disabled YES`（启动参数）/ `defaults` 同名键
+    private var isPrewarmDisabled: Bool {
+        UserDefaults.standard.bool(forKey: "lumen.camera.prewarm.disabled")
+    }
+
+    /// **冷启动预热**：趁用户还没操作，把每颗物理镜头的采集格式先探出来写进格式缓存。
+    ///
+    /// ## 为什么需要（用户 2026-09-21 批六 ②）
+    ///
+    /// 复验实测「刚进 App 点对焦 → **4.27s 静止帧**」。那 4.27s = **每设备首次换设备的冷探测**
+    /// （12~41 个候选逐个 `applyFormat`，每个 300~800ms）；而"点对焦"会先触发**预切换**
+    /// （打开对焦盘 → 静默挂物理设备），所以这 4s 正好发生在用户眼皮底下。
+    /// 静止帧本身是预览层在 input 重挂期间保持最后一帧（批五已说明，**不需要**额外"冻结"机制）
+    /// —— 真正要做的只有一件事：**把 4s 从用户操作路径上挪到启动后的空闲时间**。
+    ///
+    /// ## 为什么必须用独立私有会话
+    ///
+    /// 直播路径挑格式依赖 `photoService.output.isLivePhotoCaptureSupported`，而
+    /// **一个 output 只能属于一个会话**（直播会话此刻挂着虚拟多摄）—— 所以预热自带一个
+    /// 独立会话 + 一次性 `AVCapturePhotoOutput`（**同一个 API** 判 Live 能力），挑完整体拆掉。
+    ///
+    /// ## ⚠️ 唯一的风险与兜底（`docs/22` 一② 那条硬约束）
+    ///
+    /// **同一颗物理设备只能属于一个会话**：私有会话去挂虚拟多摄的 constituent，有可能让直播
+    /// 会话收到 `AVCaptureSessionWasInterrupted`（`.videoDeviceInUseByAnotherClient`）→ 预览黑屏。
+    /// 兜底三层：① **串行逐颗**、② `canAddInput` 为假就跳过（设备被占用）、
+    /// ③ **一旦真被打断 → 立刻拆预热 + 本次运行内不再试**（`observeInterruptionsIfNeeded`）。
+    ///
+    /// 收益：第一次切镜头 / 点对焦的设备挂载 ≈0.3~0.8s（命中缓存），4.27s 静止帧消失。
+    private func startPrewarmIfNeeded() {
+        guard !prewarmAbandoned, !isPrewarming else { return }
+        guard !isPrewarmDisabled else {
+            DebugLog.shared.info("session", "预热跳过：开关已关（lumen.camera.prewarm.disabled）")
+            return
+        }
+        // 只预热当前模式用得到的缓存键（缓存 key = `设备|模式`；预切换发生在照片 / 实况下）
+        guard mode == .photo || mode == .livePhoto else {
+            DebugLog.shared.info("session", "预热跳过：当前模式 \(mode.displayName)（缓存按模式分键）")
+            return
+        }
+        guard state == .running, !form.isPhysical else { return }
+
+        // 逐颗去重（同一颗物理镜头可能对应多个焦段档）
+        var seen = Set<String>()
+        let probes: [(device: AVCaptureDevice, cacheKey: String)] =
+            FocalCatalog.all.compactMap { preset in
+                guard let physical = CaptureCapabilities.physicalDevice(for: preset),
+                      !seen.contains(physical.uniqueID) else { return nil }
+                seen.insert(physical.uniqueID)
+                return (physical, "\(physical.uniqueID)|\(mode.rawValue)")
+            }
+        // 只探"缓存里还没有"的
+        let todo = probes.filter { formatProbeIdentities[$0.cacheKey] == nil }
+        guard !todo.isEmpty else {
+            DebugLog.shared.info("session", "预热跳过：\(probes.count) 颗镜头的格式都已在缓存里")
+            return
+        }
+
+        DebugLog.shared.info(
+            "session",
+            "预热开始：待探 \(todo.count) 颗（"
+                + todo.map { $0.device.localizedName }.joined(separator: " / ")
+                + "）—— 串行逐颗，一旦打断直播会话就整体放弃"
+        )
+        isPrewarming = true
+        let started = Date()
+        // 延后 1.2s 再动：先把"会话启动 + 首帧"让过去，别和启动抢设备
+        prewarmQueue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
+            guard let self else { return }
+            for item in todo {
+                if self.prewarmAbandoned { break }
+                guard let identity = self.prewarmProbe(device: item.device) else { continue }
+                // ⚠️ 缓存字典的唯一属主是 `sessionQueue`（预热队列只算不写 —— 防数据竞争）
+                self.sessionQueue.async { [weak self] in
+                    guard let self else { return }
+                    self.formatProbeIdentities[item.cacheKey] = identity
+                    self.persistFormatProbeIdentities()
+                }
+            }
+            self.sessionQueue.async { [weak self] in
+                guard let self else { return }
+                self.isPrewarming = false
+                DebugLog.shared.info(
+                    "session",
+                    "预热结束：耗时 \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
+                        + (self.prewarmAbandoned ? " · **被打断过 → 本次运行内已放弃预热**" : "")
+                )
+                self.refreshResourceSummary()
+            }
+        }
+    }
+
+    /// 探一颗物理镜头的格式，返回**格式标识**（不写缓存 —— 见调用处的"唯一属主"说明）。
+    ///
+    /// 判据与直播路径**同一个 API**（`AVCapturePhotoOutput.isLivePhotoCaptureSupported`），
+    /// 区别只有：用私有会话自带的一次性 output。**不命中就返回 nil** ——
+    /// 那只是"这次没预到"（后台真用时会走完整探测），不会让链路更坏。
+    private func prewarmProbe(device probeDevice: AVCaptureDevice) -> String? {
+        guard let input = try? AVCaptureDeviceInput(device: probeDevice) else {
+            DebugLog.shared.warn("session", "预热：\(probeDevice.localizedName) 建 input 失败，跳过")
+            return nil
+        }
+        let probe = AVCaptureSession()
+        let probeOutput = AVCapturePhotoOutput()
+        probe.beginConfiguration()
+        probe.sessionPreset = .inputPriority
+        guard probe.canAddInput(input), probe.canAddOutput(probeOutput) else {
+            probe.commitConfiguration()
+            DebugLog.shared.info(
+                "session",
+                "预热跳过：\(probeDevice.localizedName) 加不进私有会话（canAddInput=false —— 设备排他性）"
+            )
+            return nil
+        }
+        probe.addInput(input)
+        probe.addOutput(probeOutput)
+        probe.commitConfiguration()
+        // 必须真跑起来，output 的 Live 能力才是真值（与直播路径同源）
+        probe.startRunning()
+        prewarmSession = probe
+        defer {
+            probe.stopRunning()
+            prewarmSession = nil
+        }
+
+        let candidates = CaptureCapabilities.formatCandidates(
+            for: probeDevice,
+            minimumWidth: 1920,
+            targetFrameRate: 30
+        )
+        guard !candidates.isEmpty else {
+            DebugLog.shared.warn("session", "预热：\(probeDevice.localizedName) 没有候选格式")
+            return nil
+        }
+        var chosen: AVCaptureDevice.Format?
+        for candidate in candidates {
+            if prewarmAbandoned { return nil }
+            guard (try? configurator.applyFormat(candidate, frameRate: 30, to: probeDevice)) != nil else {
+                continue
+            }
+            if probeOutput.isLivePhotoCaptureSupported {
+                chosen = candidate
+                break
+            }
+        }
+        guard let final = chosen else {
+            DebugLog.shared.warn(
+                "session",
+                "预热：\(probeDevice.localizedName) 试完 \(candidates.count) 个候选都没探到 Live 能力格式"
+            )
+            return nil
+        }
+        DebugLog.shared.info(
+            "session",
+            "预热探到格式：\(probeDevice.localizedName) \(CaptureCapabilities.formatSummary(final))"
+                + "（候选 \(candidates.count) 个）"
+        )
+        return Self.formatIdentity(final)
+    }
+
+    /// 直播会话的**打断观察**（预热的安全闸门 · 只注册一次）。
+    ///
+    /// 为什么必须有：预热是"在别人的地盘上动设备"—— 唯一能确认它没搞坏主链路的信号
+    /// 就是"直播会话有没有被打断"。真被打断就**立刻放弃**（宁可没有预热，也不能黑屏）。
+    private func observeInterruptionsIfNeeded() {
+        guard !interruptionObserverRegistered else { return }
+        interruptionObserverRegistered = true
+        NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification,
+            object: session,
+            queue: nil
+        ) { [weak self] note in
+            guard let self else { return }
+            let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int) ?? -1
+            let reasonText: String
+            switch raw {
+            case AVCaptureSession.InterruptionReason.videoDeviceInUseByAnotherClient.rawValue:
+                reasonText = "视频设备被另一个客户端占用"
+            case AVCaptureSession.InterruptionReason.audioDeviceInUseByAnotherClient.rawValue:
+                reasonText = "音频设备被另一个客户端占用"
+            case AVCaptureSession.InterruptionReason.videoDeviceNotAvailableDueToSystemPressure.rawValue:
+                reasonText = "系统压力导致设备不可用"
+            default:
+                reasonText = "其它(\(raw))"
+            }
+            DebugLog.shared.warn("session", "⚠️ 直播会话被打断：\(reasonText)")
+            self.prewarmQueue.async { [weak self] in
+                guard let self else { return }
+                guard self.isPrewarming || self.prewarmSession != nil else { return }
+                DebugLog.shared.warn(
+                    "session",
+                    "⚠️ 预热导致了直播会话被打断 → 已拆除预热，**本次运行内不再预热**"
+                )
+                self.prewarmAbandoned = true
+                self.prewarmSession?.stopRunning()
+                self.prewarmSession = nil
+            }
+        }
+    }
+
     /// 在 begin/commit 区间内构建会话。返回可作为"格式写入目标"的设备。
     ///
     /// **本方法是幂等的**：入口处会先清空已有的 input / output。
@@ -1617,9 +2004,11 @@ final class CaptureSessionController: ObservableObject {
         // 幂等清理
         for input in session.inputs {
             session.removeInput(input)
+            resourceInputRemoved()      // ④ 埋点（清理同样算一次删 —— 计数口径必须一致）
         }
         for output in session.outputs {
             session.removeOutput(output)
+            resourceOutputRemoved()     // ④ 埋点
         }
         videoInput = nil
         audioInput = nil
@@ -1633,6 +2022,7 @@ final class CaptureSessionController: ObservableObject {
                 let input = try AVCaptureDeviceInput(device: device)
                 if session.canAddInput(input) {
                     session.addInput(input)
+                    resourceInputAdded()    // ④ 埋点
                     videoInput = input
                     self.device = device
                     outcome = .success(device)
@@ -1821,6 +2211,7 @@ final class CaptureSessionController: ObservableObject {
                 let input = try AVCaptureDeviceInput(device: microphone)
                 if session.canAddInput(input) {
                     session.addInput(input)
+                    resourceInputAdded()        // ④ 埋点（麦克风输入）
                     audioInput = input
                     DebugLog.shared.info("session", "已加入麦克风输入")
 
@@ -1838,6 +2229,7 @@ final class CaptureSessionController: ObservableObject {
         } else {
             if let existing = audioInput {
                 session.removeInput(existing)
+                resourceInputRemoved()      // ④ 埋点（麦克风输入）
                 audioInput = nil
                 DebugLog.shared.info("session", "已移除麦克风输入")
             }
@@ -1852,6 +2244,7 @@ final class CaptureSessionController: ObservableObject {
         // 先清空所有输出，保证不会残留上一个模式的输出
         for output in session.outputs {
             session.removeOutput(output)
+            resourceOutputRemoved()     // ④ 埋点
         }
 
         switch targetMode {
@@ -1861,6 +2254,7 @@ final class CaptureSessionController: ObservableObject {
                 return false
             }
             session.addOutput(photoService.output)
+            resourceOutputAdded()       // ④ 埋点
             photoService.configure(for: targetMode)
             applyRotationLocked(to: photoService.output)
             return true
@@ -1878,6 +2272,7 @@ final class CaptureSessionController: ObservableObject {
                 return false
             }
             session.addOutput(movieService.output)
+            resourceOutputAdded()       // ④ 埋点
             applyRotationLocked(to: movieService.output)
             return true
         }

@@ -4,6 +4,9 @@ import SwiftUI
 ///
 /// 原型对应：`.strip-panel` / `.sp-clip{ right:64px }` /
 /// `.sp-pointer{ left: calc((100% − 64px) / 2) }` / `SP.pad = 30` / `SP.slot`。
+///
+/// ⚠️ 批六（复刻飓风）后 `slot` **三条统一 40pt**（见 `ParameterStripCatalog.slot`），
+/// 但几何式子本身没变：档距只是个参数，`pointerX` 仍是可视区中点。
 struct ParameterStripGeometry {
 
     let containerWidth: CGFloat
@@ -16,6 +19,9 @@ struct ParameterStripGeometry {
     var visibleWidth: CGFloat { max(0, containerWidth - gutter) }
 
     /// 指针 X —— **固定在可视区中点**（原型 `left: calc((100% − 64px) / 2)`）
+    ///
+    /// 批六起它只有一个用途：**气泡的落点**（指针三角与竖线已退场），
+    /// 以及"当前档位被拖到哪"的基准 —— 选中刻度会被拖到这个 X 上。
     var pointerX: CGFloat { visibleWidth / 2 }
 
     /// 刻度条总宽（原型 `SP.pad × 2 + (len − 1) × slot`）
@@ -50,33 +56,37 @@ struct ParameterStripGeometry {
 
 /// 参数刻度条（B2b · 模块 #9）：ISO / 快门 / 白平衡 **一次只显示一条**。
 ///
-/// ## 版式（对齐原型，见 `docs/16` 第四.1 节）
+/// ## 版式（**2026-09-21 批六：复刻飓风** = 方案 A，用户拍板）
 ///
 /// ```
 /// ├───────────────── 面板高 84 ──────────────────┼── 64 ──┤
-/// │         气泡（绿底黑字，钉在指针上方）22        │ 开关 47×29 │
-/// │             ▼ 指针三角 6×8                  30 │  「自动」   │
-/// │             │ 竖线 1.5                         │           │
-/// │  刻度 46–68：五档层级（底边同一条基线）          │           │
-/// │   hair 6.5 / minor 10 / mid 15 / major 22 /     │           │
-/// │   preset 22（hair = 真实档位之间的细分线）        │           │
-/// │  数字 71.5–82                                  │           │
+/// │         气泡（绿底黑字，钉在选中刻度上方）22       │ 开关 47×29 │
+/// │                          ↓ 选中刻度 22pt 绿     │  「自动」   │
+/// │   普通刻度 14pt / 1.33pt   │  （对齐同一条基线）    │           │
+/// │   ─────┼───┼───┼───┼───┼───┼───                 │           │
+/// │   ↑ 刻度底 ↔ 标签顶 **13pt**                     │           │
+/// │   800   1000  1250  1600  2000  2500   数字 10.5 │           │
 /// └────────────────────────────────────────────────┴───────────┘
 /// ```
 ///
-/// ## 三个**刻意偏离原型**的点（都有理由）
+/// 竖向账（读令牌复算，自检第 19 组守）：气泡 0–22 / 开关 10–39 /
+/// **选中刻度 36.5–58.5**（普通刻度 44.5–58.5）/ 数字 71.5–82 —— 互不重叠。
 ///
-/// 1. **面板高 84（原型 96）**：净可见账卡出来的上限，见 `Theme.Size.paramStripHeight`
-/// 2. **加触觉节流**（原型的 `pointermove` **没有任何节流**）：沿用 `ParameterSlider`
-///    已验证的 `0.15s`（用户 2026-09-19 拍板 ⑤）。白平衡有 76 档、每档 26pt，
-///    不加节流在边界上必然"连响"（`docs/11` 第七节踩过同一坑）。
-///    ⚠️ 换档"0.75 档滞后"已于 2026-09-20 删除（上报与吸附必须**同源 round**）
-/// 3. **指针与气泡 `allowsHitTesting(false)`**：拖动必须落到刻度区，指针不许抢触摸
-///   （原型 `.sp-pointer{ pointer-events:none }`）
+/// ## 与旧口径的差异（批六 · 全部来自用户给的飓风实测对照表）
 ///
-/// ⚠️ **刻度层级五档**（`hair` 是批五新增的第五档，四档本体来自原型）——
-/// `hair`/`minor`/`mid`/`major`/`preset` 逐档加高、加亮：分级规则在
-/// `ParameterStripCatalog.tickTier`（真实档位）与 `hasSubTicks`（档间细分线）。
+/// | 项 | 旧 | 现在 |
+/// |---|---|---|
+/// | 档距 | ISO 46 / 快门 56 / WB 26 | **统一 40**（飓风 120px） |
+/// | 刻度 | 五档层级（hair/minor/mid/major/preset） | **单档 14pt / 1.33pt，每档同高** |
+/// | 当前档指示 | 三角指针 12×8 + 竖线 1.5 | **选中刻度 22pt + 加宽 2pt + 绿** |
+/// | 档间细刻度 | 三条都加（批五 `hair`） | **删**（飓风 细:主 = 1:1） |
+/// | 标签 | 只有 `labelAt` 的档出数字 | **每档都出**（选中档**不放大**） |
+///
+/// ## 三个**刻意保留**的偏差（都不在飓风对照表里，属本仓既有取舍）
+///
+/// 1. **面板高 84**（原型 96）：净可见账卡出来的上限，见 `Theme.Size.paramStripHeight`
+/// 2. **触觉节流 0.15s**：沿用 `ParameterSlider` 已验证的量级（白平衡 76 档不加节流会"连响"）
+/// 3. **气泡 / 开关 `allowsHitTesting` 语义不变**：拖动必须落到刻度区
 ///
 /// ## 分工
 ///
@@ -126,13 +136,10 @@ struct ParameterStripView: View {
 
     // MARK: - 几何（从令牌推导，不在视图里写死数字）
 
-    /// 指针竖线上端 = 三角下沿
-    private var pointerLineTop: CGFloat {
-        Theme.Size.paramStripPointerTopInset + Theme.Size.paramStripPointerTriangleHeight
+    /// 刻度**基线**（刻度底）的 y —— 由「标签底距 + 标签字高 + 13pt 间距」反推（读 Theme，不手填）
+    private var tickBaselineY: CGFloat {
+        Theme.Size.paramStripHeight - Theme.Size.paramStripTickBaselineFromBottom
     }
-    /// 指针竖线下端（原型 `bottom:6px`）
-    private var pointerLineBottom: CGFloat { Theme.Size.paramStripHeight - 6 }
-    private var pointerLineHeight: CGFloat { max(1, pointerLineBottom - pointerLineTop) }
 
     var body: some View {
         GeometryReader { proxy in
@@ -146,7 +153,7 @@ struct ParameterStripView: View {
 
             ZStack(alignment: .topLeading) {
                 scaleArea(geometry: geometry)
-                pointer(geometry: geometry)
+                bubble(geometry: geometry)
                 // 开关贴右：占满容器宽再右对齐（开关槽宽 64 由 `.frame(width:)` 定死）
                 autoSwitch
                     .frame(width: proxy.size.width, alignment: .trailing)
@@ -174,26 +181,10 @@ struct ParameterStripView: View {
 
     private func scaleArea(geometry: ParameterStripGeometry) -> some View {
         ZStack(alignment: .topLeading) {
-            // 档间**细分刻度**（第五档 `hair`；批五 问题 2 按参考图加密）。
-            //
-            // 位置 = 每两个相邻真实档位的**中点**（`slot / 2`）；三条都加（批四只有快门）。
-            // 口径与"为什么这样对齐参考图"见 `ParameterStripCatalog.hasSubTicks`。
-            // ⚠️ 这些线**不参与吸附**：吸附永远落在 `steps` 里的真实档位。
-            if ParameterStripCatalog.hasSubTicks(kind) {
-                ForEach(0..<max(0, steps.count - 1), id: \.self) { gap in
-                    let x = geometry.padding + (CGFloat(gap) + 0.5) * geometry.slot
-                    let h = Theme.Size.paramStripTickHairHeight
-                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
-                        .fill(tickFill(for: .hair, isUnavailable: false))
-                        .frame(width: Theme.Size.paramStripTickHairWidth, height: h)
-                        .position(
-                            x: x,
-                            y: Theme.Size.paramStripHeight
-                                - Theme.Size.paramStripTickBottomInset
-                                - h / 2
-                        )
-                }
-            }
+            // ⚠️ 批六：**档间细分线整层退场**（飓风 细:主 = 1:1 ⇒ 就是没有细刻度）。
+            //    批五那层 `hair`（相邻档位中点一条）连同它的 `hasSubTicks` 判据一起删掉 ——
+            //    依据是用户 2026-09-21 的勘误：旧参考图（contact sheet）的"9~10 条细刻度"
+            //    是**错判**的产物，已作废。
             ForEach(steps.indices, id: \.self) { index in
                 tickContent(at: index, geometry: geometry)
             }
@@ -233,30 +224,33 @@ struct ParameterStripView: View {
         .opacity(isAuto ? 0.55 : 1)
     }
 
-    /// 单个档位的内容：刻度线 + （可选）数字。都用 `.position` 定位在刻度条坐标系里。
+    /// 单个档位的内容：刻度线 + 数字。都用 `.position` 定位在刻度条坐标系里。
     ///
-    /// 刻度**高度 = 层级**（原型四档：minor 10 / mid 15 / major 22 / preset 22），
-    /// 底边全部对齐同一条基线（`paramStripTickBottomInset`）—— 层级靠"往上长"表达。
+    /// **批六口径**：刻度线**每档同高**（`paramStripTickHeight` 14pt / 1.33pt 宽），
+    /// **选中档**加高到 22pt（向上 +8pt）、加宽 2pt、变绿 —— 它同时就是"当前值指示器"。
+    /// 底边全部对齐同一条基线（`tickBaselineY`），所以"加高"表现为**向上长**。
+    ///
+    /// ⚠️ 选中判据用的是 `currentStepIndex`（按显示值吸附到最近档），与气泡**同源**
+    /// —— 硬件回读值（如 ISO 934）不落在档位上时，选中刻度与气泡必须指向同一档。
     @ViewBuilder
     private func tickContent(at index: Int, geometry: ParameterStripGeometry) -> some View {
         let step = steps[index]
         let x = geometry.padding + CGFloat(index) * geometry.slot
         let isUnavailable = unavailableValues.contains(step.value)
-        let tier = ParameterStripCatalog.tickTier(for: kind, index: index, step: step)
-        let tickHeight = height(for: tier)
+        let isSelected = index == currentStepIndex
+        let tickHeight = isSelected
+            ? Theme.Size.paramStripTickSelectedHeight
+            : Theme.Size.paramStripTickHeight
+        let tickWidth = isSelected
+            ? Theme.Size.paramStripTickWidth + Theme.Size.paramStripTickSelectedExtraWidth
+            : Theme.Size.paramStripTickWidth
 
-        RoundedRectangle(cornerRadius: 1, style: .continuous)
-            .fill(tickFill(for: tier, isUnavailable: isUnavailable))
-            .frame(width: Theme.Size.paramStripTickWidth, height: tickHeight)
-            .position(
-                x: x,
-                y: Theme.Size.paramStripHeight
-                    - Theme.Size.paramStripTickBottomInset
-                    - tickHeight / 2
-            )
+        RoundedRectangle(cornerRadius: tickWidth / 2, style: .continuous)
+            .fill(tickFill(isSelected: isSelected, isPreset: step.isPreset, isUnavailable: isUnavailable))
+            .frame(width: tickWidth, height: tickHeight)
+            .position(x: x, y: tickBaselineY - tickHeight / 2)
 
-        // 数字只挂在**带标签**的档上（原型 `labelAt`）—— 注意这与层级是两件事：
-        // `preset` 档（如 5200K）有 22pt 的线但**不出数字**。
+        // 数字挂在**每一档**上（飓风口径：每档带标签）；选中档的标签**不放大、不变色**。
         if step.showsLabel {
             Text(step.label)
                 .font(.system(size: Theme.Size.paramStripNumberFontSize, design: .rounded))
@@ -272,82 +266,51 @@ struct ParameterStripView: View {
         }
     }
 
-    /// 层级 → 刻度线高（四档高度来自原型 CSS；`major` 与 `preset` 同高；`hair` 是批五新增的第五档）
-    private func height(for tier: ParameterStripTickTier) -> CGFloat {
-        switch tier {
-        case .hair: return Theme.Size.paramStripTickHairHeight
-        case .minor: return Theme.Size.paramStripTickHeight
-        case .mid: return Theme.Size.paramStripTickMidHeight
-        case .major, .preset: return Theme.Size.paramStripTickMajorHeight
-        }
-    }
-
-    /// 刻度线颜色：自动态 / 不可用档压暗 → 白平衡预设档（琥珀）→ 中间档 → 主刻度 → 普通 → 细分
+    /// 刻度线颜色：自动态 / 不可用档压暗 → **选中档（绿）** → 白平衡预设档（琥珀）→ 普通。
     ///
     /// ⚠️ 顺序有讲究：**自动态 / 不可用档优先**（整条压暗是"当前不可调"的统一表达），
-    /// 预设档在它之后 —— 否则自动态下还会冒出几根琥珀线，与"整条不可调"矛盾。
-    private func tickFill(for tier: ParameterStripTickTier, isUnavailable: Bool) -> Color {
+    /// 否则自动态下还会冒出一根绿线 / 几根琥珀线，与"整条不可调"矛盾。
+    /// 选中档**排在预设档之前**：选中刻度按飓风口径必须是绿的（选中优先于预设）。
+    private func tickFill(isSelected: Bool, isPreset: Bool, isUnavailable: Bool) -> Color {
         if isAuto || isUnavailable { return Theme.Palette.stripInactive }
-        switch tier {
-        case .preset: return Theme.Palette.stripTickPreset
-        case .major: return Theme.Palette.stripTickMajor
-        case .mid: return Theme.Palette.stripTickMid
-        case .minor: return Theme.Palette.stripTick
-        case .hair: return Theme.Palette.stripTickHair
-        }
+        if isSelected { return Theme.Palette.stripTickSelected }
+        if isPreset { return Theme.Palette.stripTickPreset }
+        return Theme.Palette.stripTick
     }
 
     private func numberColor(isUnavailable: Bool) -> Color {
         (isAuto || isUnavailable) ? Theme.Palette.stripInactive : Theme.Palette.stripNumber
     }
 
-    // MARK: - 指针 + 气泡（都固定在指针 X 上，且不接收触摸）
+    // MARK: - 气泡（固定在可视区中点，且不接收触摸）
 
-    private func pointer(geometry: ParameterStripGeometry) -> some View {
-        ZStack(alignment: .topLeading) {
-            // 竖线
-            RoundedRectangle(cornerRadius: 1, style: .continuous)
-                .fill(Theme.Palette.stripAccent)
-                .frame(width: Theme.Size.paramStripPointerLineWidth, height: pointerLineHeight)
-                .position(x: geometry.pointerX, y: pointerLineTop + pointerLineHeight / 2)
-
-            // 三角（朝下）
-            DownTriangle()
-                .fill(Theme.Palette.stripAccent)
-                .frame(
-                    width: Theme.Size.paramStripPointerTriangleHalfWidth * 2,
-                    height: Theme.Size.paramStripPointerTriangleHeight
-                )
-                .position(
-                    x: geometry.pointerX,
-                    y: Theme.Size.paramStripPointerTopInset
-                        + Theme.Size.paramStripPointerTriangleHeight / 2
-                )
-
-            // 气泡（在指针正上方）
-            Text(bubbleText)
-                .font(.system(
-                    size: Theme.Size.paramStripBubbleFontSize,
-                    weight: .bold,
-                    design: .rounded
-                ))
-                .foregroundStyle(Theme.Palette.stripBubbleText)
-                .monospacedDigit()
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .frame(height: Theme.Size.paramStripBubbleHeight)
-                .background(Capsule().fill(Theme.Palette.stripAccent))
-                .position(x: geometry.pointerX, y: Theme.Size.paramStripBubbleHeight / 2)
-        }
-        // 原型 `.sp-pointer{ pointer-events:none }` —— 拖动要落到刻度区，指针不许抢触摸
-        .allowsHitTesting(false)
+    /// 气泡：唯一保留的"当前值"指示（批六：三角指针 + 竖线已退场，选中刻度承担指示）。
+    ///
+    /// 它落在 `pointerX`（可视区中点）上，而刻度条会把**当前档位**偏移到同一个 X
+    /// —— 所以气泡永远正在选中刻度正上方。
+    private func bubble(geometry: ParameterStripGeometry) -> some View {
+        Text(bubbleText)
+            .font(.system(
+                size: Theme.Size.paramStripBubbleFontSize,
+                weight: .bold,
+                design: .rounded
+            ))
+            .foregroundStyle(Theme.Palette.stripBubbleText)
+            .monospacedDigit()
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .frame(height: Theme.Size.paramStripBubbleHeight)
+            .background(Capsule().fill(Theme.Palette.stripAccent))
+            .position(x: geometry.pointerX, y: Theme.Size.paramStripBubbleHeight / 2)
+            // 原型 `.sp-pointer{ pointer-events:none }` —— 拖动要落到刻度区，气泡不许抢触摸
+            .allowsHitTesting(false)
     }
 
     /// 气泡文本：自动态显示「自动」，否则显示当前档位（原型 `fmt`）。
     ///
-    /// ⚠️ **与指针同源**（2026-09-20 Mac 复验 🟠问题 2）：显示值吸附到**最近档**
+    /// ⚠️ **与选中刻度同源**（2026-09-20 Mac 复验 🟠问题 2）：显示值吸附到**最近档**
     /// （`steps[currentStepIndex].value`）—— 硬件回读值（如 ISO 934）不落在档位上时，
-    /// 气泡若显示原始值就与指针档位对不上。拖动期草稿值同理吸附。
+    /// 气泡若显示原始值就与选中刻度对不上。拖动期草稿值同理吸附。
     private var bubbleText: String {
         guard !isAuto, displayValue != nil else { return "自动" }
         return ParameterStripCatalog.label(for: kind, value: steps[currentStepIndex].value)
@@ -484,20 +447,5 @@ struct ParameterStripView: View {
         guard now.timeIntervalSince(lastTickAt) >= Self.tickThrottle else { return }
         lastTickAt = now
         Haptics.tick()
-    }
-}
-
-/// 朝下的实心三角（指针头）。
-///
-/// 用 `Path` 画而不是 `Image(systemName:)` —— 本项目踩过"SF Symbol 名写错**静默留白**"的坑
-/// （编译器和自检都拦不住），指针这种小图形自己画最稳。
-private struct DownTriangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        path.closeSubpath()
-        return path
     }
 }

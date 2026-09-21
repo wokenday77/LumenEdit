@@ -36,7 +36,8 @@ struct ParameterStripStep: Identifiable, Equatable {
     let value: Double
     /// 刻度下显示的文本（原型 `fmt`）
     let label: String
-    /// 是否在刻度下显示数字（原型 `labelAt`：只有主档位显示，避免 76 档白平衡密密麻麻）
+    /// 是否显示数字。**批六起恒为 `true`**（复刻飓风：每档都带标签）；
+    /// 字段保留是为了将来若回到"只标主档"（原型 `labelAt` 那套）不必改结构。
     let showsLabel: Bool
     /// 白平衡的「预设档」（原型 `preset`：白炽灯/荧光灯/日光/阴天/阴影 → 琥珀色刻度）
     let isPreset: Bool
@@ -44,80 +45,112 @@ struct ParameterStripStep: Identifiable, Equatable {
     var id: Double { value }
 }
 
-// MARK: - 刻度层级（视觉）
-
-/// 刻度线的**视觉层级** —— 原型 CSS `.sp-tick` 的四档，**逐字对齐原型**：
-///
-/// | 档 | 原型选择器 | 高 | 颜色 |
-/// |---|---|---|---|
-/// | `minor` | `.sp-tick` | 10 | `rgba(255,255,255,.34)` |
-/// | `mid` | `.sp-tick.mid` | **15** | `rgba(255,255,255,.48)` |
-/// | `major` | `.sp-tick.major` | 22 | `rgba(255,255,255,.82)` |
-/// | `preset` | `.sp-tick.preset` | 22 | `rgba(242,175,60,.85)` |
-///
-/// ## 为什么要有这个枚举（2026-09-20 批四，用户批三实测"细密度没生效"）
-///
-/// 原型的四档 CSS 一直都在，但 `renderStrip` 的 JS 只给 `major` / `preset` 打了类 ——
-/// `mid` 那一层**定义了却没人用**。Swift 侧照着 JS 抄，于是"主档之间的细刻度"只能
-/// 自己发明：1px 宽 / 20% 白 / 半高发丝线（`ParameterStripView` 旧实现）。
-/// 结果就是用户看到的"细线太淡 + 档距偏疏 + 白平衡无层级区分"。
-///
-/// **现在把原型那一层用起来**：细刻度 = `mid`（15pt / 48% / 1.5pt 宽），
-/// 层级由**高度 + 对比度**同时表达，不再靠"更细更淡"。
-enum ParameterStripTickTier: String, CaseIterable {
-    case hair
-    case minor
-    case mid
-    case major
-    case preset
-}
-
 // MARK: - 目录（单一真源）
 
-/// 参数刻度条数据 —— 三条条的**档位表 / 数值格式 / 可视步进 / 标签档 / 预设档**。
+/// 参数刻度条数据 —— 三条条的**档位表 / 数值格式 / 可视步进 / 预设档**。
 ///
-/// ## 数据来源
+/// ## 2026-09-21 批六：**复刻飓风**（方案 A，用户拍板 —— 这是本文件的口径分水岭）
 ///
-/// 与原型 `prototype/index.html` 同源，由 `tools/check_presets.js` 第 6 组逐条比对：
+/// 用户口径原文：**"原始需求就是复刻飓风；之前的「细刻度」是基于错判参考图的产物；
+/// 每档带标签才是飓风做法"**。因此：
 ///
-/// | 条 | 原型 | 档数 |
-/// |---|---|---|
-/// | ISO | `ISO_STRIP`（L3076） | **25 档**（50…12000，约 1/3 档等比） |
-/// | 快门 | `SHUTTER_VAL` + `SHUTTER_LABEL`（L1753-1754） | **15 档**（1s … 1/12000，整档） |
-/// | 白平衡 | `WB_STRIP`（L3077） | **76 档**（2500…10000K，线性步长 100） |
+/// | 量 | 飓风实测 | 旧口径 | 现在 |
+/// |---|---|---|---|
+/// | 档距 | 120px = **40.0pt/档** | ISO 46 / 快门 56 / WB 26 | **统一 40pt** |
+/// | 刻度高 / 宽 | 42px = 14pt / 4px = 1.33pt，**每档同高** | 五档层级 22/15/10/6.5 | **单档 14 / 1.33** |
+/// | 选中刻度 | 66px = 22pt（向上 +8pt）+ 加宽 2pt + 绿 | 三角指针 12×8 + 竖线 | **选中档加高加宽变绿** |
+/// | 档间细刻度 | **无**（细:主 = 1:1） | 每条都加（批五 `hair`） | **删** |
+/// | 每档标签 | **全部带**（≈11pt） | 只有 `labelAt` 的档 | **全标签**（字号维持 10.5） |
+/// | 选中档标签 | 不放大 | — | **不放大** |
+/// | 可视档数 | 8~9（滚动式） | — | 8~9（接受） |
 ///
-/// ## 与"能力求交"的分工
+/// 精度依据：全分辨率截图 1206×2622 = **402pt @3x**（用户给的飓风实测量，精确到 0.3pt）。
+/// 402pt 屏、gutter 64 → 可视 (402−64)/40 = **8.45 档**，与"8~9"吻合。
 ///
-/// 本类型只给**标称档位**；"哪些档位在这台设备上真的可用"由
-/// `CaptureCapabilities.availableRange(for:on:)` 求交，UI 把越界的档位**置灰但保留可点**
-/// （点了给 toast 说明）—— 与焦段条那套一致，守"不做点了没反应"。
+/// ⚠️ **作废**：旧 `reference/video-frames-2026-09-16`（contact sheet）推出的
+/// 「9~10 条细刻度 / 细:主 1:2」已作废（那就是"错判参考图"的产物，别再拿它当依据）。
+///
+/// ## ⚠️ 与原型的关系：**Swift 先行 + 标记**（用户 2026-09-21 拍板路由）
+///
+/// 原型 `prototype/index.html` 归 CB 改（WB 端**只读不写**），所以本文件先按飓风口径落地，
+/// 由 `isSwiftAheadOfPrototype` 显式标记"我领先原型"：
+/// `tools/check_presets.js` 第 6 组见到该标记会把手上的逐条比对**降级为 WARN**
+/// 并打印差异清单（= CB 的待办）；**CB 同步完原型后必须把标记改回 `false`**，
+/// 那一刻本组自动收紧回"逐条全等"（与第 4 组 FOCALS 的 `isSwiftExtension` 同款机制）。
 enum ParameterStripCatalog {
+
+    // MARK: 先行标记（CB 同步完原型后请改回 false）
+
+    /// **Swift 领先原型** 的显式标记 —— 见类型头部的说明。
+    ///
+    /// - `true`：本文件的档位表 / 步进**领先**原型，`check_presets` 第 6 组降级为 WARN
+    ///   （不阻塞，但会逐条打印差异清单给 CB）。
+    /// - `false`：两边应当逐条全等，本组收紧为 FAIL。
+    ///
+    /// ⚠️ 必须是 `var`/`let` 静态常量且**只有这一处**（改口径时改这里，别在别的文件再写一个开关）。
+    static let isSwiftAheadOfPrototype: Bool = true
+
+    /// 现行口径的名字（日志 / WARN 里带出来，避免"哪一版口径"说不清）。
+    static let specVersion: String = "hurricane-A（2026-09-21 批六 · 复刻飓风）"
 
     // MARK: ISO（25 档）
 
-    /// ISO 档位值（原型 `ISO_STRIP`，**约 1/3 档等比**，50…12000）
+    /// ISO 档位值 —— **约 1/3 档等比**，50…**12096**。
+    ///
+    /// ⚠️ 末档**不是**行业表的 12800（用户 2026-09-21 拍板）：设备实读 `maxISO` = **12096**
+    /// （本机日志实锤同值）。标称表按设备实读值收尾，运行时再由
+    /// `isoValues(deviceISOMax:)` 按当前设备覆盖一次，保证换了机型末档也精确。
     static let isoValues: [Double] = [
         50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640,
-        800, 1000, 1200, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12000
+        800, 1000, 1200, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12096
     ]
-    /// ISO 显示数字的档位（原型 `labelAt`）
-    static let isoLabelledValues: Set<Double> = [400, 800, 1200, 1600, 3200, 6400, 12000]
     /// 手动档初值兜底（原型 `state.cal.iso` 的种子值）。
     /// ⚠️ 真机切手动时**不用它** —— 用设备当前值（用户 2026-09-19 拍板 ③），
     /// 它只在"设备拿不到当前 ISO"时兜底。
     static let defaultISO: Double = 800
 
-    // MARK: 快门（15 档，整档）
+    /// 末档按**设备实读** `maxISO` 覆盖后的 ISO 档位表。
+    ///
+    /// - 设备给的 `maxISO` 与标称末档一致（本机 12096）→ 原样返回；
+    /// - 不一致 → **只替换末档**（档数不变，自检 / 比对口径才不会漂）；
+    /// - 拿不到（`nil` 或非有限 / ≤ 0）→ 用标称表。
+    static func isoValues(deviceISOMax: Double?) -> [Double] {
+        guard let maxISO = deviceISOMax, maxISO.isFinite, maxISO > 0,
+              maxISO != isoValues.last else { return isoValues }
+        var values = isoValues
+        values[values.count - 1] = maxISO
+        return values
+    }
 
-    /// 快门档位的**曝光秒数**（原型 `SHUTTER_VAL`，1s → 1/12000，**递减**）
+    // MARK: 快门（42 档：1/3 档行业表 + 两个影院值）
+
+    /// 快门档位的**曝光秒数**（**递减**：1s → 1/8000）。
+    ///
+    /// 口径（用户 2026-09-21 拍板"档位表走行业主流"）：
+    /// ① 从 15 档整档**补成 1/3 档**（1 → 1/8000，含 1/1.3 / 1/1.6 / 1/2.5 / 1/3 / 1/5 / 1/6 /
+    ///    1/10 / 1/13 / 1/20 / 1/25 / 1/40 / 1/50 / 1/80 / 1/1250 / 1/2500 / 1/5000 这些
+    ///    整档表里没有的中间值）；
+    /// ② **加影院值** `1/96` 与 `1/120`（180° 快门角，行业摄影机表里都有）；
+    /// ③ **删掉 `1/12000`** —— 行业表没有它，且在 40pt 档距 + 全标签下它是 7 字符
+    ///    （≈43pt）**必然与相邻标签叠字**（用户给的三选项里选了"去掉"）。
     static let shutterSecondValues: [Double] = [
-        1, 1.0 / 2, 1.0 / 4, 1.0 / 8, 1.0 / 15, 1.0 / 30, 1.0 / 60, 1.0 / 125,
-        1.0 / 250, 1.0 / 500, 1.0 / 1000, 1.0 / 2000, 1.0 / 4000, 1.0 / 8000, 1.0 / 12000
+        1,
+        1.0 / 1.3, 1.0 / 1.6, 1.0 / 2, 1.0 / 2.5, 1.0 / 3, 1.0 / 4, 1.0 / 5,
+        1.0 / 6, 1.0 / 8, 1.0 / 10, 1.0 / 13, 1.0 / 15, 1.0 / 20, 1.0 / 25, 1.0 / 30,
+        1.0 / 40, 1.0 / 50, 1.0 / 60, 1.0 / 80, 1.0 / 96, 1.0 / 100, 1.0 / 120, 1.0 / 125,
+        1.0 / 160, 1.0 / 200, 1.0 / 250, 1.0 / 320, 1.0 / 400, 1.0 / 500, 1.0 / 640, 1.0 / 800,
+        1.0 / 1000, 1.0 / 1250, 1.0 / 1600, 1.0 / 2000, 1.0 / 2500, 1.0 / 3200,
+        1.0 / 4000, 1.0 / 5000, 1.0 / 6400, 1.0 / 8000
     ]
-    /// 快门显示文本（原型 `SHUTTER_LABEL`，与上一行**逐项对应**；最慢档是 `"1"` 不是 `"1s"`）
+    /// 快门显示文本（与上一行**逐项对应**；最慢档是 `"1"` 不是 `"1s"`）
     static let shutterLabels: [String] = [
-        "1", "1/2", "1/4", "1/8", "1/15", "1/30", "1/60", "1/125",
-        "1/250", "1/500", "1/1000", "1/2000", "1/4000", "1/8000", "1/12000"
+        "1",
+        "1/1.3", "1/1.6", "1/2", "1/2.5", "1/3", "1/4", "1/5",
+        "1/6", "1/8", "1/10", "1/13", "1/15", "1/20", "1/25", "1/30",
+        "1/40", "1/50", "1/60", "1/80", "1/96", "1/100", "1/120", "1/125",
+        "1/160", "1/200", "1/250", "1/320", "1/400", "1/500", "1/640", "1/800",
+        "1/1000", "1/1250", "1/1600", "1/2000", "1/2500", "1/3200",
+        "1/4000", "1/5000", "1/6400", "1/8000"
     ]
     /// 手动档初值兜底（同 ISO 的口径）
     static let defaultShutterSeconds: Double = 1.0 / 125
@@ -126,21 +159,27 @@ enum ParameterStripCatalog {
 
     /// 色温档位（原型 `WB_STRIP = 2500…10000 步长 100` ⇒ **76 档**）
     static let whiteBalanceValues: [Double] = (0...75).map { 2500 + Double($0) * 100 }
-    /// 显示数字的档位：每 500K 一档（原型 `labelAt` 循环 `k=3000; k<=10000; k+=500`，15 个）
-    static let whiteBalanceLabelledValues: Set<Double> = Set(stride(from: 3000, through: 10000, by: 500).map(Double.init))
-    /// 预设档（原型 `preset:[3000,4000,5200,6000,7500]` → 琥珀色刻度）
+    /// 预设档（原型 `preset:[3000,4000,5200,6000,7500]` → 琥珀色刻度）。
+    ///
+    /// 批六保留"预设位"语义（用户拍板），但**高度与普通档相同** —— 飓风没有层级。
     static let whiteBalancePresetValues: Set<Double> = [3000, 4000, 5200, 6000, 7500]
     /// 手动档初值兜底（原型 `state.cal.wb = '5600K'`）
     static let defaultWhiteBalanceKelvin: Double = 5600
 
-    // MARK: 可视步进（原型 `slot`，px）
+    // MARK: 可视步进（统一 40pt）
 
-    /// 相邻档位的可视步进（pt）。三条各不相同 —— 档数差 5 倍，步进不区分会一条长得离谱、一条挤成一团。
+    /// 相邻档位的可视步进（pt）—— **批六起三条统一 40pt**（飓风实测 120px ÷ 3）。
+    ///
+    /// ⚠️ 旧口径是"三条各不相同"（ISO 46 / 快门 56 / WB 26，按档数差 5 倍分别配密度）；
+    /// 飓风是**一个档距走三条**，靠"滚动 + 8~9 档可视"消化档数差 — 用户已接受这个代价。
+    ///
+    /// 实现上仍按条分派（**三个分支都返回 40**）：`check_presets` 第 6 组要按条比对步进，
+    /// 写成单个常量它就读不出来了（会误报"取不到数据"）。
     static func slot(for kind: ParameterStripKind) -> CGFloat {
         switch kind {
-        case .iso: return 46
-        case .shutter: return 56
-        case .whiteBalance: return 26
+        case .iso: return 40
+        case .shutter: return 40
+        case .whiteBalance: return 40
         }
     }
 
@@ -148,28 +187,30 @@ enum ParameterStripCatalog {
 
     /// "档位 vs 设备可用区间"的求交容差（**三条各给**）。
     ///
-    /// 为什么不是一个通用常数：三条的**量纲跨度极大** —— ISO 50…12000（最小档间距 14）、
-    /// 快门 8.3e-5…1.0 秒（最小档间距 4.2e-5）、白平衡步长 100。
+    /// 为什么不是一个通用常数：三条的**量纲跨度极大** —— ISO 50…12096（最小档间距 14）、
+    /// 快门 1.25e-4…1.0 秒（最小档间距 2.1e-5，来自 1/96 与 1/100）、白平衡步长 100。
     /// 通用容差要么对快门过宽（把相邻档误判成可用）、要么对 ISO 形同虚设。
     static func tolerance(for kind: ParameterStripKind) -> Double {
         switch kind {
         case .iso: return 0.5
-        case .shutter: return 1e-6      // ≈ 1 微秒，比最小档间距（4.2e-5）小一个数量级
+        case .shutter: return 1e-6      // ≈ 1 微秒，仍比最小档间距（2.1e-5）小一个数量级
         case .whiteBalance: return 0.5
         }
     }
 
     // MARK: 档位表
 
-    /// 某条刻度条的**标称档位表**（未与设备能力求交）
-    static func steps(for kind: ParameterStripKind) -> [ParameterStripStep] {
+    /// 某条刻度条的**标称档位表**（未与设备能力求交）。
+    ///
+    /// - Parameter deviceISOMax: 设备实读 `maxISO`（只对 ISO 有意义；`nil` = 用标称末档）
+    static func steps(for kind: ParameterStripKind, deviceISOMax: Double? = nil) -> [ParameterStripStep] {
         switch kind {
         case .iso:
-            return isoValues.map { value in
+            return isoValues(deviceISOMax: deviceISOMax).map { value in
                 ParameterStripStep(
                     value: value,
                     label: isoLabel(value),
-                    showsLabel: isoLabelledValues.contains(value),
+                    showsLabel: true,           // 批六：全标签（飓风口径）
                     isPreset: false
                 )
             }
@@ -177,7 +218,6 @@ enum ParameterStripCatalog {
             return zip(shutterSecondValues, shutterLabels).map { seconds, label in
                 ParameterStripStep(
                     value: seconds,
-                    // 快门 15 档**全部**显示数字（原型 `labelAt: SHUTTER_LABEL.slice()`）
                     label: label,
                     showsLabel: true,
                     isPreset: false
@@ -188,14 +228,14 @@ enum ParameterStripCatalog {
                 ParameterStripStep(
                     value: value,
                     label: whiteBalanceLabel(value),
-                    showsLabel: whiteBalanceLabelledValues.contains(value),
+                    showsLabel: true,
                     isPreset: whiteBalancePresetValues.contains(value)
                 )
             }
         }
     }
 
-    /// 档位总数（自检用：25 / 15 / 76）
+    /// 档位总数（自检用：25 / **42** / 76）
     static func stepCount(for kind: ParameterStripKind) -> Int {
         switch kind {
         case .iso: return isoValues.count
@@ -204,71 +244,32 @@ enum ParameterStripCatalog {
         }
     }
 
-    // MARK: 刻度层级（渲染用；不参与与设备的"能力求交"）
+    // MARK: 标签宽度预算（批六新增；自检第 19 组照这个式子复算）
 
-    /// 某个档位的刻度层级（**只依赖档位数据本身**，不依赖设备当前值）。
+    /// 刻度标签的**估算字符宽**（em 倍数）—— 用于"40pt 档距下标签会不会叠字"的预算。
     ///
-    /// 规则（三条各一条理由，都写在注释里，避免以后被"顺手统一"掉）：
-    ///
-    /// - **带数字的档 = `major`**（原型 `labelAt` 判据）—— 与原型逐条一致。
-    /// - **预设档 = `preset`**（白平衡 5 个琥珀档）—— ⚠️ 优先级**高于** `major`：
-    ///   原型 `.sp-tick.preset` 与 `.major` 同为 22pt，颜色覆盖。5200K 只出现在预设里
-    ///   （不是 500K 的整数倍 → 原型 `labelAt` 不含它）—— 旧实现让它只改色不改高（10pt），
-    ///   那是**偏离原型**，本轮修正为 22pt。
-    /// - **ISO 的整档（1 EV 步，即每 3 个 1/3 档）= `mid`**：`ISO_STRIP` 是约 1/3 档等比
-    ///   （50,64,80,100,125,160,200,…），`index % 3 == 0` 恰好是 50/100/200/400/800/1600/
-    ///   3200/6400/12000 —— 与"整档 ISO"逐项吻合。剩下的是 1/3 档 → `minor`。
-    ///   ⚠️ **ISO 不再加"合成细线"**：它那 25 条就是真实的 1/3 档档位（可吸附），
-    ///   再塞视觉细分线会与真实档位混淆 —— 层级靠 `mid/major` 表达就够了。
-    /// - **白平衡非整百五档 = `mid`**：76 档每 100K 一条，每 5 条（500K）带数字 =
-    ///   `major`，中间 4 条 = `mid` —— 这样才有"层级"（旧实现：除了 major 全是
-    ///   同一个 10pt 灰线，用户实测"无层级区分"）。
-    /// - **快门 15 档全部带数字**（原型 `labelAt: SHUTTER_LABEL.slice()`）→ 全部 `major`；
-    ///   它的"细刻度"是**档间半档**（`ParameterStripView` 里的合成 `mid` 线，
-    ///   见 `halfStepOffsets(for:)`）。
-    static func tickTier(
-        for kind: ParameterStripKind,
-        index: Int,
-        step: ParameterStripStep
-    ) -> ParameterStripTickTier {
-        if step.isPreset { return .preset }
-        if step.showsLabel { return .major }
-        switch kind {
-        case .iso:
-            return index % 3 == 0 ? .mid : .minor
-        case .shutter:
-            // 快门 15 档全是 labelAt → 走不到这里；真走到了也按 minor 兜底
-            return .minor
-        case .whiteBalance:
-            return .mid
+    /// ⚠️ 这是**估算**，不是实测：数字按 0.62em、字母按 0.68em、`/` 按 0.42em、`.` 按 0.30em。
+    /// 项目纪律里"拉丁/数字必须实测"依旧成立 —— 所以复验口径里留了一条
+    /// **Mac 实测最宽标签**（见 `docs/23`），本估算只用来在静态自检里挡住"明显要叠"的情况。
+    static func estimatedLabelWidth(_ text: String, fontSize: CGFloat) -> CGFloat {
+        text.reduce(0) { total, ch in
+            let em: CGFloat
+            switch ch {
+            case "0"..."9": em = 0.62
+            case "/": em = 0.42
+            case ".": em = 0.30
+            default: em = 0.68          // K 等字母
+            }
+            return total + fontSize * em
         }
     }
 
-    /// 需要**合成档间细分刻度**的条（批五 问题 2：三条都要）。
-    ///
-    /// ## 为什么三条都要（含此前只有快门的"半档线"）
-    ///
-    /// 批四是"只有快门加半档 `mid` 线"，其余两条不加 —— 用户批四复验后要求
-    /// **对照参考图再加一层细分**："标点更细、更多"。
-    /// 参考图实测（源帧 588px / 393pt = 1.5px per pt）：白平衡条主档（500K）间距 ≈18pt、
-    /// 其间约 **9~10 条细刻度**，细:主高度比 ≈1:2。
-    ///
-    /// 我们的 `slot` 是**原型真源**（WB 26 / ISO 46 / 快门 56，`check_presets.js` 逐条比对），
-    /// **绝对密度对不齐**（照参考图要么把 slot 压到 4pt、要么把标签全挤掉，都是倒退）。
-    /// 所以对齐**相对口径**：**每两个相邻真实档位之间补 1 条细分线**（`hair`）——
-    ///   · WB：主档间 4 真实 + 4 细分 = **8 条**（参考图 9~10，同量级 ✓）
-    ///   · ISO：主档间同理；快门：原来的半档 `mid` 线**降级为 `hair`**（它本来就该更细）
-    ///
-    /// ⚠️ **这些线不参与吸附**（刻度条永远是离散档位吸附）—— 纯视觉细分，
-    /// 与真实档位线在高度（6.5 vs 10/15/22）与亮度（26% vs 34/48/82%）上双重区分，
-    /// 不会让人误判"拖到这里会停"。
-    static func hasSubTicks(_ kind: ParameterStripKind) -> Bool {
-        switch kind {
-        case .iso, .shutter, .whiteBalance: return true
-        }
+    /// 一条刻度条里**最宽标签的估算宽**（pt）
+    static func widestLabelWidth(_ kind: ParameterStripKind, fontSize: CGFloat) -> CGFloat {
+        steps(for: kind).map { estimatedLabelWidth($0.label, fontSize: fontSize) }.max() ?? 0
     }
 
-    // MARK: 数值格式（与原型 `fmt` 逐字对齐）
+    // MARK: 数值格式（与原型 `fmt` 对齐）
 
     /// ISO → **纯数字**（原型 `String(Math.round(v))`，**不带 "ISO" 前缀**）：`800`
     static func isoLabel(_ value: Double) -> String {

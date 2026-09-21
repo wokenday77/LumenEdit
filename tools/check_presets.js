@@ -36,7 +36,22 @@ const PRESET_DIR = path.join(ROOT, 'LumenEdit', 'Presets');
 let failed = 0;
 const failures = [];
 function ok(msg) { console.log('  OK   ' + msg); }
-function bad(msg) { failed++; failures.push(msg); console.log('  FAIL ' + msg); }
+function warn(msg) { console.log('  WARN ' + msg); }
+
+/**
+ * **软失败作用域**（2026-09-21 批六新增）：非 null 时，本组内的 FAIL 降级为 WARN。
+ *
+ * 用途只有一个：`ParameterStripCatalog.isSwiftAheadOfPrototype == true`（Swift 先行 + 标记，
+ * 用户 2026-09-21 拍板的 ① 路由）。原型归 CB 改（WB 端只读不写），所以当 Swift 侧按新口径
+ * （复刻飓风）先落地时，本组不该把整条链路卡红 —— 但**也绝不能静默放过**：
+ * 降级的同时会把逐条差异原样打印出来当 CB 的待办清单。
+ * CB 同步完原型、把标记改回 `false` 之后，本组**自动**恢复 FAIL 强度（不需要再改检查）。
+ */
+let softenGroup = null;
+function bad(msg) {
+  if (softenGroup) { warn('[待 CB 同步原型 · ' + softenGroup + '] ' + msg); return; }
+  failed++; failures.push(msg); console.log('  FAIL ' + msg);
+}
 
 /* ============================================================
    一、从原型 index.html 里取出三个 JS 数组
@@ -559,6 +574,22 @@ console.log('\n[6] 参数刻度条 ISO_STRIP / SHUTTER_* / WB_STRIP ⟷ Paramete
 
 const stripSrc = readSwift('ParameterStripCatalog.swift');
 
+// ── Swift 先行 + 标记（2026-09-21 批六 · 复刻飓风 = 方案 A，用户拍板路由）──────────────
+// 标记在 `ParameterStripCatalog.isSwiftAheadOfPrototype`：
+//   true  = Swift 先按飓风口径落地，原型待 CB 同步 → **本组降级为 WARN** 并打印差异清单；
+//   false = 两边应当逐条全等（本组收紧为 FAIL）。
+// 为什么需要它：原型 `prototype/index.html` 归 CB 改（WB 端只读不写），而 ① 是
+// **重建级**改动（档距 46/56/26 → 统一 40、档位表、标签口径全变），不给出口就只能两边互相卡。
+const swiftAheadSpec = /isSwiftAheadOfPrototype:\s*Bool\s*=\s*true/.test(stripSrc);
+const swiftAheadVersion = (/specVersion:\s*String\s*=\s*"([^"]+)"/.exec(stripSrc) || [])[1] || '（未标版本）';
+if (swiftAheadSpec) {
+  softenGroup = '批六 ' + swiftAheadVersion;
+  warn('ParameterStripCatalog 标了 `isSwiftAheadOfPrototype = true`（' + swiftAheadVersion + '）');
+  warn('→ 本组**降级为 WARN**（不卡红），但差异会逐条打印出来 —— 那就是 CB 的待办清单');
+  warn('→ CB 同步完原型后，把该标记改回 `false`，本组会自动收紧为"逐条全等"');
+  console.log('');
+}
+
 /** 等差数列（含端点）：`seq(2500, 10000, 100)` */
 function seq(start, end, step) {
   const out = [];
@@ -696,26 +727,35 @@ compareNumbers(
 
 // ⑤ 标签档 & 白平衡预设档
 {
-  const jsISOLabel = /iso:\s*\{[\s\S]{0,220}?labelAt:\[([0-9,]+)\]/.exec(html);
-  compareNumbers(
-    'ISO 标签档',
-    jsISOLabel ? jsISOLabel[1].split(',').map(Number) : null,
-    swiftNumberSet('isoLabelledValues')
-  );
+  // ⚠️ 批六：原型的 **`labelAt`（只给主档出数字）整套退场** —— 飓风口径是"每档都带标签"，
+  //    所以 Swift 侧不再有 `isoLabelledValues` / `whiteBalanceLabelledValues` 两张表。
+  //    在"Swift 先行"期间，这两条没有可比对象（原型还是旧口径）→ 给待办，不报 FAIL。
+  if (softenGroup) {
+    warn('[待 CB 同步原型 · ' + softenGroup + '] 原型的 `labelAt`（只标主档）机制已退场 → '
+      + 'CB 需把 ISO / 快门 / 白平衡三条都改成"**每档都带标签**"（飓风做法）');
+  } else {
+    const jsISOLabel = /iso:\s*\{[\s\S]{0,220}?labelAt:\[([0-9,]+)\]/.exec(html);
+    compareNumbers(
+      'ISO 标签档',
+      jsISOLabel ? jsISOLabel[1].split(',').map(Number) : null,
+      swiftNumberSet('isoLabelledValues')
+    );
 
+    const jsWBLabelled = /labelAt:\(function\(\)\{ var a=\[\]; for \(var k=(\d+);k<=(\d+);k\+=(\d+)\)/
+      .exec(html);
+    compareNumbers(
+      '白平衡标签档（每 500K）',
+      jsWBLabelled ? seq(+jsWBLabelled[1], +jsWBLabelled[2], +jsWBLabelled[3]) : null,
+      swiftNumberSet('whiteBalanceLabelledValues')
+    );
+  }
+
+  // 预设档（琥珀刻度）**保留** —— 飓风口径不取消"预设位"语义，这条两边都必须有
   const jsWBPreset = /preset:\[([0-9,]+)\]/.exec(html);
   compareNumbers(
     '白平衡预设档',
     jsWBPreset ? jsWBPreset[1].split(',').map(Number) : null,
     swiftNumberSet('whiteBalancePresetValues')
-  );
-
-  const jsWBLabelled = /labelAt:\(function\(\)\{ var a=\[\]; for \(var k=(\d+);k<=(\d+);k\+=(\d+)\)/
-    .exec(html);
-  compareNumbers(
-    '白平衡标签档（每 500K）',
-    jsWBLabelled ? seq(+jsWBLabelled[1], +jsWBLabelled[2], +jsWBLabelled[3]) : null,
-    swiftNumberSet('whiteBalanceLabelledValues')
   );
 }
 
@@ -745,13 +785,24 @@ compareNumbers(
   }
 }
 
+// 第 6 组结束 → **关掉软失败作用域**，别影响后面的组（软失败只服务"Swift 先行"这一段）
+softenGroup = null;
+
 /* ============================================================
    结论
    ============================================================ */
 
 console.log('');
 if (failed === 0) {
-  console.log('全部通过：Swift 预设数据与网页原型逐条一致');
+  if (swiftAheadSpec) {
+    // ⚠️ 不能自称"逐条一致" —— 第 6 组现在处于"Swift 先行"状态，差异在上面的 WARN 清单里
+    console.log('全部通过（**但第 6 组是"Swift 先行"状态**：'
+      + swiftAheadVersion + ' —— 原型待 CB 同步，见上方 WARN 清单）');
+    console.log('  原型同步完 → 把 ParameterStripCatalog.isSwiftAheadOfPrototype 改回 false，'
+      + '本脚本会自动收紧为逐条全等。');
+  } else {
+    console.log('全部通过：Swift 预设数据与网页原型逐条一致');
+  }
   process.exit(0);
 } else {
   console.log(`有 ${failed} 项不一致，需要修：`);

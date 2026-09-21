@@ -2600,49 +2600,108 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       bad('跟手倍率缺失 / 越界 / 方向写反（🟠问题3 + 实锤 B：拍板 1.5:1，安全边界 ≤2:1）'
         + '—— 必须是 `translation.width * Self.dragGain`（乘 = 更跟手；除 = 更钝）');
     }
-    //    m4b（批四 🟠问题1 + 批五 问题 2）：刻度层级 = 原型四档 + 第五档 `hair`
-    //        不许再自创"更细更淡"的 1px/20% 半高发丝线（用户批三实测"外形没有变化"）。
-    const catSrc19 = fs.readFileSync(b2CatFile, 'utf8');
-    const tierInCatalog = /enum ParameterStripTickTier/.test(catSrc19)
-      && /case hair/.test(catSrc19);
-    const tierUsedInView = /ParameterStripCatalog\.tickTier\(/.test(stripCode19);
-    const tierTokens = /paramStripTickMidHeight:\s*CGFloat\s*=\s*15/.test(themeSrc19)
-      && /stripTickMid\s*=\s*Color\.white\.opacity\(0\.48\)/.test(themeSrc19)
-      // 第五档三件套：更矮 + 更细 + 更暗（"更细"不能只靠亮度，也不能只靠高度）
-      && /paramStripTickHairWidth:\s*CGFloat\s*=\s*1\b/.test(themeSrc19)
-      && /stripTickHair\s*=\s*Color\.white\.opacity\(0\.26\)/.test(themeSrc19);
-    const noFakeHairline = !/Color\.white\.opacity\(isAuto \? 0\.10 : 0\.20\)/.test(stripCode19);
-    // 五档高度**必须严格递增**（hair < minor < mid < major）—— 否则"层级"名存实亡
-    const tierTok19 = n => {
-      const m = new RegExp('\\b' + n + '\\s*:\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeSrc19);
+    //    m4b（**2026-09-21 批六 · 复刻飓风** = 方案 A，用户拍板）：刻度改成**单档**
+    //        （14pt 高 / 1.33pt 宽、每档同高）+ 选中档 22pt·加宽 2pt·绿 + 档距三条统一 40pt
+    //        + **无档间细分线** + 每档都带标签（选中档标签不放大）。
+    //        ⚠️ 反向判据**同样重要**：旧的五档层级 / 细分线 / 三角指针必须**真的退场** ——
+    //        否则"两套并存"会让人以为改了口径、实际没改干净（本项目在"假绿/假红"上吃过大亏）。
+    //        ⚠️ 负向判据**先剥 `//` 注释再匹配**：视图/数据层的说明文字里会提到
+    //        `hasSubTicks`、`tickTier` 这些**已删除**的名字（不剥 → 命中自己的说明 → 假 FAIL，
+    //        MEMORY 坑① 在这个文件里已经复发过四次）。
+    const codeOnly19 = s => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const themeCode19 = codeOnly19(themeSrc19);
+    const catCode19 = codeOnly19(fs.readFileSync(b2CatFile, 'utf8'));
+    const stripCode19c = codeOnly19(stripCode19);
+    // ① 旧体系退场（正向词一个都不许留）
+    const legacyGone = !/ParameterStripTickTier|func tickTier\(/.test(catCode19)
+      && !/hasSubTicks|hasHalfStepTicks/.test(catCode19)
+      && !/ParameterStripTickTier|tickTier\(|hasSubTicks/.test(stripCode19c)
+      && !/paramStripPointer|DownTriangle/.test(stripCode19c)
+      && !/paramStripTickMidHeight|paramStripTickHairHeight|paramStripTickHairWidth|paramStripTickMajorHeight|paramStripTickBottomInset/.test(themeCode19)
+      && !/stripTickMid\s*=|stripTickHair\s*=|stripTickMajor\s*=/.test(themeCode19);
+    // ② 单档令牌齐备（数值全部来自飓风实测：档距 40 / 刻度 14×1.33 / 选中 22 / 加宽 2 / 标签间距 13）
+    const tileTok19 = n => {
+      const m = new RegExp(n + ':\\s*CGFloat\\s*=\\s*([0-9.]+)').exec(themeCode19);
       return m ? parseFloat(m[1]) : null;
     };
-    const hHair = tierTok19('paramStripTickHairHeight');
-    const hMinor = tierTok19('paramStripTickHeight');
-    const hMid = tierTok19('paramStripTickMidHeight');
-    const hMajor = tierTok19('paramStripTickMajorHeight');
-    const tierOrderOK = [hHair, hMinor, hMid, hMajor].every(v => v !== null)
-      && hHair < hMinor && hMinor < hMid && hMid < hMajor;
-    if (!tierInCatalog || !tierUsedInView || !tierTokens) {
-      bad('刻度层级不齐（批四 🟠问题1：细刻度"外形没变化"）—— 需要 '
-        + 'ParameterStripTickTier（含 `hair`）+ 视图调用 tickTier + Theme 的 mid/hair 令牌'
-        + '（mid 15/48% · hair 6.5/1pt/26%）');
-    } else if (!tierOrderOK) {
-      bad('五档刻度高度不是严格递增（hair ' + hHair + ' / minor ' + hMinor + ' / mid ' + hMid
-        + ' / major ' + hMajor + '）—— 层级靠"高度 + 宽度 + 亮度"三件套表达，'
-        + '顺序一乱用户就读不出哪条是主档');
-    } else if (!noFakeHairline) {
-      bad('视图里还留着自创的 1px / 20% 白半高发丝线 —— 那是"更细更淡"的错路子，'
-        + '层级应由五档（高度 + 宽度 + 亮度）表达');
+    const stripTokensOK = tileTok19('paramStripTickPitch') === 40
+      && tileTok19('paramStripTickHeight') === 14
+      && tileTok19('paramStripTickWidth') === 1.33
+      && tileTok19('paramStripTickSelectedHeight') === 22
+      && tileTok19('paramStripTickSelectedExtraWidth') === 2
+      && tileTok19('paramStripLabelTopGap') === 13;
+    // ③ 档距三条统一 40（旧口径 46/56/26 = "按档数分别配密度"；飓风是一个档距走三条）
+    const slotVals19 = ['iso', 'shutter', 'whiteBalance'].map(k => {
+      const m = new RegExp('case \\.' + k + ':\\s*return ([0-9.]+)').exec(catCode19);
+      return m ? parseFloat(m[1]) : null;
+    });
+    const slotUniform19 = slotVals19.length === 3 && slotVals19.every(v => v === 40);
+    // ④ 视图：选中档按令牌加高加宽变绿；指示器只剩"选中刻度 + 气泡"
+    const viewOK19 = /paramStripTickSelectedHeight/.test(stripCode19c)
+      && /paramStripTickSelectedExtraWidth/.test(stripCode19c)
+      && /Theme\.Palette\.stripTickSelected/.test(stripCode19c)
+      && /func bubble\(/.test(stripCode19c);
+    // ⑤ 竖向账（读令牌复算，不手填）：气泡 22 ≠ 压到选中刻度（顶 y = 面板高 − 基线 − 22）
+    const stripH19 = tileTok19('paramStripHeight');
+    const bubbleH19 = tileTok19('paramStripBubbleHeight');
+    const numFont19 = tileTok19('paramStripNumberFontSize');
+    const numInset19 = tileTok19('paramStripNumberBottomInset');
+    const labelGap19 = tileTok19('paramStripLabelTopGap');
+    const baseline19 = numInset19 + numFont19 + labelGap19;
+    const selectedTop19 = stripH19 - baseline19 - 22;
+    const verticalOK19 = selectedTop19 > bubbleH19 + 2;
+    if (!legacyGone) {
+      bad('批六口径下**旧刻度体系必须真的退场** —— 剥掉注释后仍在源码里找到 '
+        + 'ParameterStripTickTier / tickTier( / hasSubTicks / paramStripPointer / 旧档位令牌 之一。'
+        + '"两套并存"= 改了口径却没改干净（也可能是有守卫仍在按旧口径断言）');
+    } else if (!stripTokensOK) {
+      bad('单档刻度令牌不齐（飓风实测：档距 40 / 刻度 14×1.33 / 选中 22 加宽 2 / 标签间距 13）'
+        + ' —— 实读 pitch ' + tileTok19('paramStripTickPitch')
+        + ' / tick ' + tileTok19('paramStripTickHeight') + '×' + tileTok19('paramStripTickWidth')
+        + ' / selected ' + tileTok19('paramStripTickSelectedHeight')
+        + ' + ' + tileTok19('paramStripTickSelectedExtraWidth')
+        + ' / gap ' + tileTok19('paramStripLabelTopGap'));
+    } else if (!slotUniform19) {
+      bad('档距不统一（批六：三条统一 40pt，实读 ' + slotVals19.join(' / ') + '）'
+        + ' —— 旧口径 46/56/26 是"按档数分别配密度"，飓风是一个档距走三条 + 滚动');
+    } else if (!viewOK19) {
+      bad('视图不合飓风口径 —— 需要：选中档读 paramStripTickSelectedHeight / '
+        + 'paramStripTickSelectedExtraWidth / Theme.Palette.stripTickSelected（绿），'
+        + '且指示器只剩 `bubble`（气泡）+ 选中刻度（三角指针已退场）');
+    } else if (!verticalOK19) {
+      bad('刻度条竖向账装不下：气泡底 ' + bubbleH19 + ' ↔ 选中刻度顶 ' + selectedTop19
+        + 'pt（需 > ' + (bubbleH19 + 2) + '）—— 面板高 ' + stripH19
+        + ' = 标签底距 ' + numInset19 + ' + 标签字高 ' + numFont19 + ' + 间距 ' + labelGap19
+        + ' + 选中刻度 22 + 顶部余量');
+    } else {
+      ok('刻度单档口径齐备（档距 40 / 刻度 14×1.33 / 选中 22 加宽 2 绿 / 无细分线 / 气泡保留）'
+        + ' · 竖向：气泡底 ' + bubbleH19 + ' ↔ 选中刻度顶 ' + selectedTop19 + 'pt（余 '
+        + (selectedTop19 - bubbleH19).toFixed(1) + 'pt）');
     }
-    //    m4c（批五 问题 2）：细分线 **三条都加**（此前只有快门），位置在相邻真实档位中点
-    const subTickGate = /func hasSubTicks\(_ kind: ParameterStripKind\) -> Bool/.test(catSrc19)
-      && /ParameterStripCatalog\.hasSubTicks\(kind\)/.test(stripCode19)
-      && /\(CGFloat\(gap\) \+ 0\.5\) \* geometry\.slot/.test(stripCode19)
-      && !/hasHalfStepTicks/.test(catSrc19) && !/hasHalfStepTicks/.test(stripCode19);
-    if (!subTickGate) {
-      bad('档间细分线不合批五口径（问题 2）—— 需要 `hasSubTicks` 判据（ISO / 快门 / 白平衡**三条都加**）、'
-        + '位置在相邻真实档位的中点（`(gap + 0.5) * slot`），且旧的 `hasHalfStepTicks`（只给快门）已退场');
+    //    m4c（批六）：**每档都带标签**（原型的 `labelAt` 机制整体退场），
+    //        且最长标签在 40pt 档距下**不许叠字** —— `1/12000` 就是因此被删掉的（7 字符 ≈43pt）
+    const shutterLabelsBlock19 = /shutterLabels:\s*\[String\]\s*=\s*\[([\s\S]*?)\]/.exec(catCode19);
+    const shutterLabelList19 = shutterLabelsBlock19
+      ? Array.from(shutterLabelsBlock19[1].matchAll(/"([^"]*)"/g)).map(x => x[1]) : [];
+    const widest19 = shutterLabelList19.reduce((a, b) => (b.length > a.length ? b : a), '');
+    const WBGen19 = /\(0\.\.\.(\d+)\)\.map \{ (\d+) \+ Double\(\$0\) \* (\d+) \}/.exec(catCode19);
+    const wbMaxChars19 = WBGen19
+      ? String(Number(WBGen19[2]) + Number(WBGen19[1]) * Number(WBGen19[3])).length + 1   // +1 = "K"
+      : null;
+    const allLabeled19 = /showsLabel: true/.test(catCode19)
+      && !/isoLabelledValues|whiteBalanceLabelledValues/.test(catCode19);
+    if (!shutterLabelList19.length || !allLabeled19) {
+      bad('"每档带标签"口径不符（批六）—— `showsLabel` 必须恒为 true，且旧的两张表'
+        + '（isoLabelledValues / whiteBalanceLabelledValues）必须退场（飓风每档都出数字）');
+    } else if (widest19.length > 6) {
+      bad('快门有 ' + widest19.length + ' 字符的标签（"' + widest19 + '"）—— 40pt 档距 + 全标签下'
+        + '超过 6 字符必然与相邻标签叠字（`1/12000` 就是这么被删掉的）');
+    } else if (wbMaxChars19 !== null && wbMaxChars19 > 6) {
+      bad('白平衡最宽标签 ' + wbMaxChars19 + ' 字符（`<数值>K`）—— 40pt 档距下超过 6 字符要叠字');
+    } else {
+      ok('每档全标签（快门最长 "' + widest19 + '"=' + widest19.length + ' 字符 · 白平衡 ≤ '
+        + wbMaxChars19 + ' 字符）· 40pt 档距下不叠字；'
+        + '⚠️ 最宽那档估算宽 ≈39pt、距档距仅 1pt，属"2pt 余量"红线 → Mac 复验请实测一眼');
     }
     //    m5（🟡问题7）：同值不推硬件（iso/shutter/wb 三分支都有 current 一致性跳过）
     const sameValueOK = !!vmSrc12.match(/与当前硬件值一致 → 跳过重复写入/g)
@@ -2757,16 +2816,17 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       && fmtCacheOK && fmtPersistOK && initialGuardOK && sameSourceOK && physBranchOK
       && evSkipOK && modeKeepOK && modeDiagOK && reverifyOK && focalReverifyOK
       && bubbleOK && gainOK && sameValueOK && a2OK
-      && normOK1 && normImplOK && tierInCatalog && tierUsedInView && tierTokens
-      && tierOrderOK && noFakeHairline && subTickGate
+      && normOK1 && normImplOK && stripTokensOK && slotUniform19 && legacyGone
+      && viewOK19 && verticalOK19 && allLabeled19 && widest19.length <= 6
       && prewarmOK && oneExecutorOK && formSinkOK && oldSinkGone && queueEntryOK && silentRevertOK
       && outcomeOK && silentSignalOK && queueOutcomeOK && entryRaceOK && oneExecOK
       && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
         + '顺序触发转场 / 排队补执行 / 格式缓存**落盘**与初值守卫 / 同源上报 / 归一后重放 / '
-        + '切模式一律按快照重放 + **延迟复查补写** / 五档刻度层级（含档间细分） / '
+        + '切模式一律按快照重放 + **延迟复查补写** / **刻度单档口径（复刻飓风：40pt 档距 · '
+        + '单档 14×1.33 · 选中 22+2 绿 · 无细分线 · 每档全标签）** / '
         + '静默换形态**结果回执**（不再盲等超时）与竞态出口 / 对焦锁定值守卫 / '
-        + '松手待回读对齐 —— docs/18 预检 7+3 + 批三/四/五问题全落地）');
+        + '松手待回读对齐 —— docs/18 预检 7+3 + 批三/四/五/六问题全落地）');
     }
   }
 }

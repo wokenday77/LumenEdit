@@ -118,30 +118,22 @@ enum Theme {
         /// 刻度条背景（原型 `.screen.strip-on .strip-panel` 的深色渐变；只用底部那档色）
         static let stripPanelBottom = Color(red: 0.039, green: 0.047, blue: 0.059).opacity(0.72)
 
-        /// 普通刻度线（原型 `.sp-tick{ background:rgba(255,255,255,.34) }`）
+        /// 普通刻度线（原型 `.sp-tick{ background:rgba(255,255,255,.34) }`）。
+        ///
+        /// 2026-09-21 批六（复刻飓风 · 方案 A，用户拍板）：**每档同高同宽，只有这一档**
+        /// —— 旧的 `mid`(48%) / `major`(82%) 两个"按高度分主次"的色令牌随层级体系一起退场
+        /// （飓风实测：刻度高 42px、**每档同高**，选中靠"加高 + 加宽 + 变绿"区分）。
         static let stripTick = Color.white.opacity(0.34)
-        /// **中间档**刻度线（原型 `.sp-tick.mid{ background:rgba(255,255,255,.48) }`）。
+        /// **选中档**的刻度线颜色 = 绿（飓风：选中刻度 66px 高一档、加宽 2pt、绿）。
         ///
-        /// 2026-09-20 批四补：原型 CSS 里**四档刻度**（plain / mid / major / preset）早就定义好了，
-        /// 但 JS 渲染只用了 `major`/`preset` 两档 —— Swift 侧于是把"主档之间的细刻度"
-        /// 实现成了自创的 1px / 20% 白 / 半高发丝线，**太淡、看不出层级**（用户批三实测
-        /// "外形没有变化"）。现改回原型的第二层：15pt 高 / 48% 白 / 1.5pt 宽（见
-        /// `paramStripTickMidHeight`），层级从对比度上直接读得出来。
-        static let stripTickMid = Color.white.opacity(0.48)
-        /// **细分档**刻度线颜色（批五 问题 2：真实档位之间的细分线 —— 最细一档）。
+        /// 批六起指示器就是这个"选中刻度"本身 —— 旧的三角指针 + 竖线已退场
+        /// （见 `ParameterStripView`，气泡保留）。
+        static let stripTickSelected = stripAccent
+        /// 白平衡**预设档**的刻度（原型 `.sp-tick.preset{ background:rgba(242,175,60,.85) }` = `--accent`）。
         ///
-        /// 参考图实测（`reference/video-frames-2026-09-16`，源帧 588px / 393pt = 1.5px per pt）：
-        /// 白平衡刻度条主档（每 500K）间距 ≈18pt、其间约 **9~10 条细刻度**，
-        /// 细:主 的高度比约 1:2。我们的 slot 是原型真源（WB 26pt/档）**绝对密度对不齐**，
-        /// 但"每个真实档位之间补一条细分线"后，主档间 ≈8 条 —— 与参考图同一量级。
-        ///
-        /// ⚠️ 与 2026-09-20 批三那版"1px / 20% 白 / 半高发丝线"的区别：那版是**自创**且替代了
-        /// `mid` 层（用户实测"外形没变化"）；这一档是**在四档之上新增的第五档**，
-        /// 与 `minor(10) / mid(15)` 明确区分（6.5pt / 26% / 1pt 宽）。
-        static let stripTickHair = Color.white.opacity(0.26)
-        /// 主刻度线（原型 `.sp-tick.major{ background:rgba(255,255,255,.82) }`）
-        static let stripTickMajor = Color.white.opacity(0.82)
-        /// 白平衡**预设档**的刻度（原型 `.sp-tick.preset{ background:rgba(242,175,60,.85) }` = `--accent`）
+        /// ⚠️ 批六保留"预设位"语义（用户拍板：WB 预设位橙刻度保留），但**高度与普通档相同**
+        /// —— 飓风没有层级，橙色只表达"这是一个预设位"，不再顺带表达"更高"。
+        /// 旧实现让它 22pt、与 major 同高；那是旧口径。
         static let stripTickPreset = Color(red: 0.949, green: 0.686, blue: 0.235).opacity(0.85)
         /// 刻度下的数字（原型 `.sp-num{ color:rgba(255,255,255,.62) }`）
         static let stripNumber = Color.white.opacity(0.62)
@@ -514,42 +506,47 @@ enum Theme {
         /// 本项目在 2pt 余量上吃过亏（`docs/11` 那个 50.2%），所以主动压到 84 换 **6pt 余量**。
         /// 三个机型在刻度条展开态的净可见：874 → 53.7% / 852 → 52.3% / 844 → 51.5%。
         ///
-        /// 内部按比例上移：气泡 0–22 / 开关 10–39 / 刻度 46–68 / 数字 69–82（不重叠）。
+        /// 内部竖向（批六复刻飓风后）：气泡 0–22 / 开关 10–39 / **选中刻度 36.5–58.5**
+        /// （普通刻度 44.5–58.5）/ 数字 71.5–82 —— 互不重叠，气泡与选中刻度顶还留 14.5pt。
         static let paramStripHeight: CGFloat = 84
         /// 气泡高（原型 `.sp-bubble{ height:22px }`）
         static let paramStripBubbleHeight: CGFloat = 22
         /// 气泡字号（原型 `font-size:12.5px`）
         static let paramStripBubbleFontSize: CGFloat = 12.5
-        /// 刻度线宽（原型 `.sp-tick{ width:1.5px }`）
-        static let paramStripTickWidth: CGFloat = 1.5
-        /// 普通刻度线高（原型 `height:10px`）
-        static let paramStripTickHeight: CGFloat = 10
-        /// **中间档**刻度线高（原型 `.sp-tick.mid{ height:15px }`）
-        ///
-        /// 四档高度 10 / 15 / 22 / 22 全部来自原型 CSS；刻度**底边对齐**（共用
-        /// `paramStripTickBottomInset` 那条基线），所以"高"直接表达层级。
-        /// ⚠️ 批五 问题 2 在其上加了**第五档 `hair`(6.5)**（真实档位之间的细分线）——
-        /// 不是原型里的档，是"对照参考图加密"的用户要求（口径见 `stripTickHair`）。
-        static let paramStripTickMidHeight: CGFloat = 15
-        /// **细分档**刻度线高（批五 问题 2：四档之上新增的第五档）。
-        /// 6.5pt：比 `minor`(10) 明显更矮 ⇒ 一眼能分"档位线"与"细分线"；
-        /// 参考图细:主 ≈ 1:2，我们取 6.5:22 ≈ 1:3.4（我们的档距更疏，对比要更明显才读得出来）。
-        static let paramStripTickHairHeight: CGFloat = 6.5
-        /// **细分档**刻度线宽：1pt（其余各档 1.5pt —— "更细"要靠**宽度 + 高度 + 亮度**三件套一起表达）
-        static let paramStripTickHairWidth: CGFloat = 1
-        /// 主刻度 / 预设刻度高（原型 `.sp-tick.major` / `.preset{ height:22px }`）
-        static let paramStripTickMajorHeight: CGFloat = 22
-        /// 刻度线距面板底部（原型 `bottom:20px`；压到 84 高后取 16）
-        static let paramStripTickBottomInset: CGFloat = 16
+
+        // ── 刻度本体（2026-09-21 批六：**复刻飓风** = 方案 A，用户拍板）──────────────
+        //
+        // 精度依据：全分辨率截图 1206×2622 = **402pt @3x**（飓风实测量，精确到 0.3pt）。
+        // 与旧口径的逐项差异（都来自用户给的对照表）：
+        //   · 档距 **统一 40pt**（飓风 120px）—— 旧口径三条各不同（ISO 46 / 快门 56 / WB 26）
+        //   · 刻度 **单档 14pt 高 / 1.33pt 宽、每档同高**（飓风 42px / 4px）
+        //     —— 旧的五档层级（minor 10 / mid 15 / major 22 / preset 22 / hair 6.5）**整组退场**
+        //   · 选中档 = **22pt 高（向上 +8pt）+ 加宽 2pt + 绿**（飓风 66px）当指示器
+        //     —— 旧的「三角指针 12×8 + 竖线 1.5」**退场**（视图只保留气泡）
+        //   · **无档间细分线**（飓风 细:主 = 1:1，实际就是没有）—— 批五那层细分线退场
+        //   · **每档都带标签**（≈11pt，我们用 10.5），选中档标签**不放大**
+        //
+        // ⚠️ 后三条"退场"的自检都必须跟着改，否则**假绿**（旧守卫找不到目标就报"不齐"，
+        //    或者更糟：新代码不再含旧标记，守卫却仍按旧口径断言）—— 见 `check_swift` 第 19 组 m4b。
+        /// 档距：**三条统一 40pt**（飓风实测 120px ÷ 3 = 40.0pt/档）
+        static let paramStripTickPitch: CGFloat = 40
+        /// 刻度线宽 / 高：**每档同高**（飓风 4px = 1.33pt 宽 · 42px = 14pt 高）
+        static let paramStripTickWidth: CGFloat = 1.33
+        static let paramStripTickHeight: CGFloat = 14
+        /// 选中档刻度：高 22pt（飓风 66px = 向上 +8pt）；宽度 = 常规宽 + 加宽 2pt
+        static let paramStripTickSelectedHeight: CGFloat = 22
+        static let paramStripTickSelectedExtraWidth: CGFloat = 2
+        /// **刻度底 ↔ 标签顶** 的间距 13pt（飓风实测；用户拍板「刻度在上、标签在下」）
+        static let paramStripLabelTopGap: CGFloat = 13
+        /// 刻度**基线**（刻度底）距面板底部 —— 由「标签底距 + 标签字高 + 上面那个 13pt」**反推**，
+        /// 不手填：改字号 / 改间距它自己跟着走。自检第 19 组照这个式子复算，别在别处再写一遍。
+        /// （402pt 机型上 = 2 + 10.5 + 13 = **25.5pt** ⇒ 刻度底 y = 58.5）
+        static var paramStripTickBaselineFromBottom: CGFloat {
+            paramStripNumberBottomInset + paramStripNumberFontSize + paramStripLabelTopGap
+        }
         /// 刻度下的数字：字号（原型 `font-size:10.5px`）+ 距底（原型 `bottom:2px`）
         static let paramStripNumberFontSize: CGFloat = 10.5
         static let paramStripNumberBottomInset: CGFloat = 2
-        /// 指针：三角半宽 6 × 高 8（原型 `::before`）+ 竖线 1.5（原型 `::after`）
-        static let paramStripPointerTriangleHalfWidth: CGFloat = 6
-        static let paramStripPointerTriangleHeight: CGFloat = 8
-        static let paramStripPointerLineWidth: CGFloat = 1.5
-        /// 指针三角距面板顶部（原型 `top:24px`；88 高版取 22）
-        static let paramStripPointerTopInset: CGFloat = 22
         /// 两端渐隐遮罩宽（原型 `mask-image: … 40px …`）
         static let paramStripEdgeMask: CGFloat = 40
         /// 刻度条两端留白（原型 `SP.pad = 30`）

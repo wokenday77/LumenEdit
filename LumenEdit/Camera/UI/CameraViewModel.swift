@@ -816,6 +816,12 @@ final class CameraViewModel: ObservableObject {
         environment?.session.unavailableStripValues[kind] ?? []
     }
 
+    /// 设备实读的 ISO 上限（ISO 刻度条的**末档**）—— 2026-09-21 批六 ①，见 session 那份说明。
+    /// UI 只读它、不碰设备（分层纪律）：档位表由视图按它重建。
+    var stripISOMax: Double? {
+        environment?.session.stripISOMax
+    }
+
     /// 设备当前的 ISO / 曝光时长（**自动档也有效** —— 取 AE 的收敛值）。
     /// 自动→手动切换时用它当初值（用户 2026-09-19 拍板 ③：初值取设备当前值，画面不跳）。
     private func currentExposurePair(_ environment: AppEnvironment) -> (iso: Double, seconds: Double) {
