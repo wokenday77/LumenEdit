@@ -2811,6 +2811,125 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       bad('换设备 / 切模式缺"档位复查"日志（现 ' + auditCount + ' 处，需 ≥2）—— '
         + '实锤 A 与问题 2 的复验要靠这行读实际档位，不能靠推断');
     }
+    // ============ o 段（2026-09-21 批六：资源埋点 / 预热 / 点按重放 / 资源账）============
+
+    //    o1（批六 ④）：input/output 增删**逐点埋计数** —— `session.addInput/removeInput/
+    //       addOutput/removeOutput` 每处裸调用的紧邻 3 行内，必须有**对应**的计数调用
+    //       （addInput→resourceInputAdded 等，一一对应，不是"窗口里有个计数就算"）。
+    //       漏埋一处 = 计数错，比没有计数更坏（会把掉帧排查引向错方向）。
+    //       ⚠️ 逐行判 + 每行先剥 `//` 注释再匹配（坑 4：注释里的同类词会假绿/假 FAIL）。
+    const sessLinesO = sessionSrc19.split('\n');
+    const callReO = /session\.(removeInput|addInput|removeOutput|addOutput)\(/;
+    const countOfO = { addInput: 'resourceInputAdded', removeInput: 'resourceInputRemoved',
+      addOutput: 'resourceOutputAdded', removeOutput: 'resourceOutputRemoved' };
+    const uninstrumentedO = [];
+    for (let i = 0; i < sessLinesO.length; i++) {
+      const codeOnlyO = sessLinesO[i].replace(/\/\/[^\n]*/g, '');
+      const mO = callReO.exec(codeOnlyO);
+      if (!mO) continue;
+      const wantO = countOfO[mO[1]];
+      const windowO = sessLinesO.slice(Math.max(0, i - 3), i + 4)
+        .map(l => l.replace(/\/\/[^\n]*/g, '')).join('\n');
+      if (!windowO.includes(wantO + '(')) uninstrumentedO.push('L' + (i + 1) + ':' + mO[1]);
+    }
+    const counterFieldsO = ['inputAddCount', 'inputRemoveCount', 'outputAddCount', 'outputRemoveCount'];
+    const counterFieldsOKO = counterFieldsO.every(c => sessionSrc19.includes('private var ' + c));
+    const o1OK = uninstrumentedO.length === 0 && counterFieldsOKO;
+    if (!o1OK) {
+      bad('资源埋点不完整（批六 ④）：'
+        + (uninstrumentedO.length ? '裸调用 ' + uninstrumentedO.join(' / ') + ' 紧邻 3 行内缺**对应**的计数调用'
+          + '（addInput→resourceInputAdded / removeInput→resourceInputRemoved / addOutput→resourceOutputAdded / '
+          + 'removeOutput→resourceOutputRemoved）' : '')
+        + (counterFieldsOKO ? '' : (uninstrumentedO.length ? '；且' : '且') + '四个计数字段（inputAddCount 等）缺失')
+        + ' —— 漏埋 = 计数错，比没有计数更坏');
+    }
+    //    o2（批六 ②）：冷启动预热**齐备** —— 方法本体、探格式本体、打断闸门三层兜底、
+    //       A/B 开关键、以及两个调用点（预热入口 + 打断观察注册）都要在。
+    //       ⚠️ 调用点判定要把三个方法体先挖掉再搜，否则方法签名自己就会满足断言（假绿）。
+    const prewarmBodyO = methodBodyOf(sessionSrc19, 'startPrewarmIfNeeded');
+    const probeBodyO = methodBodyOf(sessionSrc19, 'prewarmProbe');
+    const obsBodyO = methodBodyOf(sessionSrc19, 'observeInterruptionsIfNeeded');
+    // ⚠️ 断言一律对**剥注释后**的方法体做（坑 4 的 /// 变体：doc 注释里的同名词会造成假绿，
+    //    变异测试 M-o4a 实测抓到过：`TASK_VM_INFO.phys_footprint` 写在注释里就能骗过全文匹配）。
+    const prewarmCodeO = prewarmBodyO ? prewarmBodyO.replace(/\/\/[^\n]*/g, '') : '';
+    const probeCodeO = probeBodyO ? probeBodyO.replace(/\/\/[^\n]*/g, '') : '';
+    const obsCodeO = obsBodyO ? obsBodyO.replace(/\/\/[^\n]*/g, '') : '';
+    const sessNoPrewarmO = [prewarmBodyO, probeBodyO, obsBodyO]
+      .reduce((s, b) => (b ? s.replace(b, ' ') : s), sessionSrc19)
+      .replace(/\/\/[^\n]*/g, '');
+    const o2OK = !!prewarmBodyO && !!probeBodyO && !!obsBodyO
+      && /guard !prewarmAbandoned, !isPrewarming/.test(prewarmCodeO)
+      && /isPrewarmDisabled/.test(prewarmCodeO)
+      && /prewarmQueue\.asyncAfter/.test(prewarmCodeO)
+      && /prewarmProbe\(device:/.test(prewarmCodeO)
+      && /formatProbeIdentities\[/.test(prewarmCodeO)
+      && /AVCapturePhotoOutput\(\)/.test(probeCodeO)
+      && /canAddInput\(input\)/.test(probeCodeO)
+      && /isLivePhotoCaptureSupported/.test(probeCodeO)
+      && /wasInterruptedNotification/.test(obsCodeO)
+      && /prewarmAbandoned = true/.test(obsCodeO)
+      && /prewarmSession\?\.stopRunning\(\)/.test(obsCodeO)
+      && /lumen\.camera\.prewarm\.disabled/.test(sessNoPrewarmO)
+      && /startPrewarmIfNeeded\(\)/.test(sessNoPrewarmO)
+      && /observeInterruptionsIfNeeded\(\)/.test(sessNoPrewarmO);
+    if (!o2OK) {
+      bad('冷启动预热不齐备（批六 ②）：需要 startPrewarmIfNeeded（一次性闸门 + 开关 + 私有队列）'
+        + ' / prewarmProbe（独立会话 + 一次性 AVCapturePhotoOutput 判 Live + canAddInput 兜底）'
+        + ' / observeInterruptionsIfNeeded（wasInterruptedNotification → 拆预热 + prewarmAbandoned = true）'
+        + ' / 开关键 lumen.camera.prewarm.disabled / 两处调用点 —— 缺任何一层 = 4.27s 静止帧的兜底破了');
+    }
+    //    o3（批六 ③）：点按对焦 = 重新对焦，**不是退出手动** —— 方法体里必须有：
+    //       意图快照（曝光/白平衡/EV 三路读）→ 三路按快照重放 → 「点按对焦后档位」日志 → 两拍复查。
+    //       ⚠️ 用 methodBodyOf 切 `focus(atDevicePoint:` 的方法体（坑 4：全文匹配会被别处满足）。
+    const focusBodyO = methodBodyOf(sessionSrc19, 'focus');
+    const focusCodeO = focusBodyO ? focusBodyO.replace(/\/\/[^\n]*/g, '') : '';
+    const o3OK = !!focusCodeO
+      && /func focus\(atDevicePoint/.test(focusCodeO)
+      && /manualExposure\(of: device\)/.test(focusCodeO)
+      && /manualWhiteBalance\(of: device\)/.test(focusCodeO)
+      && /exposureTargetBias/.test(focusCodeO)
+      && /setManualExposure\(/.test(focusCodeO)
+      && /setManualWhiteBalance\(/.test(focusCodeO)
+      && /applyExposureBias\(/.test(focusCodeO)
+      && /点按对焦后档位：/.test(focusCodeO)
+      && /reverifyManualIntent\(/.test(focusCodeO);
+    if (!o3OK) {
+      bad('点按对焦缺"按意图重放手动档"（批六 ③：系统把 exposureMode 设成连续自动 → 手动 ISO/快门'
+        + '被顶掉 = "不选自动就永远手动"被破）—— focus(atDevicePoint:) 必须先取意图快照、'
+        + '再重放曝光/白平衡/EV 三路、打「点按对焦后档位」日志并走 reverifyManualIntent 两拍复查');
+    }
+    //    o4（批六 ④）：资源账三件套 —— refreshResourceSummary（活数超预期即 WARN）+
+    //       memoryFootprintMB（phys_footprint，resident_size 读不出泄漏）+ 每 5s 周期汇总。
+    //       ⚠️ 全部剥注释后匹配 + 断言「超预期的判断条件本身」在（只查 warn 调用会被
+    //       `if false` 短路变异骗过 —— 变异测试 M-o4b 实测抓到过）。
+    const refreshBodyO = methodBodyOf(sessionSrc19, 'refreshResourceSummary');
+    const refreshCodeO = refreshBodyO ? refreshBodyO.replace(/\/\/[^\n]*/g, '') : '';
+    const memBodyO = methodBodyOf(sessionSrc19, 'memoryFootprintMB');
+    const memCodeO = memBodyO ? memBodyO.replace(/\/\/[^\n]*/g, '') : '';
+    let periodicOKO = false;
+    if (refreshBodyO) {
+      for (let i = 0; i < sessLinesO.length; i++) {
+        if (!/snapshotTick % 5/.test(sessLinesO[i].replace(/\/\/[^\n]*/g, ''))) continue;
+        const aroundO = sessLinesO.slice(i, i + 6).map(l => l.replace(/\/\/[^\n]*/g, '')).join('\n');
+        if (/refreshResourceSummary\(\)/.test(aroundO)) { periodicOKO = true; break; }
+      }
+    }
+    const o4OK = !!refreshBodyO
+      && /session\.inputs\.count/.test(refreshCodeO)
+      && /session\.outputs\.count/.test(refreshCodeO)
+      && /expectedResourceCounts/.test(refreshCodeO)
+      && /liveInputs > expected\.inputs/.test(refreshCodeO)
+      && /liveOutputs > expected\.outputs/.test(refreshCodeO)
+      && /资源超出预期/.test(refreshCodeO)
+      && /DebugLog\.shared\.warn/.test(refreshCodeO)
+      && !!memBodyO
+      && /phys_footprint/.test(memCodeO)
+      && periodicOKO;
+    if (!o4OK) {
+      bad('资源账三件套缺位（批六 ④）：refreshResourceSummary 要读活数并与 expectedResourceCounts 比较、'
+        + '超出即 DebugLog.warn（"⚠️ 资源超出预期"）；memoryFootprintMB 必须用 phys_footprint；'
+        + '且 refreshSnapshot 里要有 snapshotTick % 5 的周期汇总 —— 掉帧排查要靠这条账定性泄漏');
+    }
     // l) 汇总（含 k/m/n 段）
     if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK
       && fmtCacheOK && fmtPersistOK && initialGuardOK && sameSourceOK && physBranchOK
@@ -2820,13 +2939,16 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       && viewOK19 && verticalOK19 && allLabeled19 && widest19.length <= 6
       && prewarmOK && oneExecutorOK && formSinkOK && oldSinkGone && queueEntryOK && silentRevertOK
       && outcomeOK && silentSignalOK && queueOutcomeOK && entryRaceOK && oneExecOK
-      && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2) {
+      && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2
+      && o1OK && o2OK && o3OK && o4OK) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
         + '顺序触发转场 / 排队补执行 / 格式缓存**落盘**与初值守卫 / 同源上报 / 归一后重放 / '
         + '切模式一律按快照重放 + **延迟复查补写** / **刻度单档口径（复刻飓风：40pt 档距 · '
         + '单档 14×1.33 · 选中 22+2 绿 · 无细分线 · 每档全标签）** / '
         + '静默换形态**结果回执**（不再盲等超时）与竞态出口 / 对焦锁定值守卫 / '
-        + '松手待回读对齐 —— docs/18 预检 7+3 + 批三/四/五/六问题全落地）');
+        + '松手待回读对齐 / **批六 o1~o4：埋点逐点计数（漏埋即 FAIL）· 预热三层兜底齐备 · '
+        + '点按意图重放手动档 · 资源周期账（超预期 WARN + phys_footprint）** —— '
+        + 'docs/18 预检 7+3 + 批三/四/五/六问题全落地）');
     }
   }
 }
