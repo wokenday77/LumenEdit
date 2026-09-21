@@ -1842,10 +1842,19 @@ final class CaptureSessionController: ObservableObject {
     // MARK: - 格式探测闸门（批六 ② 收尾 · 2026-09-21）
 
     // 为什么把闸门**装进 `applyPreferredFormatLocked`**，而不是装在某一条入口上：
-    //   它有**三条入口** —— 启动配置（`buildSession`）/ 换设备（`performFocalSwitch`）/ 切模式（`switchMode`）。
-    //   旧的"让路"只挂焦段换设备那一条 → 切模式时无人退让：2026-09-21 真机「模式切换卡死」现场
-    //   就是 `让路 0 行` + 切模式 `0.00s` + 5s 资源账断流。装进**被三条入口共用的执行体**里，
-    //   覆盖范围自动 = 三条，且不必给每条入口各写一遍。
+    //   它有**两条入口** —— 启动配置（`buildSession` 分支）与换设备（`performFocalSwitch`）。
+    //   ⚠️ **切模式不走它**（只重配 outputs，实测 grep 过调用点）→ 那条路没有探测闸门的作用点，
+    //   只有一处**只读留痕**（`切模式期间检测到会话被打断`）。别把这里写成"覆盖三条入口"。
+    //   装在这个执行体里仍然值得：它同时是"会话配置"与"换设备"的共用路径，装一次覆盖两条。
+
+    /// 打断观察者**只注册一次**的闩。
+    ///
+    /// ⚠️ 批六 ② 收尾修（2026-09-21 夜）：它原本和预热状态量放在一起，**随"删设备级预热"被一起删掉**，
+    /// 但 `observeInterruptionsIfNeeded()`（探测闸门版）仍用它做只注册一次的守卫 → Mac 编译报
+    /// `cannot find 'interruptionObserverRegistered' in scope`。当时的 `check_swift` **全过**，
+    /// 因为"状态引用完整性"只覆盖 `viewModel.*` / `env.*` 这类跨文件引用，**不查同文件"声明被删、引用还在"**
+    /// → 现在由 o8（成员引用完整性）专门守这一类，并配了"删任一 `private var` 声明"的变异。
+    private var interruptionObserverRegistered = false
 
     /// 探测被**真实打断**的闩。
     ///

@@ -3019,6 +3019,67 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + '调用（启动配置 / 换设备 —— **切模式不走它**，那边只能靠 `切模式期间检测到会话被打断` 只读留痕）'
         + '—— 现实测 ' + probeCallCountO7 + ' 处');
     }
+    //    o8（批六 ② 收尾 · **编译回归守卫**）：**成员引用完整性** —— "声明被删、引用还在"必须 FAIL。
+    //       由来：`interruptionObserverRegistered` 随"删预热属性块"被一起删掉，可它的两处引用还在
+    //       （`observeInterruptionsIfNeeded` 的只注册一次守卫）→ Mac 编译报 `cannot find in scope`，
+    //       而**当时 check_swift 全过** —— "状态引用完整性"只查 `viewModel.*` / `env.*` 跨文件引用，
+    //       **不查同文件"声明没了、引用还在"**。这是那次漏检的补丁。
+    //       做法：先织"已声明白名单"（类级 var/let/func + 任何 let/var 绑定 + 函数参数/实参标签 +
+    //       闭包参数 + for-in + 元组解构），再把"裸赋值 `X = …`"与"`guard !X`"里的裸标识符与之比对。
+    //       正确文件里这类裸引用必然有声明 → 不在白名单即 FAIL。
+    const stripStr8 = s => s.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    const declaredO8 = new Set();
+    for (const raw8 of sessLinesO) {
+      const code8 = stripStr8(raw8.replace(/\/\/[^\n]*/g, ''));
+      let m8;
+      if ((m8 = code8.match(/^\s{4}(?:@\w+(?:\([^)]*\))?\s+)?(?:private(?:\(set\))?\s+|static\s+|final\s+|lazy\s+)*(?:var|let)\s+(\w+)/))) declaredO8.add(m8[1]);
+      if ((m8 = code8.match(/^\s{4}(?:private\s+|static\s+|final\s+|@\w+\s+)*func\s+(\w+)/))) declaredO8.add(m8[1]);
+      for (const mm of code8.matchAll(/\b(?:let|var)\s+(\w+)/g)) declaredO8.add(mm[1]);
+      for (const mm of code8.matchAll(/\b(?:let|var)\s*\(([^)]*)\)/g)) {
+        for (const part of mm[1].split(',')) {
+          const t8 = part.trim().match(/^(\w+)/);
+          if (t8) declaredO8.add(t8[1]);
+        }
+      }
+      for (const mm of code8.matchAll(/\bfunc\s+\w+\s*\(([^)]*)\)/g)) {
+        for (const part of mm[1].split(',')) {
+          const t8 = part.trim().match(/^(?:\w+\s+)?(\w+)\s*:/);
+          if (t8) declaredO8.add(t8[1]);
+        }
+      }
+      // 实参标签 / 类型标注（`foo(reason: …)` / `x: Type`）：白名单宁宽勿窄，避免误报
+      for (const mm of code8.matchAll(/(?:^|[(,\s])(\w+)\s*:\s*[A-Za-z_[(]/g)) declaredO8.add(mm[1]);
+      for (const mm of code8.matchAll(/\bfor\s+(\w+)\s+in\b/g)) declaredO8.add(mm[1]);
+      for (const mm of code8.matchAll(/\{\s*\[[^\]]*\]?\s*(\w+)\s+in\b|\{\s*(\w+)\s+in\b/g)) {
+        if (mm[1]) declaredO8.add(mm[1]);
+        if (mm[2]) declaredO8.add(mm[2]);
+      }
+    }
+    const orphanO8 = [];
+    const keywordsO8 = ['case', 'let', 'var', 'return', 'guard', 'if', 'else', 'for', 'while', 'where', 'in', 'switch', 'func', 'default', 'self'];
+    for (let i = 0; i < sessLinesO.length; i++) {
+      const code8 = stripStr8(sessLinesO[i].replace(/\/\/[^\n]*/g, ''));
+      for (const mm of code8.matchAll(/(^|[\s,;(])(?:self\.)?(\w+)\s*=[^=]/g)) {
+        const name8 = mm[2];
+        if (keywordsO8.includes(name8)) continue;
+        // 排除类型标注那一类（`var state: State = .idle` 的 `State`、
+        // `let handler: (…) -> Void = {…}` 的 `Void`）：看前一个非空字符
+        const before8 = code8.slice(0, mm.index + mm[1].length).replace(/\s+$/, '').slice(-1);
+        if ([':', '.', '?', '!', ')', ']', '>'].includes(before8)) continue;
+        if (!declaredO8.has(name8)) orphanO8.push((i + 1) + ':' + name8);
+      }
+      for (const mm of code8.matchAll(/guard\s+!(?:self\.)?(\w+)\b/g)) {
+        if (!declaredO8.has(mm[1])) orphanO8.push((i + 1) + ':' + mm[1]);
+      }
+    }
+    const o8OK = orphanO8.length === 0;
+    if (!o8OK) {
+      bad('成员引用完整性（批六 ② 收尾 · 编译回归）：本文件里这些**裸引用找不到声明** —— '
+        + [...new Set(orphanO8)].slice(0, 8).join(' / ')
+        + '（典型成因：删属性/方法时把声明一起删了、引用还在 → 编译 `cannot find in scope`；'
+        + '正确做法是补回声明，或把引用一并删掉）');
+    }
+
     // l) 汇总（含 k/m/n 段）
     if (inputOK && orderOK && carryOK && zoomMapOK && revertOK && recOK && seqOK && queueOK
       && fmtCacheOK && fmtPersistOK && initialGuardOK && sameSourceOK && physBranchOK
@@ -3029,7 +3090,7 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
       && prewarmOK && oneExecutorOK && formSinkOK && oldSinkGone && queueEntryOK && silentRevertOK
       && outcomeOK && silentSignalOK && queueOutcomeOK && entryRaceOK && oneExecOK
       && surfaceGateOK && focusLockOK && settleOK && releaseKeepsDraft && auditCount >= 2
-      && o1OK && o3OK && o4OK && o5aOK && o5bOK && o5cOK && o7OK) {
+      && o1OK && o3OK && o4OK && o5aOK && o5bOK && o5cOK && o7OK && o8OK) {
       ok('物理架构齐备（形态两段式 / 搬运顺序与清单 / zoom 表真读 / 回切防抖 / 录制禁切 / '
         + '顺序触发转场 / 排队补执行 / 格式缓存**落盘**与初值守卫 / 同源上报 / 归一后重放 / '
         + '切模式一律按快照重放 + **延迟复查补写** / **刻度单档口径（复刻飓风：40pt 档距 · '
