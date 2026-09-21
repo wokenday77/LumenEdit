@@ -9,7 +9,7 @@
 > **③ 点按对焦按意图重放手动档**（「不选自动就永远手动」：`setFocusAndExposurePoint` 系统语义会把曝光顶成
 > 连续自动 → 点按前取快照、点按后重放曝光/白平衡/EV）——✅ 完成。
 > **④ 掉帧资源埋点**（input/output 逐点计数 + 活数超预期 WARN + `phys_footprint` + 5s 周期日志 + 切换耗时）——代码完。
-> **未完成**：`docs/23`；`check_presets` 第 6 组处「Swift 先行」WARN
+> **o1~o4 守卫已补 + 变异 10/10（`c9f0f13`）**；**未完成**：`docs/23`；`check_presets` 第 6 组处「Swift 先行」WARN
 > （**拍板 = Swift 先行 + 标记**，`isSwiftAheadOfPrototype = true`，CB 同步原型后改回 false 自动收紧）。
 > 批五 3 条已 push（`64e1d0b`）**Mac 复验已过（见下方 Mac 侧同步）**，其"刻度更细"验收口径**已被批六作废**。
 > **【Mac 侧同步（远端 f5cfda7~94aa359 落盘）】**批五已过 Mac 复验：3 条全过——静默路径**零退转场**（首次 4.27s =
