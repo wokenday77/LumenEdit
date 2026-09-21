@@ -1595,6 +1595,15 @@ final class CaptureSessionController: ObservableObject {
     // MARK: - 私有：会话配置
 
     private func startInternal() {
+        // 🔴 **打断观察必须先挂**（批六 ② 收尾 · 2026-09-22 · 判据 d6）：
+        // 它原来挂在下面的 `startRunning()` 之前，但**启动探测**（`applyPreferredFormatLocked`，
+        // 在本函数下方配置块里）比它更早跑 —— 于是"配置期 / 启动探测期真发生 raw3"时通知
+        // **被整个丢弃**（连日志都没有），探测继续跑满：这是探测闸门的最后一条结构缺口。
+        // 观察者本身幂等（`interruptionObserverRegistered` 只注册一次）、也不对应任何特定一次探测，
+        // 所以**提前挂没有时序副作用**；探测开始前到达的打断也不会造成"误收手"
+        // —— `beginFormatProbe()` 每次探测开头都会清闩，陈旧闩不生效。
+        observeInterruptionsIfNeeded()
+
         // 用同步标志判断，不能用 @Published 的 isConfigured：
         // 后者是异步回主线程才更新的，在 sessionQueue 上读到可能仍是 false，
         // 会导致重复走一遍配置流程，把已经加好的 input 再加一次而失败。
@@ -1701,8 +1710,7 @@ final class CaptureSessionController: ObservableObject {
         }
 
         if !session.isRunning {
-            // 打断观察必须在开始跑之前挂上（预热的安全闸门，批六 ②）
-            observeInterruptionsIfNeeded()
+            // 打断观察已在**本函数顶部**挂上（见那里的说明：必须早于启动探测，否则启动窗口是缺口）
             DebugLog.shared.info("session", "startRunning()")
             session.startRunning()
         }
