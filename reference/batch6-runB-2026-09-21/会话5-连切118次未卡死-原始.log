@@ -1,0 +1,1174 @@
+LumenEdit 日志启动 2026-09-21 22:39:17
+device=iPhone17,1  system=26.6.0
+============================================================
+[22:39:17.459] INF [render] CIContext 初始化完成，后端=Apple A18 Pro GPU
+[22:39:17.492] INF [app] AppEnvironment 初始化完成，hud=true grid=true tone=true
+[22:39:17.517] INF [ui] 相机页已装配
+[22:39:17.539] DBG [perm] 刷新权限 camera=已授权 mic=已授权 albumAdd=已授权 albumRead=未决定
+[22:39:17.539] DBG [thumb] 无相册读取权限，跳过最新照片缩略图
+[22:39:17.539] DBG [perm] 刷新权限 camera=已授权 mic=已授权 albumAdd=已授权 albumRead=未决定
+[22:39:17.543] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:17.544] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:17.544] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:17.545] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:17.546] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:17.549] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:17.550] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:17.551] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:17.552] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:17.553] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:17.554] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:17.557] INF [device] 格式已应用 Back Triple Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284 fps=30
+[22:39:17.558] INF [session] 选用采集格式 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284，Live Photo 能力=true（候选共 31 个，已缓存并落盘）
+[22:39:17.558] INF [photo] 照片编码格式：hvc1
+[22:39:17.559] INF [session] 变焦拓扑：deviceType=AVCaptureDeviceTypeBuiltInTripleCamera · constituents=3 · 角色=[超广角,广角,长焦] · switchOver=[2.000, 10.000] · 原生阶梯=[1.000, 2.000, 10.000] · 档位=13→1.000 / 24→2.000 / 35→2.917 / 48→4.000 / 120→10.000 · 不可用=无 · zoomRange=[1.00, 189.00]
+[22:39:17.559] INF [session] 手动参数能力：曝光(custom)=false / 白平衡(锁定增益)=false / 对焦(锁定位置)=false
+[22:39:17.559] INF [session] 会话配置完成，Live Photo 支持=true
+[22:39:17.559] INF [session] startRunning()
+[22:39:17.563] INF [hardware] 相机控制按钮交互已挂载（无该按钮的设备上不会触发）
+[22:39:17.572] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:17.573] INF [session] 预热决策：开始预热，待探 3 颗（Back Ultra Wide Camera / Back Camera / Back Telephoto Camera）—— 串行逐颗，一旦打断直播会话就整体放弃
+[22:39:17.573] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:17.573] INF [session] 预热跳过：已在预热中
+[22:39:18.815] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:39:18.815] DBG [preview] 预览层已绑定会话
+[22:39:18.873] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.2MB
+[22:39:18.887] DBG [ui] 会话就绪 · 焦段 24mm 已对齐（变焦 2.00×）
+[22:39:19.442] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:19.842] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:20.277] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:20.547] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:20.667] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:20.940] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:21.069] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:21.386] INF [device] 格式已应用 Back Ultra Wide Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:21.625] DBG [ui] toast: 焦段 35 mm · 变焦 2.92×
+[22:39:21.625] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 27.7MB
+[22:39:21.732] INF [device] 格式已应用 Back Ultra Wide Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:22.067] INF [device] 格式已应用 Back Ultra Wide Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:22.133] DBG [ui] toast: 焦段 24 mm · 变焦 2.00×
+[22:39:22.388] INF [device] 格式已应用 Back Ultra Wide Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:22.911] INF [device] 格式已应用 Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:39:22.911] INF [session] 预热探到格式：Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048（候选 35 个）
+[22:39:23.247] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:39:23.251] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:39:23.850] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:24.063] INF [session] 切换模式 照片 → 实况
+[22:39:24.122] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 1/0） · 内存 26.6MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:24.123] INF [session] 已加入麦克风输入
+[22:39:24.149] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:24.150] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 2/0） · output 活 0（累计增/删 1/1） · 内存 26.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:24.150] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 2/1） · 内存 26.6MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:24.151] INF [photo] Live Photo 采集 已开启
+[22:39:24.152] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:24.152] INF [photo] 照片编码格式：hvc1
+[22:39:24.153] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:24.153] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:24.153] INF [session] 切模式耗时 0.09s（实况；含 outputs 重配与参数重放）
+[22:39:24.171] INF [resource] 模式 实况 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 2/1） · 内存 26.8MB
+[22:39:24.318] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:24.497] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:24.497] INF [session] 切换模式 实况 → Log 实况
+[22:39:24.500] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:24.500] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:24.501] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:24.501] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:24.501] INF [session] 切模式耗时 0.00s（Log 实况；含 outputs 重配与参数重放）
+[22:39:24.742] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:24.913] INF [session] 切换模式 Log 实况 → 视频
+[22:39:24.915] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:24.915] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:24.915] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:24.915] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:24.916] INF [session] 切模式耗时 0.00s（视频；含 outputs 重配与参数重放）
+[22:39:24.982] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:25.096] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:25.309] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:25.310] INF [session] 切换模式 视频 → Log 实况
+[22:39:25.312] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:25.312] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:25.313] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:25.313] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:25.313] INF [session] 切模式耗时 0.00s（Log 实况；含 outputs 重配与参数重放）
+[22:39:25.347] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:25.427] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:25.693] INF [session] 切换模式 Log 实况 → 实况
+[22:39:25.697] INF [photo] Live Photo 采集 已开启
+[22:39:25.699] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:25.700] INF [photo] 照片编码格式：hvc1
+[22:39:25.701] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:25.701] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:25.701] INF [session] 切模式耗时 0.01s（实况；含 outputs 重配与参数重放）
+[22:39:25.702] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:25.718] INF [resource] 模式 实况 · input 活 2（累计增/删 2/0） · output 活 1（累计增/删 6/5） · 内存 28.9MB
+[22:39:26.024] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:26.099] INF [session] 切换模式 实况 → 照片
+[22:39:26.100] INF [session] 已移除麦克风输入
+[22:39:26.166] INF [audio] 音频会话已释放
+[22:39:26.170] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:26.171] INF [photo] 照片编码格式：hvc1
+[22:39:26.171] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:26.171] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:26.171] INF [session] 切模式耗时 0.07s（照片；含 outputs 重配与参数重放）
+[22:39:26.356] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:26.431] INF [session] 切换模式 照片 → 实况
+[22:39:26.433] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 3/1） · output 活 1（累计增/删 7/6） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:26.433] INF [session] 已加入麦克风输入
+[22:39:26.505] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:26.506] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 3/1） · output 活 0（累计增/删 7/7） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:26.507] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 3/1） · output 活 1（累计增/删 8/7） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:26.507] INF [photo] Live Photo 采集 已开启
+[22:39:26.508] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:26.508] INF [photo] 照片编码格式：hvc1
+[22:39:26.509] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:26.509] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:26.509] INF [session] 切模式耗时 0.08s（实况；含 outputs 重配与参数重放）
+[22:39:26.683] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:27.097] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:27.097] INF [session] 切换模式 实况 → Log 实况
+[22:39:27.099] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:27.099] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:27.100] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:27.100] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:27.100] INF [session] 切模式耗时 0.00s（Log 实况；含 outputs 重配与参数重放）
+[22:39:27.117] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 3/1） · output 活 1（累计增/删 9/8） · 内存 27.6MB
+[22:39:27.148] INF [device] 格式已应用 Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:39:27.148] INF [session] 预热探到格式：Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048（候选 41 个）
+[22:39:27.381] INF [session] 切换模式 Log 实况 → 视频
+[22:39:27.383] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:27.383] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:27.386] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:27.386] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:27.386] INF [session] 切模式耗时 0.01s（视频；含 outputs 重配与参数重放）
+[22:39:27.462] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:39:27.635] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:27.635] INF [session] 切换模式 视频 → Log 实况
+[22:39:27.638] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:27.638] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:27.639] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:27.639] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:27.639] INF [session] 切模式耗时 0.00s（Log 实况；含 outputs 重配与参数重放）
+[22:39:27.872] INF [session] 切换模式 Log 实况 → 实况
+[22:39:27.873] INF [photo] Live Photo 采集 已开启
+[22:39:27.874] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:27.874] INF [photo] 照片编码格式：hvc1
+[22:39:27.874] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:27.874] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:27.874] INF [session] 切模式耗时 0.00s（实况；含 outputs 重配与参数重放）
+[22:39:28.102] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:28.243] INF [session] 切换模式 实况 → 照片
+[22:39:28.245] INF [session] 已移除麦克风输入
+[22:39:28.302] INF [audio] 音频会话已释放
+[22:39:28.305] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:28.306] INF [photo] 照片编码格式：hvc1
+[22:39:28.309] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:28.309] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:28.309] INF [session] 切模式耗时 0.07s（照片；含 outputs 重配与参数重放）
+[22:39:28.315] INF [resource] 模式 照片 · input 活 1（累计增/删 3/2） · output 活 1（累计增/删 13/12） · 内存 28.0MB
+[22:39:28.655] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:28.693] INF [session] 切换模式 照片 → 实况
+[22:39:28.695] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 4/2） · output 活 1（累计增/删 13/12） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:28.695] INF [session] 已加入麦克风输入
+[22:39:28.775] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:28.775] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 4/2） · output 活 0（累计增/删 13/13） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:28.775] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 4/2） · output 活 1（累计增/删 14/13） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:28.775] INF [photo] Live Photo 采集 已开启
+[22:39:28.777] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:28.778] INF [photo] 照片编码格式：hvc1
+[22:39:28.783] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:28.783] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:28.783] INF [session] 切模式耗时 0.09s（实况；含 outputs 重配与参数重放）
+[22:39:28.860] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:28.860] INF [session] 切换模式 实况 → Log 实况
+[22:39:28.863] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:28.863] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:28.867] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:28.867] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:28.867] INF [session] 切模式耗时 0.01s（Log 实况；含 outputs 重配与参数重放）
+[22:39:29.176] INF [session] 切换模式 Log 实况 → 视频
+[22:39:29.179] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:29.179] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:29.179] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:29.180] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:29.180] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:29.180] INF [session] 切模式耗时 0.00s（视频；含 outputs 重配与参数重放）
+[22:39:29.502] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:29.511] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:29.512] INF [session] 切换模式 视频 → Log 实况
+[22:39:29.517] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:29.517] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:29.518] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:29.518] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:29.518] INF [session] 切模式耗时 0.01s（Log 实况；含 outputs 重配与参数重放）
+[22:39:29.570] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 4/2） · output 活 1（累计增/删 17/16） · 内存 28.0MB
+[22:39:29.621] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:39:29.832] INF [session] 切换模式 Log 实况 → 实况
+[22:39:29.832] INF [photo] Live Photo 采集 已开启
+[22:39:29.833] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:29.833] INF [photo] 照片编码格式：hvc1
+[22:39:29.834] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:29.834] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:29.834] INF [session] 切模式耗时 0.00s（实况；含 outputs 重配与参数重放）
+[22:39:29.924] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:29.977] INF [session] 切换模式 实况 → 照片
+[22:39:29.977] INF [session] 已移除麦克风输入
+[22:39:30.023] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:39:30.038] INF [audio] 音频会话已释放
+[22:39:30.042] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:30.042] INF [photo] 照片编码格式：hvc1
+[22:39:30.044] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:30.044] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:30.045] INF [session] 切模式耗时 0.07s（照片；含 outputs 重配与参数重放）
+[22:39:30.383] INF [device] 格式已应用 Back Telephoto Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:30.477] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:30.478] INF [session] 切换模式 照片 → Log 实况
+[22:39:30.480] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 5/3） · output 活 1（累计增/删 19/18） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:30.480] INF [session] 已加入麦克风输入
+[22:39:30.555] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:30.556] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 5/3） · output 活 0（累计增/删 19/19） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:30.556] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 5/3） · output 活 1（累计增/删 20/19） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:30.557] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:30.557] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:30.557] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:30.557] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:30.557] INF [session] 切模式耗时 0.08s（Log 实况；含 outputs 重配与参数重放）
+[22:39:30.558] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 5/3） · output 活 1（累计增/删 20/19） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:30.790] INF [device] 格式已应用 Back Telephoto Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:39:30.803] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 5/3） · output 活 1（累计增/删 20/19） · 内存 28.3MB
+[22:39:31.137] INF [session] 切换模式 Log 实况 → 视频
+[22:39:31.142] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:31.142] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:31.143] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:31.143] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:31.143] INF [session] 切模式耗时 0.01s（视频；含 outputs 重配与参数重放）
+[22:39:31.191] INF [device] 格式已应用 Back Telephoto Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:31.541] INF [session] 切换模式 视频 → 实况
+[22:39:31.546] INF [photo] Live Photo 采集 已开启
+[22:39:31.547] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:31.547] INF [photo] 照片编码格式：hvc1
+[22:39:31.548] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:31.548] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:31.549] INF [session] 切模式耗时 0.01s（实况；含 outputs 重配与参数重放）
+[22:39:31.568] INF [device] 格式已应用 Back Telephoto Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:39:31.790] INF [session] 切换模式 实况 → 照片
+[22:39:31.790] INF [session] 已移除麦克风输入
+[22:39:31.848] INF [audio] 音频会话已释放
+[22:39:31.852] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:31.852] INF [photo] 照片编码格式：hvc1
+[22:39:31.854] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:31.854] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:31.854] INF [session] 切模式耗时 0.06s（照片；含 outputs 重配与参数重放）
+[22:39:32.106] INF [device] 格式已应用 Back Telephoto Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024 fps=30
+[22:39:32.106] INF [session] 预热探到格式：Back Telephoto Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024（候选 35 个）
+[22:39:32.195] INF [session] 预热结束：耗时 14.62s
+[22:39:32.223] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:32.224] INF [session] 切换模式 照片 → Log 实况
+[22:39:32.225] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 6/4） · output 活 1（累计增/删 23/22） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:32.225] INF [session] 已加入麦克风输入
+[22:39:32.294] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:32.295] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 6/4） · output 活 0（累计增/删 23/23） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:32.296] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 6/4） · output 活 1（累计增/删 24/23） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:32.296] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:32.297] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:32.297] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:32.297] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:32.297] INF [session] 切模式耗时 0.07s（Log 实况；含 outputs 重配与参数重放）
+[22:39:32.335] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 6/4） · output 活 1（累计增/删 24/23） · 内存 27.8MB
+[22:39:32.456] INF [session] 切换模式 Log 实况 → 实况
+[22:39:32.457] INF [photo] Live Photo 采集 已开启
+[22:39:32.458] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:32.458] INF [photo] 照片编码格式：hvc1
+[22:39:32.459] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:39:32.459] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:32.459] INF [session] 切模式耗时 0.00s（实况；含 outputs 重配与参数重放）
+[22:39:32.719] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:32.719] INF [session] 切换模式 实况 → Log 实况
+[22:39:32.803] DBG [session] 白平衡增益已就绪（冷启动）→ 补发手动档状态
+[22:39:32.956] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:32.956] INF [session] 切换模式 实况 → Log 实况
+[22:39:33.087] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:33.087] INF [session] 切换模式 实况 → Log 实况
+[22:39:33.372] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:33.372] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:33.372] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:33.372] INF [session] 切模式耗时 0.65s（Log 实况；含 outputs 重配与参数重放）
+[22:39:33.896] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:33.896] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:33.896] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:33.896] INF [session] 切模式耗时 0.52s（Log 实况；含 outputs 重配与参数重放）
+[22:39:34.011] INF [session] 切换模式 Log 实况 → 照片
+[22:39:34.328] INF [session] 切换模式 Log 实况 → 实况
+[22:39:34.632] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:34.632] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:34.633] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:34.633] INF [session] 切模式耗时 0.74s（Log 实况；含 outputs 重配与参数重放）
+[22:39:34.634] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 6/4） · output 活 1（累计增/删 28/27） · 内存 27.8MB
+[22:39:34.634] INF [session] 已移除麦克风输入
+[22:39:34.719] INF [audio] 音频会话已释放
+[22:39:35.046] INF [session] 切换模式 Log 实况 → 实况
+[22:39:35.211] INF [session] 切换模式 Log 实况 → 实况
+[22:39:35.380] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:35.381] INF [photo] 照片编码格式：hvc1
+[22:39:35.381] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:35.381] INF [session] 切模式耗时 0.75s（照片；含 outputs 重配与参数重放）
+[22:39:35.381] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 7/5） · output 活 1（累计增/删 29/28） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:35.381] INF [session] 已加入麦克风输入
+[22:39:35.388] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:35.388] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 7/5） · output 活 0（累计增/删 29/29） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:35.390] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 7/5） · output 活 1（累计增/删 30/29） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:35.390] INF [photo] Live Photo 采集 已开启
+[22:39:35.760] INF [session] 切换模式 照片 → 实况
+[22:39:35.974] INF [session] 切换模式 照片 → 实况
+[22:39:36.274] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:36.274] INF [session] 切换模式 照片 → Log 实况
+[22:39:36.430] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:36.430] INF [photo] 照片编码格式：hvc1
+[22:39:36.431] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:36.431] INF [session] 切模式耗时 1.05s（实况；含 outputs 重配与参数重放）
+[22:39:36.432] INF [photo] Live Photo 采集 已开启
+[22:39:36.460] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:36.460] INF [session] 切换模式 实况 → Log 实况
+[22:39:36.657] INF [session] 切换模式 实况 → 视频
+[22:39:36.808] INF [session] 切换模式 实况 → 视频
+[22:39:36.974] INF [session] 切换模式 实况 → 视频
+[22:39:36.992] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:36.992] INF [photo] 照片编码格式：hvc1
+[22:39:36.992] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:36.992] INF [session] 切模式耗时 0.56s（实况；含 outputs 重配与参数重放）
+[22:39:36.993] INF [photo] Live Photo 采集 已开启
+[22:39:37.141] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:37.141] INF [session] 切换模式 实况 → Log 实况
+[22:39:37.324] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:37.324] INF [session] 切换模式 实况 → Log 实况
+[22:39:37.392] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:37.393] INF [photo] 照片编码格式：hvc1
+[22:39:37.393] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:37.393] INF [session] 切模式耗时 0.40s（实况；含 outputs 重配与参数重放）
+[22:39:37.394] INF [photo] Live Photo 采集 已开启
+[22:39:37.474] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:37.474] INF [session] 切换模式 实况 → Log 实况
+[22:39:37.939] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:37.939] INF [photo] 照片编码格式：hvc1
+[22:39:37.940] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:37.940] INF [session] 切模式耗时 0.55s（实况；含 outputs 重配与参数重放）
+[22:39:37.940] INF [photo] Live Photo 采集 已开启
+[22:39:38.293] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:38.293] INF [photo] 照片编码格式：hvc1
+[22:39:38.294] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:38.294] INF [session] 切模式耗时 0.35s（实况；含 outputs 重配与参数重放）
+[22:39:38.495] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:38.495] INF [session] 切换模式 实况 → Log 实况
+[22:39:38.633] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:38.633] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:38.634] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:38.634] INF [session] 切模式耗时 0.34s（Log 实况；含 outputs 重配与参数重放）
+[22:39:38.634] INF [resource] 模式 实况 · input 活 2（累计增/删 7/5） · output 活 1（累计增/删 35/34） · 内存 27.8MB
+[22:39:39.008] INF [session] 切换模式 Log 实况 → 视频
+[22:39:39.140] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:39.141] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:39.141] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:39.141] INF [session] 切模式耗时 0.51s（Log 实况；含 outputs 重配与参数重放）
+[22:39:39.196] INF [session] 切换模式 Log 实况 → 视频
+[22:39:39.724] INF [session] 切换模式 Log 实况 → 视频
+[22:39:39.877] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:39.877] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:39.877] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:39.877] INF [session] 切模式耗时 0.74s（视频；含 outputs 重配与参数重放）
+[22:39:40.159] INF [session] 切换模式 视频 → 实况
+[22:39:40.308] INF [session] 切换模式 视频 → 实况
+[22:39:40.475] INF [session] 切换模式 视频 → 实况
+[22:39:40.664] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:40.664] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:40.664] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:40.664] INF [session] 切模式耗时 0.79s（视频；含 outputs 重配与参数重放）
+[22:39:40.695] INF [session] 切换模式 视频 → 照片
+[22:39:40.841] INF [session] 切换模式 视频 → 实况
+[22:39:40.991] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:40.992] INF [session] 切换模式 视频 → Log 实况
+[22:39:41.158] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:39:41.158] INF [session] 切换模式 视频 → Log 实况
+[22:39:41.389] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:41.389] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:41.389] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:41.389] INF [session] 切模式耗时 0.72s（视频；含 outputs 重配与参数重放）
+[22:39:42.097] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:42.098] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:42.098] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:42.098] INF [session] 切模式耗时 0.71s（Log 实况；含 outputs 重配与参数重放）
+[22:39:42.869] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:42.869] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:42.869] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:42.869] INF [session] 切模式耗时 0.77s（Log 实况；含 outputs 重配与参数重放）
+[22:39:43.318] DBG [preview] 点按对焦 view=(203,66) device=(0.09,0.50)
+[22:39:43.517] INF [session] 切换模式 Log 实况 → 实况
+[22:39:43.610] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:43.610] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:43.611] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:43.611] INF [session] 切模式耗时 0.74s（Log 实况；含 outputs 重配与参数重放）
+[22:39:43.611] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 7/5） · output 活 1（累计增/删 42/41） · 内存 27.7MB
+[22:39:43.683] INF [session] 切换模式 Log 实况 → 照片
+[22:39:43.842] INF [session] 切换模式 Log 实况 → 照片
+[22:39:44.034] DBG [preview] 点按对焦 view=(95,29) device=(0.04,0.68)
+[22:39:44.200] INF [session] 切换模式 Log 实况 → 实况
+[22:39:44.350] DBG [preview] 点按对焦 view=(190,0) device=(0.00,0.52)
+[22:39:44.386] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:44.386] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:44.386] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:44.386] INF [session] 切模式耗时 0.78s（Log 实况；含 outputs 重配与参数重放）
+[22:39:44.588] INF [session] 切换模式 Log 实况 → 实况
+[22:39:44.768] INF [session] 切换模式 Log 实况 → 照片
+[22:39:44.868] INF [session] 切换模式 Log 实况 → 照片
+[22:39:45.050] INF [session] 切换模式 Log 实况 → 照片
+[22:39:45.106] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:45.106] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:45.106] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:45.106] INF [session] 切模式耗时 0.72s（视频；含 outputs 重配与参数重放）
+[22:39:45.217] INF [session] 切换模式 视频 → 照片
+[22:39:45.854] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:45.854] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:45.855] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:45.855] INF [session] 切模式耗时 0.75s（视频；含 outputs 重配与参数重放）
+[22:39:45.896] INF [session] 切换模式 视频 → 照片
+[22:39:46.546] INF [session] 切换模式 视频 → 照片
+[22:39:46.596] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:46.596] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:46.599] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:46.599] INF [session] 切模式耗时 0.74s（视频；含 outputs 重配与参数重放）
+[22:39:46.600] INF [resource] 模式 视频 · input 活 2（累计增/删 7/5） · output 活 1（累计增/删 46/45） · 内存 27.6MB
+[22:39:46.602] INF [photo] Live Photo 采集 已开启
+[22:39:46.982] INF [session] 切换模式 视频 → 照片
+[22:39:47.380] INF [session] 切换模式 视频 → 照片
+[22:39:47.676] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:47.676] INF [photo] 照片编码格式：hvc1
+[22:39:47.677] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:47.677] INF [session] 切模式耗时 1.08s（实况；含 outputs 重配与参数重放）
+[22:39:47.678] INF [photo] Live Photo 采集 已开启
+[22:39:48.272] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:48.272] INF [photo] 照片编码格式：hvc1
+[22:39:48.272] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:48.272] INF [session] 切模式耗时 0.60s（实况；含 outputs 重配与参数重放）
+[22:39:48.273] INF [photo] Live Photo 采集 已开启
+[22:39:48.573] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:48.573] INF [photo] 照片编码格式：hvc1
+[22:39:48.574] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:48.574] INF [session] 切模式耗时 0.30s（实况；含 outputs 重配与参数重放）
+[22:39:48.574] INF [session] 已移除麦克风输入
+[22:39:48.647] INF [audio] 音频会话已释放
+[22:39:48.971] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:48.971] INF [photo] 照片编码格式：hvc1
+[22:39:48.972] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:48.972] INF [session] 切模式耗时 0.40s（照片；含 outputs 重配与参数重放）
+[22:39:48.972] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 50/49） · 内存 27.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:48.972] INF [session] 已加入麦克风输入
+[22:39:48.992] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:48.993] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 0（累计增/删 50/50） · 内存 27.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:48.993] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 51/50） · 内存 27.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:48.994] INF [photo] Live Photo 采集 已开启
+[22:39:49.306] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:49.306] INF [photo] 照片编码格式：hvc1
+[22:39:49.306] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:49.306] INF [session] 切模式耗时 0.33s（实况；含 outputs 重配与参数重放）
+[22:39:49.306] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 51/50） · 内存 27.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:49.418] INF [session] 切换模式 实况 → 照片
+[22:39:49.688] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:49.688] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:49.689] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:49.689] INF [session] 切模式耗时 0.38s（Log 实况；含 outputs 重配与参数重放）
+[22:39:50.302] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:50.302] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:39:50.303] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:50.303] INF [session] 切模式耗时 0.61s（Log 实况；含 outputs 重配与参数重放）
+[22:39:50.303] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 8/6） · output 活 1（累计增/删 53/52） · 内存 28.1MB
+[22:39:50.303] DBG [device] 对焦点 → (0.09, 0.50)
+[22:39:50.304] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:39:50.305] INF [photo] Live Photo 采集 已开启
+[22:39:50.709] INF [session] 切换模式 Log 实况 → 视频
+[22:39:51.205] INF [session] 切换模式 Log 实况 → 视频
+[22:39:51.388] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:51.388] INF [photo] 照片编码格式：hvc1
+[22:39:51.388] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:51.388] INF [session] 切模式耗时 1.08s（实况；含 outputs 重配与参数重放）
+[22:39:51.389] INF [session] 已移除麦克风输入
+[22:39:51.465] INF [audio] 音频会话已释放
+[22:39:51.580] INF [session] 切换模式 实况 → 视频
+[22:39:51.915] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:51.915] INF [photo] 照片编码格式：hvc1
+[22:39:51.915] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:51.916] INF [session] 切模式耗时 0.53s（照片；含 outputs 重配与参数重放）
+[22:39:51.916] INF [resource] 模式 实况 · input 活 1（累计增/删 8/7） · output 活 1（累计增/删 55/54） · 内存 28.1MB
+[22:39:52.216] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:52.216] INF [photo] 照片编码格式：hvc1
+[22:39:52.217] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:52.217] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:52.217] DBG [device] 对焦点 → (0.04, 0.68)
+[22:39:52.217] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:39:52.218] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 9/7） · output 活 1（累计增/删 56/55） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:52.218] INF [session] 已加入麦克风输入
+[22:39:52.237] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:52.238] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 9/7） · output 活 0（累计增/删 56/56） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:52.238] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 9/7） · output 活 1（累计增/删 57/56） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:52.238] INF [photo] Live Photo 采集 已开启
+[22:39:52.584] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:52.584] INF [photo] 照片编码格式：hvc1
+[22:39:52.585] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:52.585] INF [session] 切模式耗时 0.37s（实况；含 outputs 重配与参数重放）
+[22:39:52.585] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 9/7） · output 活 1（累计增/删 57/56） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:52.585] DBG [device] 对焦点 → (0.00, 0.52)
+[22:39:52.586] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:39:52.587] INF [photo] Live Photo 采集 已开启
+[22:39:52.917] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:52.917] INF [photo] 照片编码格式：hvc1
+[22:39:52.918] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:52.918] INF [session] 切模式耗时 0.33s（实况；含 outputs 重配与参数重放）
+[22:39:52.918] INF [session] 已移除麦克风输入
+[22:39:52.990] INF [audio] 音频会话已释放
+[22:39:53.349] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:53.349] INF [photo] 照片编码格式：hvc1
+[22:39:53.350] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:53.350] INF [session] 切模式耗时 0.43s（照片；含 outputs 重配与参数重放）
+[22:39:53.648] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:53.648] INF [photo] 照片编码格式：hvc1
+[22:39:53.648] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:53.649] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:53.982] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:53.982] INF [photo] 照片编码格式：hvc1
+[22:39:53.983] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:53.983] INF [session] 切模式耗时 0.33s（照片；含 outputs 重配与参数重放）
+[22:39:54.283] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:54.283] INF [photo] 照片编码格式：hvc1
+[22:39:54.284] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:54.284] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:54.284] INF [resource] 模式 照片 · input 活 1（累计增/删 9/8） · output 活 1（累计增/删 62/61） · 内存 27.9MB
+[22:39:54.582] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:54.582] INF [photo] 照片编码格式：hvc1
+[22:39:54.583] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:54.583] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:54.883] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:54.883] INF [photo] 照片编码格式：hvc1
+[22:39:54.883] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:54.883] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:55.182] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:55.182] INF [photo] 照片编码格式：hvc1
+[22:39:55.182] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:55.182] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:55.482] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:55.482] INF [photo] 照片编码格式：hvc1
+[22:39:55.483] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:55.483] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:39:55.483] INF [resource] 模式 照片 · input 活 1（累计增/删 9/8） · output 活 1（累计增/删 66/65） · 内存 27.8MB
+[22:39:55.790] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:55.790] INF [photo] 照片编码格式：hvc1
+[22:39:55.790] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:55.790] INF [session] 切模式耗时 0.31s（照片；含 outputs 重配与参数重放）
+[22:39:55.790] INF [resource] 模式 照片 · input 活 1（累计增/删 9/8） · output 活 1（累计增/删 67/66） · 内存 27.8MB
+[22:39:55.791] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 67/66） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:55.791] INF [session] 已加入麦克风输入
+[22:39:55.815] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:39:55.815] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 10/8） · output 活 0（累计增/删 67/67） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:55.815] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 68/67） · 内存 27.9MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:56.158] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:56.158] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:56.158] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:56.158] INF [session] 切模式耗时 0.37s（视频；含 outputs 重配与参数重放）
+[22:39:56.158] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 68/67） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:56.158] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 10/8） · output 活 0（累计增/删 68/68） · 内存 27.8MB · 预期 input ≤ 1 / output ≤ 1
+[22:39:56.785] INF [session] 切换模式 视频 → 实况
+[22:39:56.854] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:56.854] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:56.854] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:56.854] INF [session] 切模式耗时 0.70s（视频；含 outputs 重配与参数重放）
+[22:39:56.854] INF [resource] 模式 视频 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 69/68） · 内存 28.0MB
+[22:39:57.633] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:57.633] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:39:57.634] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:57.634] INF [session] 切模式耗时 0.78s（视频；含 outputs 重配与参数重放）
+[22:39:57.634] INF [resource] 模式 视频 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 70/69） · 内存 27.9MB
+[22:39:57.634] INF [resource] 模式 视频 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 70/69） · 内存 27.9MB
+[22:39:57.635] INF [resource] 模式 视频 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 70/69） · 内存 27.9MB
+[22:39:57.635] INF [resource] 模式 视频 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 70/69） · 内存 27.9MB
+[22:39:57.637] INF [photo] Live Photo 采集 已开启
+[22:39:58.743] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:39:58.743] INF [photo] 照片编码格式：hvc1
+[22:39:58.744] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:39:58.744] INF [session] 切模式耗时 1.11s（实况；含 outputs 重配与参数重放）
+[22:39:58.744] INF [resource] 模式 视频 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 71/70） · 内存 27.8MB
+[22:40:01.834] INF [resource] 模式 实况 · input 活 2（累计增/删 10/8） · output 活 1（累计增/删 71/70） · 内存 27.6MB
+[22:40:05.780] INF [session] 切换模式 实况 → 照片
+[22:40:05.783] INF [session] 已移除麦克风输入
+[22:40:05.920] INF [audio] 音频会话已释放
+[22:40:06.306] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:06.306] INF [photo] 照片编码格式：hvc1
+[22:40:06.306] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:06.306] INF [session] 切模式耗时 0.53s（照片；含 outputs 重配与参数重放）
+[22:40:06.314] INF [resource] 模式 照片 · input 活 1（累计增/删 10/9） · output 活 1（累计增/删 72/71） · 内存 27.6MB
+[22:40:06.646] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:06.647] INF [session] 切换模式 照片 → Log 实况
+[22:40:06.649] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 11/9） · output 活 1（累计增/删 72/71） · 内存 27.6MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:06.649] INF [session] 已加入麦克风输入
+[22:40:06.749] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:40:06.750] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 11/9） · output 活 0（累计增/删 72/72） · 内存 27.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:06.751] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 11/9） · output 活 1（累计增/删 73/72） · 内存 27.7MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:06.829] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:06.830] INF [session] 切换模式 照片 → Log 实况
+[22:40:07.067] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:07.067] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:07.068] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:07.068] INF [session] 切模式耗时 0.42s（Log 实况；含 outputs 重配与参数重放）
+[22:40:07.145] DBG [ui] 格式选择器展开
+[22:40:07.145] DBG [ui] toast: Log · 4K · 30 · 选完只记设置，重设采集格式属 B 组
+[22:40:07.279] INF [session] 切换模式 Log 实况 → 视频
+[22:40:07.433] INF [session] 切换模式 Log 实况 → 视频
+[22:40:07.663] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:07.663] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:07.664] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:07.664] INF [session] 切模式耗时 0.60s（Log 实况；含 outputs 重配与参数重放）
+[22:40:07.916] INF [session] 切换模式 Log 实况 → 实况
+[22:40:08.088] INF [session] 切换模式 Log 实况 → 实况
+[22:40:08.267] INF [session] 切换模式 Log 实况 → 实况
+[22:40:08.440] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:08.440] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:08.440] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:08.440] INF [session] 切模式耗时 0.78s（视频；含 outputs 重配与参数重放）
+[22:40:08.503] INF [session] 切换模式 视频 → 照片
+[22:40:08.666] INF [session] 切换模式 视频 → 实况
+[22:40:09.017] DBG [ui] toast: 剩余可用存储 43.24 GB
+[22:40:09.182] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:09.182] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:09.182] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:09.183] INF [session] 切模式耗时 0.74s（视频；含 outputs 重配与参数重放）
+[22:40:09.183] INF [photo] Live Photo 采集 已开启
+[22:40:09.367] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:09.367] INF [session] 切换模式 视频 → Log 实况
+[22:40:09.550] INF [session] 切换模式 视频 → 实况
+[22:40:09.717] INF [session] 切换模式 视频 → 照片
+[22:40:09.934] INF [session] 切换模式 视频 → 照片
+[22:40:10.117] INF [session] 切换模式 视频 → 实况
+[22:40:10.267] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:10.267] INF [session] 切换模式 视频 → Log 实况
+[22:40:10.295] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:10.295] INF [photo] 照片编码格式：hvc1
+[22:40:10.295] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:10.295] INF [session] 切模式耗时 1.11s（实况；含 outputs 重配与参数重放）
+[22:40:10.296] INF [photo] Live Photo 采集 已开启
+[22:40:10.421] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:10.421] INF [session] 切换模式 实况 → Log 实况
+[22:40:10.563] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:10.563] INF [session] 切换模式 实况 → Log 实况
+[22:40:10.806] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:10.806] INF [photo] 照片编码格式：hvc1
+[22:40:10.807] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:10.807] INF [session] 切模式耗时 0.51s（实况；含 outputs 重配与参数重放）
+[22:40:10.807] INF [photo] Live Photo 采集 已开启
+[22:40:10.996] INF [session] 切换模式 实况 → 照片
+[22:40:11.105] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:11.105] INF [photo] 照片编码格式：hvc1
+[22:40:11.105] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:11.105] INF [session] 切模式耗时 0.30s（实况；含 outputs 重配与参数重放）
+[22:40:11.105] INF [resource] 模式 实况 · input 活 2（累计增/删 11/9） · output 活 1（累计增/删 79/78） · 内存 28.2MB
+[22:40:11.106] INF [session] 已移除麦克风输入
+[22:40:11.178] INF [audio] 音频会话已释放
+[22:40:11.189] INF [session] 切换模式 实况 → 照片
+[22:40:11.463] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:11.463] INF [session] 切换模式 实况 → Log 实况
+[22:40:11.538] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:11.538] INF [photo] 照片编码格式：hvc1
+[22:40:11.538] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:11.538] INF [session] 切模式耗时 0.43s（照片；含 outputs 重配与参数重放）
+[22:40:11.539] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 12/10） · output 活 1（累计增/删 80/79） · 内存 28.2MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:11.539] INF [session] 已加入麦克风输入
+[22:40:11.570] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:40:11.571] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 12/10） · output 活 0（累计增/删 80/80） · 内存 28.2MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:11.572] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 12/10） · output 活 1（累计增/删 81/80） · 内存 28.2MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:11.572] INF [photo] Live Photo 采集 已开启
+[22:40:11.904] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:11.905] INF [photo] 照片编码格式：hvc1
+[22:40:11.905] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:11.905] INF [session] 切模式耗时 0.37s（实况；含 outputs 重配与参数重放）
+[22:40:11.905] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 实况 · input 活 2（累计增/删 12/10） · output 活 1（累计增/删 81/80） · 内存 28.2MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:12.080] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:40:12.080] DBG [ui] 刻度条展开（白平衡）
+[22:40:12.080] DBG [ui] toast: 白平衡：自动（点右侧开关切手动）
+[22:40:12.248] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:12.248] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:12.249] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:12.249] INF [session] 切模式耗时 0.34s（Log 实况；含 outputs 重配与参数重放）
+[22:40:12.249] INF [photo] Live Photo 采集 已开启
+[22:40:12.651] DBG [ui] 刻度条收起（白平衡）
+[22:40:12.651] DBG [ui] toast: 白平衡 刻度条已收起
+[22:40:13.051] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:40:13.051] DBG [ui] 刻度条展开（ISO）
+[22:40:13.051] DBG [ui] toast: ISO：自动（点右侧开关切手动）
+[22:40:13.163] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:13.163] INF [photo] 照片编码格式：hvc1
+[22:40:13.163] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:13.163] INF [session] 切模式耗时 0.91s（实况；含 outputs 重配与参数重放）
+[22:40:13.163] INF [session] 已移除麦克风输入
+[22:40:13.235] INF [audio] 音频会话已释放
+[22:40:13.247] DBG [ui] 刻度条收起（ISO）
+[22:40:13.247] DBG [ui] toast: ISO 刻度条已收起
+[22:40:13.388] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:40:13.388] DBG [ui] 刻度条展开（快门）
+[22:40:13.388] DBG [ui] toast: 快门：自动（点右侧开关切手动）
+[22:40:13.521] DBG [ui] 刻度条收起（快门）
+[22:40:13.521] DBG [ui] toast: 快门 刻度条已收起
+[22:40:13.659] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:13.659] INF [photo] 照片编码格式：hvc1
+[22:40:13.659] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:13.659] INF [session] 切模式耗时 0.50s（照片；含 outputs 重配与参数重放）
+[22:40:13.666] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:40:13.666] DBG [ui] 刻度条展开（快门）
+[22:40:13.666] DBG [ui] toast: 快门：自动（点右侧开关切手动）
+[22:40:13.826] DBG [ui] 刻度条收起（快门）
+[22:40:13.826] DBG [ui] toast: 快门 刻度条已收起
+[22:40:13.956] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:13.956] INF [photo] 照片编码格式：hvc1
+[22:40:13.957] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:13.957] INF [session] 切模式耗时 0.30s（照片；含 outputs 重配与参数重放）
+[22:40:13.957] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 13/11） · output 活 1（累计增/删 85/84） · 内存 37.6MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:13.957] INF [session] 已加入麦克风输入
+[22:40:13.977] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:40:13.977] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 13/11） · output 活 0（累计增/删 85/85） · 内存 36.3MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:13.978] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 13/11） · output 活 1（累计增/删 86/85） · 内存 36.4MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:13.978] INF [photo] Live Photo 采集 已开启
+[22:40:14.055] DBG [ui] 场景·风格条展开（入口：胶囊/箭头）
+[22:40:14.055] DBG [ui] toast: 场景·风格已展开（街拍 · 纪实冷调） · 再点收起
+[22:40:14.291] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:14.291] INF [photo] 照片编码格式：hvc1
+[22:40:14.291] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:14.291] INF [session] 切模式耗时 0.33s（实况；含 outputs 重配与参数重放）
+[22:40:14.636] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:14.637] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:14.637] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:14.637] INF [session] 切模式耗时 0.35s（Log 实况；含 outputs 重配与参数重放）
+[22:40:14.705] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:14.705] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:14.705] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:14.797] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:14.797] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:14.797] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:14.930] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:14.930] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:14.930] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:15.130] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:15.130] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:15.130] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:15.210] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:15.210] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:15.210] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:15.210] INF [session] 切模式耗时 0.57s（Log 实况；含 outputs 重配与参数重放）
+[22:40:15.481] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:15.482] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:15.482] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:15.614] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:15.614] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:15.614] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:15.957] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:15.957] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:15.957] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:15.957] INF [session] 切模式耗时 0.75s（Log 实况；含 outputs 重配与参数重放）
+[22:40:15.957] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 13/11） · output 活 1（累计增/删 89/88） · 内存 33.6MB
+[22:40:15.958] INF [session] 已移除麦克风输入
+[22:40:16.032] INF [audio] 音频会话已释放
+[22:40:16.064] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:16.064] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:16.064] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:16.464] DBG [preview] 点按对焦 view=(58,245) device=(0.32,0.74)
+[22:40:17.039] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:17.039] INF [photo] 照片编码格式：hvc1
+[22:40:17.040] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:17.040] INF [session] 切模式耗时 1.08s（照片；含 outputs 重配与参数重放）
+[22:40:17.065] DBG [preview] 点按对焦 view=(48,246) device=(0.32,0.76)
+[22:40:17.443] DBG [preview] 点按对焦 view=(123,612) device=(0.79,0.63)
+[22:40:17.593] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:17.593] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:17.593] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:17.602] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:17.602] INF [photo] 照片编码格式：hvc1
+[22:40:17.602] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:17.602] INF [session] 切模式耗时 0.56s（照片；含 outputs 重配与参数重放）
+[22:40:17.603] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 14/12） · output 活 1（累计增/删 91/90） · 内存 33.5MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:17.603] INF [session] 已加入麦克风输入
+[22:40:17.627] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:40:17.627] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 14/12） · output 活 0（累计增/删 91/91） · 内存 33.5MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:17.627] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 14/12） · output 活 1（累计增/删 92/91） · 内存 33.5MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:17.776] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:17.776] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:17.776] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:17.943] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:17.943] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:17.943] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:18.011] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:18.011] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:18.011] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:18.011] INF [session] 切模式耗时 0.41s（Log 实况；含 outputs 重配与参数重放）
+[22:40:18.011] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 14/12） · output 活 1（累计增/删 92/91） · 内存 33.2MB
+[22:40:18.011] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:40:18.093] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:18.093] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:18.093] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:18.251] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:18.251] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:18.252] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:18.422] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:18.422] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:18.422] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:18.589] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:18.589] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:18.589] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:18.832] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:40:18.833] INF [session] 选用采集格式 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024，Live Photo 能力=false（候选共 41 个，已缓存并落盘）
+[22:40:18.833] INF [session] 搬运：EV 已重放（+0.0）
+[22:40:18.833] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:40:18.833] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:40:18.833] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=false；耗时 0.82s
+[22:40:18.833] INF [session] 静默换形态耗时 0.82s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:40:18.833] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:40:18.834] DBG [ui] 对焦圆盘展开（入口：图标行「对焦」） · 连带收起 场景·风格条
+[22:40:18.834] DBG [ui] toast: 手动对焦：拖动圆盘调焦（0.0 近 → ∞ 远） · 场景·风格条已收起
+[22:40:18.834] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:18.982] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:40:18.982] INF [session] 采集格式命中**缓存**（跳过探测循环）：1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024
+[22:40:18.983] INF [session] 搬运：EV 已重放（+0.0）
+[22:40:18.983] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:40:18.983] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:40:18.983] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=false；耗时 0.15s
+[22:40:18.983] INF [session] 静默换形态耗时 0.15s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 34.3MB
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 34.3MB
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.983] DBG [device] 对焦点 → (0.32, 0.74)
+[22:40:18.984] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:18.984] DBG [device] 对焦点 → (0.32, 0.76)
+[22:40:18.984] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:18.984] DBG [device] 对焦点 → (0.79, 0.63)
+[22:40:18.984] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.984] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 34.3MB
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:18.984] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:19.014] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 34.3MB
+[22:40:20.120] DBG [preview] 点按对焦 view=(270,474) device=(0.61,0.38)
+[22:40:20.120] DBG [ui] 对焦圆盘收起（点别处）
+[22:40:20.123] DBG [device] 对焦点 → (0.61, 0.38)
+[22:40:20.124] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:20.873] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:20.873] DBG [ui] 刻度条展开（白平衡）
+[22:40:20.873] DBG [ui] toast: 白平衡：自动（点右侧开关切手动）
+[22:40:20.998] DBG [ui] 刻度条收起（白平衡）
+[22:40:20.998] DBG [ui] toast: 白平衡 刻度条已收起
+[22:40:21.185] DBG [preview] 点按对焦 view=(117,591) device=(0.76,0.64)
+[22:40:21.186] DBG [device] 对焦点 → (0.76, 0.64)
+[22:40:21.186] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:21.215] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 35.9MB
+[22:40:21.360] DBG [ui] 对焦圆盘展开（入口：图标行「对焦」）
+[22:40:21.360] DBG [ui] toast: 手动对焦：拖动圆盘调焦（0.0 近 → ∞ 远） · 再点收起
+[22:40:21.360] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:22.227] DBG [preview] 点按对焦 view=(251,452) device=(0.58,0.41)
+[22:40:22.227] DBG [ui] 对焦圆盘收起（点别处）
+[22:40:22.229] DBG [device] 对焦点 → (0.58, 0.41)
+[22:40:22.231] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:22.612] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:22.612] DBG [ui] 刻度条展开（白平衡）
+[22:40:22.612] DBG [ui] toast: 白平衡：自动（点右侧开关切手动）
+[22:40:22.748] DBG [ui] 刻度条收起（白平衡）
+[22:40:22.748] DBG [ui] toast: 白平衡 刻度条已收起
+[22:40:22.902] DBG [preview] 点按对焦 view=(152,593) device=(0.76,0.58)
+[22:40:22.902] DBG [device] 对焦点 → (0.76, 0.58)
+[22:40:22.903] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:23.196] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:23.196] DBG [ui] 刻度条展开（ISO）
+[22:40:23.196] DBG [ui] toast: ISO：自动（点右侧开关切手动）
+[22:40:23.352] DBG [ui] 刻度条收起（ISO）
+[22:40:23.352] DBG [ui] toast: ISO 刻度条已收起
+[22:40:23.494] DBG [preview] 点按对焦 view=(231,593) device=(0.76,0.45)
+[22:40:23.494] DBG [device] 对焦点 → (0.76, 0.45)
+[22:40:23.495] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:23.538] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 35.1MB
+[22:40:23.682] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:23.682] DBG [ui] 刻度条展开（快门）
+[22:40:23.682] DBG [ui] toast: 快门：自动（点右侧开关切手动）
+[22:40:23.829] DBG [ui] 刻度条收起（快门）
+[22:40:23.829] DBG [ui] toast: 快门 刻度条已收起
+[22:40:23.948] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:23.948] DBG [ui] 刻度条展开（快门）
+[22:40:23.948] DBG [ui] toast: 快门：自动（点右侧开关切手动）
+[22:40:24.090] DBG [ui] 刻度条收起（快门）
+[22:40:24.090] DBG [ui] toast: 快门 刻度条已收起
+[22:40:24.202] DBG [ui] EV 圆盘展开（入口：图标行「曝光补偿」）
+[22:40:24.202] DBG [ui] toast: 曝光补偿圆盘：拖动圆盘调 ±3 EV，点数值归零 · 再点收起
+[22:40:25.003] DBG [preview] 点按对焦 view=(227,473) device=(0.61,0.45)
+[22:40:25.003] DBG [ui] EV 圆盘收起（点别处）
+[22:40:25.006] DBG [device] 对焦点 → (0.61, 0.45)
+[22:40:25.007] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:25.456] DBG [preview] 点按对焦 view=(67,325) device=(0.42,0.73)
+[22:40:25.457] DBG [device] 对焦点 → (0.42, 0.73)
+[22:40:25.459] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:25.805] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 16/14） · output 活 1（累计增/删 92/91） · 内存 33.0MB
+[22:40:26.133] INF [ui] 全手动档退出 2s → 切回虚拟多摄（B1 平滑变焦恢复 · **静默无转场**）
+[22:40:26.133] INF [session] 静默换形态（后台挂设备 · 无转场）→ 虚拟多摄（24 mm）
+[22:40:26.289] INF [session] 切换模式 Log 实况 → 实况
+[22:40:26.453] INF [session] 切换模式 Log 实况 → 照片
+[22:40:26.586] INF [session] 切换模式 Log 实况 → 照片
+[22:40:26.753] INF [session] 切换模式 Log 实况 → 实况
+[22:40:27.086] INF [session] 切换模式 Log 实况 → 视频
+[22:40:27.203] INF [session] 切换模式 Log 实况 → 视频
+[22:40:27.484] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:40:27.486] INF [session] 选用采集格式 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024，Live Photo 能力=false（候选共 31 个，已缓存并落盘）
+[22:40:27.486] INF [session] 搬运：EV 已重放（+0.0）
+[22:40:27.486] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:40:27.486] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:40:27.489] INF [session] 换设备完成（静默·无转场）→ 虚拟多摄（24 mm）；当前档位 24 mm；Live Photo 能力=false；耗时 1.36s
+[22:40:27.489] INF [session] 静默换形态耗时 1.36s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:40:27.493] INF [photo] Live Photo 采集 不被支持，已保持关闭
+[22:40:27.538] INF [session] 切换模式 Log 实况 → 视频
+[22:40:27.670] INF [session] 切换模式 Log 实况 → 视频
+[22:40:27.786] INF [session] 切换模式 Log 实况 → 视频
+[22:40:28.173] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:28.173] INF [photo] 照片编码格式：hvc1
+[22:40:28.174] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:28.174] INF [session] 切模式耗时 0.69s（实况；含 outputs 重配与参数重放）
+[22:40:28.175] INF [session] 已移除麦克风输入
+[22:40:28.252] INF [audio] 音频会话已释放
+[22:40:28.442] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:28.442] INF [photo] 照片编码格式：hvc1
+[22:40:28.443] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:28.443] INF [session] 切模式耗时 0.27s（照片；含 outputs 重配与参数重放）
+[22:40:28.532] INF [session] 切换模式 照片 → 实况
+[22:40:28.609] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:28.609] INF [photo] 照片编码格式：hvc1
+[22:40:28.609] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:28.609] INF [session] 切模式耗时 0.17s（照片；含 outputs 重配与参数重放）
+[22:40:28.610] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 95/94） · 内存 33.0MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:28.610] INF [session] 已加入麦克风输入
+[22:40:28.647] INF [audio] 音频会话已激活（active=true category=AVAudioSessionCategoryPlayAndRecord mode=AVAudioSessionModeVideoRecording 48000Hz ch=1）
+[22:40:28.648] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 18/16） · output 活 0（累计增/删 95/95） · 内存 33.0MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:28.649] WRN [resource] ⚠️ 资源超出预期（多出来的那个就是泄漏的形状）：模式 照片 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 96/95） · 内存 33.0MB · 预期 input ≤ 1 / output ≤ 1
+[22:40:28.649] INF [photo] Live Photo 采集 不被支持，已保持关闭
+[22:40:28.842] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:28.842] INF [photo] 照片编码格式：hvc1
+[22:40:28.843] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:28.843] INF [session] 切模式耗时 0.23s（实况；含 outputs 重配与参数重放）
+[22:40:28.982] INF [session] 切换模式 实况 → 视频
+[22:40:29.166] INF [session] 切换模式 实况 → 视频
+[22:40:29.299] DBG [preview] 点按对焦 view=(306,19) device=(0.03,0.32)
+[22:40:29.458] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:29.458] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:29.459] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:29.459] INF [session] 切模式耗时 0.62s（视频；含 outputs 重配与参数重放）
+[22:40:29.693] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:29.693] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:29.693] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:29.693] INF [session] 切模式耗时 0.23s（视频；含 outputs 重配与参数重放）
+[22:40:29.827] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:29.827] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:29.827] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:29.827] INF [session] 切模式耗时 0.13s（视频；含 outputs 重配与参数重放）
+[22:40:29.870] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:29.870] INF [session] 切换模式 视频 → Log 实况
+[22:40:29.962] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:29.962] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:29.963] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:29.963] INF [session] 切模式耗时 0.14s（视频；含 outputs 重配与参数重放）
+[22:40:30.163] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:30.163] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:30.163] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:30.163] INF [session] 切模式耗时 0.20s（视频；含 outputs 重配与参数重放）
+[22:40:30.164] INF [photo] Live Photo 采集 不被支持，已保持关闭
+[22:40:30.608] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:30.609] INF [session] 切换模式 视频 → Log 实况
+[22:40:30.758] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:30.758] INF [session] 切换模式 视频 → Log 实况
+[22:40:30.804] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:30.804] INF [photo] 照片编码格式：hvc1
+[22:40:30.805] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:30.805] INF [session] 切模式耗时 0.64s（实况；含 outputs 重配与参数重放）
+[22:40:30.805] INF [resource] 模式 实况 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 102/101） · 内存 32.7MB
+[22:40:30.908] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:30.908] INF [session] 切换模式 实况 → Log 实况
+[22:40:31.066] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:31.066] INF [session] 切换模式 实况 → Log 实况
+[22:40:31.217] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:31.217] INF [session] 切换模式 实况 → Log 实况
+[22:40:31.457] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:31.457] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:31.458] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:31.458] INF [session] 切模式耗时 0.65s（视频；含 outputs 重配与参数重放）
+[22:40:31.518] INF [session] 切换模式 视频 → 实况
+[22:40:31.687] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:31.687] INF [session] 切换模式 视频 → Log 实况
+[22:40:31.711] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:31.711] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:31.712] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:31.712] INF [session] 切模式耗时 0.25s（视频；含 outputs 重配与参数重放）
+[22:40:31.712] DBG [device] 对焦点 → (0.03, 0.32)
+[22:40:31.712] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:31.712] INF [resource] 模式 视频 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 104/103） · 内存 32.5MB
+[22:40:31.861] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:31.862] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:31.862] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:31.862] INF [session] 切模式耗时 0.15s（Log 实况；含 outputs 重配与参数重放）
+[22:40:31.862] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:31.862] INF [session] 切换模式 视频 → Log 实况
+[22:40:32.025] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:32.025] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:32.026] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:32.026] INF [session] 切模式耗时 0.16s（Log 实况；含 outputs 重配与参数重放）
+[22:40:32.162] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:32.162] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:32.163] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:32.163] INF [session] 切模式耗时 0.14s（Log 实况；含 outputs 重配与参数重放）
+[22:40:32.163] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 107/106） · 内存 32.5MB
+[22:40:32.327] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:32.327] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:32.328] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:32.328] INF [session] 切模式耗时 0.16s（Log 实况；含 outputs 重配与参数重放）
+[22:40:32.495] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:32.495] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:32.495] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:32.495] INF [session] 切模式耗时 0.17s（Log 实况；含 outputs 重配与参数重放）
+[22:40:32.662] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:32.662] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:32.663] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:32.663] INF [session] 切模式耗时 0.17s（Log 实况；含 outputs 重配与参数重放）
+[22:40:32.664] INF [photo] Live Photo 采集 不被支持，已保持关闭
+[22:40:33.097] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:40:33.097] DBG [ui] 刻度条展开（白平衡）
+[22:40:33.097] DBG [ui] toast: 白平衡：自动（点右侧开关切手动）
+[22:40:33.258] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:33.258] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:33.258] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:33.351] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:33.351] INF [photo] 照片编码格式：hvc1
+[22:40:33.351] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:33.351] INF [session] 切模式耗时 0.69s（实况；含 outputs 重配与参数重放）
+[22:40:33.433] DBG [preview] 点按对焦 view=(112,568) device=(0.73,0.65)
+[22:40:33.433] DBG [ui] 刻度条收起（点别处）
+[22:40:33.909] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:33.909] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:33.909] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:34.011] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:34.011] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:34.013] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:34.013] INF [session] 切模式耗时 0.66s（Log 实况；含 outputs 重配与参数重放）
+[22:40:34.013] INF [resource] 模式 实况 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 112/111） · 内存 33.2MB
+[22:40:34.075] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:34.075] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:34.075] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:34.225] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:34.225] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:34.225] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:34.246] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:34.246] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:34.246] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:34.246] INF [session] 切模式耗时 0.23s（Log 实况；含 outputs 重配与参数重放）
+[22:40:34.246] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 18/16） · output 活 1（累计增/删 113/112） · 内存 32.5MB
+[22:40:34.246] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:40:34.383] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:34.383] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:34.383] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:34.528] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:40:34.528] INF [session] 采集格式命中**缓存**（跳过探测循环）：1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024
+[22:40:34.528] INF [session] 搬运：EV 已重放（+0.0）
+[22:40:34.528] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:40:34.528] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:40:34.529] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=false；耗时 0.28s
+[22:40:34.529] INF [session] 静默换形态耗时 0.28s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:40:34.529] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:40:34.558] INF [ui] 点「对焦」→ 虚拟会话 → 预切换物理（无转场；1.2s 未完成退转场）
+[22:40:34.558] DBG [ui] toast: 正在切换到 24 mm 物理镜头 · 完成后打开对焦圆盘
+[22:40:34.558] INF [ui] 入口动作已排队：先静默挂物理设备，挂好后自动执行
+[22:40:34.581] DBG [ui] 对焦圆盘展开（入口：图标行「对焦」）
+[22:40:34.581] DBG [ui] toast: 手动对焦：拖动圆盘调焦（0.0 近 → ∞ 远） · 再点收起
+[22:40:34.581] DBG [ui] 全手动档退出但参数界面开着 → 暂不回切（保预切换成果）
+[22:40:34.625] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:40:34.625] INF [session] 采集格式命中**缓存**（跳过探测循环）：1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024
+[22:40:34.625] INF [session] 搬运：EV 已重放（+0.0）
+[22:40:34.626] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:40:34.626] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:40:34.626] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=false；耗时 0.10s
+[22:40:34.626] INF [session] 静默换形态耗时 0.10s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:40:34.626] DBG [device] 对焦点 → (0.73, 0.65)
+[22:40:34.626] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:40:34.626] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:34.626] INF [resource] 模式 Log 实况 · input 活 2（累计增/删 20/18） · output 活 1（累计增/删 113/112） · 内存 32.5MB
+[22:40:34.626] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:34.626] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:34.626] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:34.626] DBG [session] 静默换形态：目标形态已满足，无需换设备
+[22:40:35.451] DBG [ui] 对焦圆盘收起（点别处）
+[22:40:35.452] INF [session] 切换模式 Log 实况 → 视频
+[22:40:35.591] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:35.591] DBG [photo] 视频：录制链路不挂照片输出，跳过照片模板准备
+[22:40:35.591] INF [session] 切模式后档位复查（视频）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:35.591] INF [session] 切模式耗时 0.14s（视频；含 outputs 重配与参数重放）
+[22:40:35.819] INF [resource] 模式 视频 · input 活 2（累计增/删 20/18） · output 活 1（累计增/删 114/113） · 内存 32.4MB
+[22:40:36.213] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:36.213] INF [session] 切换模式 视频 → Log 实况
+[22:40:36.279] DBG [ui] toast: Log 实况：当前录制 Log 视频，套用 LUT 导出实况照片在 P5 交付
+[22:40:36.280] INF [session] 切换模式 视频 → Log 实况
+[22:40:36.357] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:36.357] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:36.358] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:36.358] INF [session] 切模式耗时 0.14s（Log 实况；含 outputs 重配与参数重放）
+[22:40:36.491] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:36.491] DBG [photo] Log 实况：录制链路不挂照片输出，跳过照片模板准备
+[22:40:36.491] INF [session] 切模式后档位复查（Log 实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:36.491] INF [session] 切模式耗时 0.13s（Log 实况；含 outputs 重配与参数重放）
+[22:40:36.533] INF [session] 切换模式 Log 实况 → 实况
+[22:40:36.534] INF [photo] Live Photo 采集 不被支持，已保持关闭
+[22:40:36.733] INF [session] 切换模式 Log 实况 → 照片
+[22:40:36.780] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:36.780] INF [photo] 照片编码格式：hvc1
+[22:40:36.781] INF [session] 切模式后档位复查（实况）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:36.781] INF [session] 切模式耗时 0.25s（实况；含 outputs 重配与参数重放）
+[22:40:36.782] INF [session] 已移除麦克风输入
+[22:40:36.861] INF [audio] 音频会话已释放
+[22:40:36.903] INF [session] 切换模式 实况 → 照片
+[22:40:37.011] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:37.012] INF [photo] 照片编码格式：hvc1
+[22:40:37.012] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:37.012] INF [session] 切模式耗时 0.23s（照片；含 outputs 重配与参数重放）
+[22:40:37.112] INF [session] 切模式 commit 后瞬间档位：曝光=自动 / 白平衡=自动 / 快照=曝光自动·白平衡自动
+[22:40:37.112] INF [photo] 照片编码格式：hvc1
+[22:40:37.112] INF [session] 切模式后档位复查（照片）：曝光=自动 / 白平衡=自动 / 对焦意图=自动 / EV=+0.0
+[22:40:37.112] INF [session] 切模式耗时 0.10s（照片；含 outputs 重配与参数重放）
+[22:40:37.112] INF [resource] 模式 照片 · input 活 1（累计增/删 20/19） · output 活 1（累计增/删 119/118） · 内存 32.5MB
+[22:40:37.543] INF [ui] 全手动档退出 2s → 切回虚拟多摄（B1 平滑变焦恢复 · **静默无转场**）
+[22:40:37.543] INF [session] 静默换形态（后台挂设备 · 无转场）→ 虚拟多摄（24 mm）
+[22:40:39.368] INF [device] 格式已应用 Back Triple Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284 fps=30
+[22:40:39.369] INF [session] 采集格式命中**缓存**（跳过探测循环）：4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284
+[22:40:39.369] INF [session] 搬运：EV 已重放（+0.0）
+[22:40:39.369] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:40:39.370] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:40:39.371] INF [session] 换设备完成（静默·无转场）→ 虚拟多摄（24 mm）；当前档位 24 mm；Live Photo 能力=true；耗时 1.83s
+[22:40:39.371] INF [session] 静默换形态耗时 1.83s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:40:39.833] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.8MB
+[22:40:44.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.6MB
+[22:40:49.832] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.6MB
+[22:40:54.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:40:59.832] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:04.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:09.833] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:14.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:19.832] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:24.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:29.832] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:34.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:39.832] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:44.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:49.832] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:54.804] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+[22:41:59.831] INF [resource] 模式 照片 · input 活 1（累计增/删 21/20） · output 活 1（累计增/删 119/118） · 内存 31.5MB
+
