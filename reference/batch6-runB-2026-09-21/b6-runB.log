@@ -1,0 +1,235 @@
+
+============================================================
+LumenEdit 日志启动 2026-09-21 22:12:04
+device=iPhone17,1  system=26.6.0
+============================================================
+[22:12:04.736] INF [render] CIContext 初始化完成，后端=Apple A18 Pro GPU
+[22:12:04.791] INF [app] AppEnvironment 初始化完成，hud=true grid=true tone=true
+[22:12:04.838] INF [ui] 相机页已装配
+[22:12:04.874] DBG [perm] 刷新权限 camera=未决定 mic=未决定 albumAdd=未决定 albumRead=未决定
+[22:12:04.874] DBG [perm] 刷新权限 camera=未决定 mic=未决定 albumAdd=未决定 albumRead=未决定
+[22:12:04.911] INF [resource] 模式 照片 · input 活 0（累计增/删 0/0） · output 活 0（累计增/删 0/0） · 内存 19.1MB
+[22:12:32.450] INF [perm] 申请相机权限结果：true
+[22:12:32.450] DBG [perm] 刷新权限 camera=已授权 mic=未决定 albumAdd=未决定 albumRead=未决定
+[22:12:32.450] DBG [thumb] 无相册读取权限，跳过最新照片缩略图
+[22:12:32.476] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:12:32.477] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:12:32.477] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:12:32.479] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:12:32.480] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:12:32.481] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:12:32.481] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:12:32.482] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:12:32.482] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:12:32.483] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:12:32.483] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:12:32.485] INF [device] 格式已应用 Back Triple Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284 fps=30
+[22:12:32.486] INF [session] 选用采集格式 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284，Live Photo 能力=true（候选共 31 个，已缓存并落盘）
+[22:12:32.487] INF [photo] 照片编码格式：hvc1
+[22:12:32.487] INF [session] 变焦拓扑：deviceType=AVCaptureDeviceTypeBuiltInTripleCamera · constituents=3 · 角色=[超广角,广角,长焦] · switchOver=[2.000, 10.000] · 原生阶梯=[1.000, 2.000, 10.000] · 档位=13→1.000 / 24→2.000 / 35→2.917 / 48→4.000 / 120→10.000 · 不可用=无 · zoomRange=[1.00, 189.00]
+[22:12:32.487] INF [session] 手动参数能力：曝光(custom)=false / 白平衡(锁定增益)=false / 对焦(锁定位置)=false
+[22:12:32.487] INF [session] 会话配置完成，Live Photo 支持=true
+[22:12:32.488] INF [session] startRunning()
+[22:12:32.494] INF [hardware] 相机控制按钮交互已挂载（无该按钮的设备上不会触发）
+[22:12:32.496] INF [session] 预热跳过：开关已关（lumen.camera.prewarm.disabled）
+[22:12:34.220] DBG [preview] 预览层已绑定会话
+[22:12:34.310] INF [session] 预热跳过：开关已关（lumen.camera.prewarm.disabled）
+[22:12:34.318] DBG [ui] 会话就绪 · 焦段 24mm 已对齐（变焦 2.00×）
+[22:12:36.314] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.8MB
+[22:12:41.343] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:12:46.314] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:12:51.342] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:12:56.314] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:13:01.343] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:13:06.314] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:13:11.344] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:13:16.314] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:13:21.343] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.3MB
+[22:13:21.682] DBG [ui] 刻度条展开 → 后台预切换物理设备（为手动档铺路 · 无转场）
+[22:13:21.682] DBG [ui] 刻度条展开（ISO）
+[22:13:21.682] DBG [ui] toast: ISO：自动（点右侧开关切手动）
+[22:13:21.682] INF [session] 静默换形态（后台挂设备 · 无转场）→ 物理单摄（24 mm）
+[22:13:22.545] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:13:23.016] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:13:23.459] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:13:23.715] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:13:23.879] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:13:24.164] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:13:24.277] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:13:24.585] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:13:24.920] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:13:25.273] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:13:25.610] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:13:26.086] INF [device] 格式已应用 Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:13:26.087] INF [session] 选用采集格式 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048，Live Photo 能力=true（候选共 41 个，已缓存并落盘）
+[22:13:26.087] INF [session] 搬运：EV 已重放（+0.0）
+[22:13:26.087] INF [session] 搬运：对焦显式降级 → 连续自动（预检 ⑤）
+[22:13:26.087] INF [session] 换设备后新设备档位复查：曝光=自动 / 白平衡=自动 / 对焦=自动（显式降级） / EV=+0.0
+[22:13:26.088] INF [session] 换设备完成（静默·无转场）→ 物理单摄（24 mm）；当前档位 24 mm；Live Photo 能力=true；耗时 4.41s
+[22:13:26.088] INF [session] 静默换形态耗时 4.41s（命中格式缓存 ≈0.3~0.8s；每设备首次冷探测 4~5s）
+[22:13:26.315] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.2MB
+[22:13:31.344] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.1MB
+[22:13:36.315] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.1MB
+[22:13:41.345] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.1MB
+[22:13:46.315] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.1MB
+[22:13:51.344] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.1MB
+[22:13:56.314] INF [resource] 模式 照片 · input 活 1（累计增/删 2/1） · output 活 1（累计增/删 1/0） · 内存 28.1MB
+[22:13:59.813] WRN [session] ⚠️ 直播会话被打断：后台不可用（良性 · 与预热无关）（raw 1）
+[22:13:59.813] INF [session] 打断原因属良性（进后台）→ 不拆预热
+
+============================================================
+LumenEdit 日志启动 2026-09-21 22:14:05
+device=iPhone17,1  system=26.6.0
+============================================================
+[22:14:05.887] INF [render] CIContext 初始化完成，后端=Apple A18 Pro GPU
+[22:14:05.920] INF [app] AppEnvironment 初始化完成，hud=true grid=true tone=true
+[22:14:05.941] INF [ui] 相机页已装配
+[22:14:05.956] DBG [perm] 刷新权限 camera=已授权 mic=未决定 albumAdd=未决定 albumRead=未决定
+[22:14:05.956] DBG [thumb] 无相册读取权限，跳过最新照片缩略图
+[22:14:05.956] DBG [perm] 刷新权限 camera=已授权 mic=未决定 albumAdd=未决定 albumRead=未决定
+[22:14:05.962] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:05.963] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:05.964] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:05.964] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:05.965] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:05.965] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:05.966] INF [device] 格式已应用 Back Triple Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:05.966] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:05.967] INF [device] 格式已应用 Back Triple Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:05.967] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:05.968] INF [device] 格式已应用 Back Triple Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:05.968] INF [device] 格式已应用 Back Triple Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284 fps=30
+[22:14:05.969] INF [session] 选用采集格式 4032x3024 1-30fps 4:3 photoMax=4032x3024/5712x4284，Live Photo 能力=true（候选共 31 个，已缓存并落盘）
+[22:14:05.969] INF [photo] 照片编码格式：hvc1
+[22:14:05.969] INF [session] 变焦拓扑：deviceType=AVCaptureDeviceTypeBuiltInTripleCamera · constituents=3 · 角色=[超广角,广角,长焦] · switchOver=[2.000, 10.000] · 原生阶梯=[1.000, 2.000, 10.000] · 档位=13→1.000 / 24→2.000 / 35→2.917 / 48→4.000 / 120→10.000 · 不可用=无 · zoomRange=[1.00, 189.00]
+[22:14:05.969] INF [session] 手动参数能力：曝光(custom)=false / 白平衡(锁定增益)=false / 对焦(锁定位置)=false
+[22:14:05.969] INF [session] 会话配置完成，Live Photo 支持=true
+[22:14:05.969] INF [session] startRunning()
+[22:14:05.972] INF [hardware] 相机控制按钮交互已挂载（无该按钮的设备上不会触发）
+[22:14:05.973] INF [session] 预热决策：开始预热，待探 3 颗（Back Ultra Wide Camera / Back Camera / Back Telephoto Camera）—— 串行逐颗，一旦打断直播会话就整体放弃
+[22:14:07.235] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:14:07.235] DBG [preview] 预览层已绑定会话
+[22:14:07.271] INF [session] startRunning()
+[22:14:07.509] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:07.510] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:07.511] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:07.512] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:07.513] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:07.514] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:07.515] INF [device] 格式已应用 Back Ultra Wide Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:07.516] INF [device] 格式已应用 Back Ultra Wide Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:07.517] INF [device] 格式已应用 Back Ultra Wide Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:07.518] INF [device] 格式已应用 Back Ultra Wide Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:07.519] INF [device] 格式已应用 Back Ultra Wide Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:07.520] INF [device] 格式已应用 Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:14:07.520] INF [session] 预热探到格式：Back Ultra Wide Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048（候选 35 个）
+[22:14:07.797] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:14:07.798] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:14:07.798] INF [session] 预热跳过：已在预热中
+[22:14:07.798] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 27.9MB
+[22:14:07.808] DBG [ui] 会话就绪 · 焦段 24mm 已对齐（变焦 2.00×）
+[22:14:08.431] INF [device] 格式已应用 Back Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:08.905] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:09.331] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:09.589] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:09.707] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:09.977] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:10.091] INF [device] 格式已应用 Back Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:10.410] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:10.763] INF [device] 格式已应用 Back Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:10.802] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 25.9MB
+[22:14:11.093] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:11.418] INF [device] 格式已应用 Back Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:11.585] DBG [preview] 点按对焦 view=(132,376) device=(0.48,0.62)
+[22:14:11.590] DBG [device] 对焦点 → (0.48, 0.62)
+[22:14:11.590] DBG [session] 白平衡增益尚未就绪（冷启动）→ 色温先给兜底值，就绪后补发
+[22:14:11.590] INF [session] 点按对焦后档位：曝光=自动 / 白平衡=自动 / 意图=曝光自动·白平衡自动
+[22:14:11.870] INF [device] 格式已应用 Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048 fps=30
+[22:14:11.870] INF [session] 预热探到格式：Back Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024/8064x6048（候选 41 个）
+[22:14:12.205] WRN [session] ⚠️ 直播会话被打断：视频设备被另一个客户端占用（raw 3）
+[22:14:12.902] DBG [ui] toast: 焦段 35 mm · 变焦 2.92×
+[22:14:12.922] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-30fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:13.475] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:13.604] DBG [ui] toast: 焦段 24 mm · 变焦 2.00×
+[22:14:13.604] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.3MB
+[22:14:14.011] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:14.376] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:14.493] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps 4:3 photoMax=1920x1440/4032x3024 fps=30
+[22:14:14.850] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:14.981] INF [device] 格式已应用 Back Telephoto Camera 1920x1440 1-60fps binned 4:3 photoMax=1920x1440/2016x1512 fps=30
+[22:14:15.395] INF [device] 格式已应用 Back Telephoto Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:15.821] INF [device] 格式已应用 Back Telephoto Camera 2592x1944 1-30fps 4:3 photoMax=2592x1944/4032x3024 fps=30
+[22:14:16.272] INF [device] 格式已应用 Back Telephoto Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:16.670] DBG [ui] toast: 前后镜头切换要重建会话输入，在 P2 硬件批次交付，当前固定后置
+[22:14:16.705] INF [device] 格式已应用 Back Telephoto Camera 3264x2448 1-30fps 4:3 photoMax=3264x2448/4032x3024 fps=30
+[22:14:17.268] INF [device] 格式已应用 Back Telephoto Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024 fps=30
+[22:14:17.268] INF [session] 预热探到格式：Back Telephoto Camera 4032x3024 1-30fps 4:3 photoMax=4032x3024（候选 35 个）
+[22:14:17.358] INF [session] 预热结束：耗时 11.38s
+[22:14:17.386] DBG [ui] toast: 前后镜头切换要重建会话输入，在 P2 硬件批次交付，当前固定后置
+[22:14:17.801] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.5MB
+[22:14:18.800] DBG [session] 白平衡增益已就绪（冷启动）→ 补发手动档状态
+[22:14:22.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.3MB
+[22:14:27.802] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:14:32.831] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:14:37.802] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:14:42.831] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:14:47.802] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:14:52.831] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:14:57.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:02.831] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:07.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:12.831] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:17.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:22.831] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:27.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:32.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:37.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:42.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:47.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:52.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:15:57.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:02.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:07.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:12.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:17.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:22.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:27.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:32.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:37.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:42.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:47.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:52.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:16:57.803] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:02.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:07.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:12.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:17.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:22.832] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:27.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:32.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:37.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:42.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:47.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:52.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:17:57.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:02.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:07.804] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:12.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:17.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:22.835] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:27.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:32.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:37.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:42.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:47.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:52.833] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:18:57.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:02.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:07.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:12.835] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:17.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:22.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:27.805] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:32.835] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:37.806] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
+[22:19:42.834] INF [resource] 模式 照片 · input 活 1（累计增/删 1/0） · output 活 1（累计增/删 1/0） · 内存 26.1MB
