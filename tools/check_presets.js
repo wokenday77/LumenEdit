@@ -721,7 +721,7 @@ compareNumbers(
   if (wrong.length) {
     bad('可视步进 slot 不一致（' + wrong.join('；') + '）—— 三条档数差 5 倍，步进错会让某条长得离谱');
   } else {
-    ok('可视步进 slot 一致（iso 46 / shutter 56 / wb 26）');
+    ok('可视步进 slot 一致（**统一 40pt/档** —— 批六复刻飓风口径，三条一致）');
   }
 }
 
@@ -734,20 +734,30 @@ compareNumbers(
     warn('[待 CB 同步原型 · ' + softenGroup + '] 原型的 `labelAt`（只标主档）机制已退场 → '
       + 'CB 需把 ISO / 快门 / 白平衡三条都改成"**每档都带标签**"（飓风做法）');
   } else {
+    // ⚠️ 批六（CB 已同步原型，2026-09-21）：`labelAt`（只给主档出数字）机制**两边都已退场** ——
+    //    飓风口径是"每档都带标签"，Swift 侧也不再保留 `isoLabelledValues` /
+    //    `whiteBalanceLabelledValues` 两张表。所以本段的断言形态改成"**两边都没有这组数据**"：
+    //      两边都无 → OK（口径一致 = 全标签）；
+    //      只有一边有 → FAIL（有人把机制加回了一半，必须两边同步）。
     const jsISOLabel = /iso:\s*\{[\s\S]{0,220}?labelAt:\[([0-9,]+)\]/.exec(html);
-    compareNumbers(
-      'ISO 标签档',
-      jsISOLabel ? jsISOLabel[1].split(',').map(Number) : null,
-      swiftNumberSet('isoLabelledValues')
-    );
+    const jsISOLabelArr = jsISOLabel ? jsISOLabel[1].split(',').map(Number) : null;
+    const swISOLabel = swiftNumberSet('isoLabelledValues');
+    if (!jsISOLabelArr && !swISOLabel) {
+      ok('ISO 标签档：`labelAt` 机制两边均已退场（每档全标签）');
+    } else {
+      compareNumbers('ISO 标签档', jsISOLabelArr, swISOLabel);
+    }
 
     const jsWBLabelled = /labelAt:\(function\(\)\{ var a=\[\]; for \(var k=(\d+);k<=(\d+);k\+=(\d+)\)/
       .exec(html);
-    compareNumbers(
-      '白平衡标签档（每 500K）',
-      jsWBLabelled ? seq(+jsWBLabelled[1], +jsWBLabelled[2], +jsWBLabelled[3]) : null,
-      swiftNumberSet('whiteBalanceLabelledValues')
-    );
+    const jsWBLabelledArr = jsWBLabelled
+      ? seq(+jsWBLabelled[1], +jsWBLabelled[2], +jsWBLabelled[3]) : null;
+    const swWBLabelled = swiftNumberSet('whiteBalanceLabelledValues');
+    if (!jsWBLabelledArr && !swWBLabelled) {
+      ok('白平衡标签档：`labelAt` 机制两边均已退场（每档全标签）');
+    } else {
+      compareNumbers('白平衡标签档（每 500K）', jsWBLabelledArr, swWBLabelled);
+    }
   }
 
   // 预设档（琥珀刻度）**保留** —— 飓风口径不取消"预设位"语义，这条两边都必须有
