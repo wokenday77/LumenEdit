@@ -12,9 +12,9 @@
 > 探测 **3.74s → 0.39s / −89.6%**、端到端 4.32s → **1.01s**）+ **探测闸门**（打断直接置闩 → 循环收手 →
 > 兜底格式且不写缓存）+ **观察者提前到 `startInternal()` 顶部**（补启动窗口缺口）+ **资源账修正**
 > （预期以 `audioInput != nil` 为事实源 + 配置窗口抑制 + 连续 2 次去抖）。**③ 点按重放 / ④ 资源埋点：代码完、待专项复验。**
-> **剩**：候选 2 收尾（c 缺口 0.07~0.11s 待拍板）+ **⑤ 6-① 待用户线索**；**①③④ 专项 ✅ 已验（`ee1953c`：① 红线未命中 / ③ 过 / ④ 306 次连切零告警）**
+> **剩**：候选 2 收尾 ✅（**c 口径拍死 ≤1.1s** / **d3 阈值拍死 = 单次 applyFormat 0.3~1.0s**）+ **⑤ 6-① 待用户线索**；**①③④ 专项 ✅ 已验（`ee1953c`：① 红线未命中 / ③ 过 / ④ 306 次连切零告警）**
 > （② 已两轮 ❌ → 拍板**候选 2「快路径」**（`f05f9ad` + WB 修 `a898a21`）→
-> **候选 2 已真机复验：快路径 ✓ · b/e/f/g ✓ · c 未达（0.97~1.01s vs ≤0.9s）· d ✅ 已验（`d276aa3` 注入设施：
+> **候选 2 已真机复验：快路径 ✓ · b/e/f/g ✓ · c **达**（0.97~1.01s；口径已修正 ≤1.1s，**已拍死**）· d ✅ 已验（`d276aa3` 注入设施：
 > d1/d1-b/d2/d4/d5 全过 + d3 过附阈值建议）· **第 3 件（观察者提前注册 `d3c3cd7`）✅ 已验（d6 / d6-b 过）**）**，
 > 见下「候选 2 复验记录」「判据 d 复验」「第 3 件复验」；
 > 白平衡 `10000K` 已实测：**净余量 4pt（红线未命中）**）。
@@ -101,7 +101,7 @@
 >   A/B 对照组（`-lumen.camera.formatProbe.fastpath.disabled YES` + `formatProbeCache COLD`，同 41 候选）：
 >   `applyFormat **12 次**，耗时 **3.74s**` → `换设备完成…耗时 **4.32s**` ⇒ **探测 −3.35s（−89.6%）·
 >   端到端 −3.31s（−76.6%）**；且控制组**复现**了原始 4.29~4.41s bug ✓（对照有效）。
-> - ❌ **c 未达标**：静默换形态 **0.97s / 1.01s**（两次独立会话）vs 目标 **≤0.9s**（差 0.07~0.11s）——
+> - 🟡 **c 达（口径修正 · 已拍死）**：静默换形态 **0.97s / 1.01s**（两次独立会话）vs 原目标 ≤0.9s（差 0.07~0.11s）
 >   探测只占 0.39s，**剩 ~0.6s 在会话装配段**；相对 4.41s 基线 **−78%**。
 > - ✅ **b / e**（本场）：**raw3 = 0 / 0 配额告警**；资源账 5s 不断流（input 活 1·累计增2删1、output 活 1·增1删0、
 >   内存 25.8~26.8MB 平稳）；`换设备后新设备档位复查` 正常（新设备显式降级 → 曝光/白平衡/对焦=自动）。
@@ -871,6 +871,21 @@ minor10/mid15/major22/preset22 + 快门半档 mid 线；**松手草稿保留到�
 🔴 **刚进 App 点对焦 → 首次冷探测 4.27s 静止帧**（用户口径：不该有转场、不能慢/卡；修法=冷启动预热，Mac 可真机验证）/
 🔴 **核心口径「不选自动就永远手动」**：点按对焦顶掉手动曝光（`setFocusAndExposurePoint` 设回自动）→ 按意图重放 /
 🟠 取景器掉帧（候选=静默切换 input 重挂；待用户补场景）
+⑰ **ISO 与快门无法「自由搭配」（2026-09-22 用户新问题 · 定位已完成 · 待拍板修法）**：现象 = 一方手动另一方也手动（自动同）。
+**定位结论：绑定在三层，根因在系统 API** —— `AVCaptureDevice.setExposureModeCustom(duration:iso:)` **一次接管两者**，
+`exposureMode` 只有 `.custom`（两轴都手动）/ `.continuousAutoExposure`（两轴都自动），**没有「ISO 手动 + 快门自动」这种档位**
+（本项目 `CaptureDeviceConfigurator.swift` :332-337 的注释早就写明这是硬件根源，并点名原型 `state.auto.isoShutter` 是**一个共享开关**）。
+我们这侧把这条硬约束**结构化了四遍**：① 写入层 `setManualExposure(iso:seconds:)` 成对写 / `setAutoExposure` 成对放；
+② 状态层 `session.manualExposure: (iso,seconds)?`（nil = 全自动，非 nil = 两轴手动）+ `manualExposure(of:)` 以 `exposureMode == .custom` 为唯一判据；
+③ 模型层 `CapturePreset.isManualExposure` 要求两者都非 nil，`hasPartialManualExposure` 把「只填一个」定义为**非法态**；
+④ UI 层 `isISOShutterAuto` **一个布尔**驱动两条刻度条 ⇒ 表现就是「一动全动」。
+**要「自由搭配」只能软件模拟**（系统不给档位）：以 `.custom` 为底，**钉住一轴、持续重算另一轴**去追测光（「ISO 手动 + 快门自动」= 钉 ISO、重算 duration；反向同理）。
+影响面：`CaptureDeviceConfigurator`（半自动写入 + 反馈回路）· `CaptureSessionController`（意图态从 1 个元组拆成两轴各自意图；
+**回读真值不再等价** —— `.custom` 不再等于「两轴都手动」）· `CameraViewModel` + `ParameterStripView`（两条刻度条各自的自动/手动入口、草稿、跟手）· `CapturePreset`（半手动从「非法」改「合法」）·
+且要重新对齐三处既有口径：**EV 与手动曝光互斥**（半自动下 EV 是否生效？）· **点按重放 ③**（快照 1 个拆 2 个）· **回读对齐**（`$manualExposure` 订阅）。
+风险（诚实）：① 与系统 AE **抢方向盘** → 抖动/闪烁，快速光变场景不如原生；② 每次重算都要 lock 写设备（代价 + 可能影响帧率）；③ 自动那一轴数值会持续跳，UI 显示口径要重新定义；④ 复杂度高（新状态机 + 反馈回路 + 两套 UI 入口）。
+**待拍板选项**：**A 不做**（现状 = 系统上限，文档写明，成本 0）· **B 单向**（只做最常用的「ISO 手动 + 快门自动」）· **C 双向 + 反馈回路**（最贵）。
+⚠️ 建议先让 Mac 用 SDK 头文件把「系统不支持」钉死：`grep -n "exposureDuration\|setExposureModeCustom\|iso" AVCaptureDevice.h` —— 确认没有「单独设 duration 或单独设 iso」的 API。
 
 **Mac 环境备忘（新会话必读）**：
 - **真机截图用 `pymobiledevice3 developer dvt screenshot out.png`**（PATH 加 `$HOME/Library/Python/3.9/bin`；已 pip3 install --user 11.15.1，自动走原生隧道无需 sudo）。`idevicescreenshot` 在 iOS 26 确定性损坏（libimobiledevice issue #1465），重启/重插无效，别再试
