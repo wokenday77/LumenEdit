@@ -1,6 +1,6 @@
 # LumenEdit
 
-自用 iOS 修图 App。对标醒图的核心体验，功能范围可控。
+自用 iOS 拍照App。对标飓风相机的核心体验，功能范围可控。
 
 - **媒体**：照片 / Live Photo / 视频 的拍摄、编辑与导出
 - **技术栈**：Swift + SwiftUI（相机与视频预览用 `UIViewRepresentable` 包 UIKit）
