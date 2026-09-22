@@ -2163,9 +2163,6 @@ final class CaptureSessionController: ObservableObject {
                 DebugLog.shared.error("session", "应用采集格式失败：\(error.localizedDescription)")
                 continue
             }
-            // 验收设施（批六 ② 判据 d · 见 `DebugProbeInterrupt`）：按启动参数注入一条"被打断"通知。
-            // ⚠️ Release 下是空实现；**验收通过后这一行要删**（收尾清单已列）。
-            DebugProbeInterrupt.maybeInject(afterAttempt: attempts, session: session)
             if fallback == nil { fallback = candidate }
             // 视频 / Log：不需要 Live —— 第一个候选（最小档）即可，写缓存直达
             if !needsLiveProbe {
