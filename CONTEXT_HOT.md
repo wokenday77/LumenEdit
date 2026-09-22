@@ -18,6 +18,8 @@
 > d1/d1-b/d2/d4/d5 全过 + d3 过附阈值建议）· **第 3 件（观察者提前注册 `d3c3cd7`）✅ 已验（d6 / d6-b 过）**）**，
 > 见下「候选 2 复验记录」「判据 d 复验」「第 3 件复验」；
 > 白平衡 `10000K` 已实测：**净余量 4pt（红线未命中）**）。
+> **⑰ ISO/快门联动已结案（2026-09-22 拍板 A「不做」）**：Mac SDK 取证钉死「无单轴 setter / `exposureMode` 无半自动档」
+> → 现状 = 系统上限；SDK 原文留档（虚拟多摄不支持 `.custom` / 换镜头可能清 duration·ISO / EV 第三轴）见 ⑰。
 > ~~CB 同步原型 4 项~~ ✅ **已完成**（`6e7ac66`，`check_presets` 第 6 组已收紧为逐条全等、全绿）。
 > 批五 3 条已 push（`64e1d0b`）**Mac 复验已过（见下方 Mac 侧同步）**，其"刻度更细"验收口径**已被批六作废**。
 > **【Mac 侧同步（远端 f5cfda7~94aa359 落盘）】**批五已过 Mac 复验：3 条全过——静默路径**零退转场**（首次 4.27s =
@@ -871,7 +873,7 @@ minor10/mid15/major22/preset22 + 快门半档 mid 线；**松手草稿保留到�
 🔴 **刚进 App 点对焦 → 首次冷探测 4.27s 静止帧**（用户口径：不该有转场、不能慢/卡；修法=冷启动预热，Mac 可真机验证）/
 🔴 **核心口径「不选自动就永远手动」**：点按对焦顶掉手动曝光（`setFocusAndExposurePoint` 设回自动）→ 按意图重放 /
 🟠 取景器掉帧（候选=静默切换 input 重挂；待用户补场景）
-⑰ **ISO 与快门无法「自由搭配」（2026-09-22 用户新问题 · 定位已完成 · 待拍板修法）**：现象 = 一方手动另一方也手动（自动同）。
+⑰ **ISO 与快门无法「自由搭配」（2026-09-22 用户新问题 · 定位已完成 · ✅ 拍板 A「不做」· 已结案）**：现象 = 一方手动另一方也手动（自动同）。
 **定位结论：绑定在三层，根因在系统 API** —— `AVCaptureDevice.setExposureModeCustom(duration:iso:)` **一次接管两者**，
 `exposureMode` 只有 `.custom`（两轴都手动）/ `.continuousAutoExposure`（两轴都自动），**没有「ISO 手动 + 快门自动」这种档位**
 （本项目 `CaptureDeviceConfigurator.swift` :332-337 的注释早就写明这是硬件根源，并点名原型 `state.auto.isoShutter` 是**一个共享开关**）。
@@ -884,8 +886,20 @@ minor10/mid15/major22/preset22 + 快门半档 mid 线；**松手草稿保留到�
 **回读真值不再等价** —— `.custom` 不再等于「两轴都手动」）· `CameraViewModel` + `ParameterStripView`（两条刻度条各自的自动/手动入口、草稿、跟手）· `CapturePreset`（半手动从「非法」改「合法」）·
 且要重新对齐三处既有口径：**EV 与手动曝光互斥**（半自动下 EV 是否生效？）· **点按重放 ③**（快照 1 个拆 2 个）· **回读对齐**（`$manualExposure` 订阅）。
 风险（诚实）：① 与系统 AE **抢方向盘** → 抖动/闪烁，快速光变场景不如原生；② 每次重算都要 lock 写设备（代价 + 可能影响帧率）；③ 自动那一轴数值会持续跳，UI 显示口径要重新定义；④ 复杂度高（新状态机 + 反馈回路 + 两套 UI 入口）。
-**待拍板选项**：**A 不做**（现状 = 系统上限，文档写明，成本 0）· **B 单向**（只做最常用的「ISO 手动 + 快门自动」）· **C 双向 + 反馈回路**（最贵）。
-⚠️ 建议先让 Mac 用 SDK 头文件把「系统不支持」钉死：`grep -n "exposureDuration\|setExposureModeCustom\|iso" AVCaptureDevice.h` —— 确认没有「单独设 duration 或单独设 iso」的 API。
+**✅ 拍板（2026-09-22 用户）：A 不做 —— 本条结案，零代码改动**（只落文档）。
+**依据（Mac SDK 取证已把「系统不支持」钉死 · 2026-09-22）**：
+① **单轴 setter 不存在** —— 没有「单独设 `exposureDuration`」或「单独设 `iso`」的 API；
+② `exposureMode` **只有 4 档、无半自动档**（`.custom` 一次接管两轴）；
+③ 要「自由搭配」**只能软件闭环**（以 `.custom` 为底、钉住一轴 + 持续重算另一轴去追测光）—— 代价大、风险高，四条都不划算：
+与系统 AE **抢方向盘**（抖动/闪烁，快速光变不如原生）· 每次重算都要 **lock 写设备**（帧率成本）· 自动那轴数值**持续跳**（UI 显示口径要重定）·
+复杂度高（新状态机 + 反馈回路 + 两套 UI 入口）；影响面 **4 层**（configurator / controller / VM+UI / preset）+ 要重新对齐**三处既有口径**
+（EV 与手动曝光互斥 / 点按重放 ③ 快照拆两份 / 回读对齐 `$manualExposure`）。
+⇒ **现状 = 系统上限**：一方手动另一方必手动、`isISOShutterAuto` 一个布尔驱动两条刻度条，是**正确实现，不是缺陷**。
+**📎 SDK 原文留档（本项目既有设计的头文件级依据，别再重复踩）**：
+- **虚拟多摄原生不支持 `.custom`**（`AVCaptureDevice.h:538-541`）→ 即「进手动前先切物理单摄」的 SDK 依据（`docs/20` 物理架构）；
+- **官方明写「即便已锁定，换镜头时 `duration` / `ISO` 仍可能被系统改掉」** → 这就是「转场切镜头 → 手动档被清」的**头文件级解释**
+  ⇒ **App 侧必须自己重放**（批五 `reverifyManualIntent` 四拍 / 批六 ③ 点按意图快照重放，都是为此而设）；
+- **EV 是第三轴、只有一条写入口 `setExposureTargetBias`**（且只在自动曝光档生效）—— 与手动曝光互斥的根因。
 
 **Mac 环境备忘（新会话必读）**：
 - **真机截图用 `pymobiledevice3 developer dvt screenshot out.png`**（PATH 加 `$HOME/Library/Python/3.9/bin`；已 pip3 install --user 11.15.1，自动走原生隧道无需 sudo）。`idevicescreenshot` 在 iOS 26 确定性损坏（libimobiledevice issue #1465），重启/重插无效，别再试
