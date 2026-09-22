@@ -1,0 +1,9 @@
+[13:57:24.680] === 变体 2 启动 · 三层预览（L1 上=绿 / L2 中=橙 / L3 下=青）===
+[13:57:24.884] 🔔 didStartRunning
+[13:57:24.892] startRunning() · isRunning=true
+[13:57:24.896] ▶︎ 三层全挂 + 全部 isEnabled=true
+[13:57:24.898] 🔎 [t0 三层同开] L1: conn=nil active=false enabled=false | L2: conn=nil active=false enabled=false | L3: conn=有 active=true enabled=true
+[13:57:31.197] ⚠️ 断点：把 L1（上/绿）摘出图层树再挂回
+[13:57:31.209] 🔎 [重挂后即刻] L1: conn=nil active=false enabled=false | L2: conn=nil active=false enabled=false | L3: conn=有 active=true enabled=true
+[13:57:36.462] 🔎 [重挂后 5s（再次 enable）] L1: conn=nil active=false enabled=false | L2: conn=nil active=false enabled=false | L3: conn=有 active=true enabled=true
+[13:57:36.472] ✅ 完成 —— 看三段颜色框里哪几段有画面

@@ -1,0 +1,227 @@
+import SwiftUI
+import AVFoundation
+import UIKit
+
+@main
+struct DualPreviewProbeApp: App {
+    var body: some Scene {
+        WindowGroup { Screen() }
+    }
+}
+
+struct Screen: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> ProbeViewController { ProbeViewController() }
+    func updateUIViewController(_ vc: ProbeViewController, context: Context) {}
+}
+
+/// 探针：同一 AVCaptureSession 挂**两个** AVCaptureVideoPreviewLayer。
+/// 自动跑三相位（各 8s）：① 只开 A ② A+B 都开 ③ 只开 B —— 用同一 videoDataOutput 的
+/// 到帧速率做 A/B 对照（三相位的数据输出负载恒定，只有"活跃预览连接数"在变）。
+/// 结果同时写屏（截图可读）与 Documents/probe-result.log（可回拷）。
+final class ProbeViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
+
+    private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "probe.session")
+    private let videoQueue = DispatchQueue(label: "probe.video")
+    private let videoOutput = AVCaptureVideoDataOutput()
+
+    private var layerA: AVCaptureVideoPreviewLayer!
+    private var layerB: AVCaptureVideoPreviewLayer!
+
+    private let hud = UILabel()
+    private var framesInPhase = 0
+    private var phase = 0                 // 1/2/3 = 三个相位，4 = 收尾
+    private var phaseStart = Date()
+    private var lines: [String] = []
+    private var observers: [NSObjectProtocol] = []
+    private var timer: Timer?
+    private var logURL: URL?
+
+    // MARK: - 生命周期
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        logURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("probe-result.log")
+        add("=== DualPreviewProbe 启动 · 同一 session 双预览层 ===")
+
+        let w = view.bounds.width, h = view.bounds.height
+        layerA = AVCaptureVideoPreviewLayer(session: session)
+        layerB = AVCaptureVideoPreviewLayer(session: session)
+        layerA.frame = CGRect(x: 0, y: 0, width: w, height: h / 2)
+        layerB.frame = CGRect(x: 0, y: h / 2, width: w, height: h / 2)
+        for (l, c) in [(layerA, UIColor.systemGreen), (layerB, UIColor.systemOrange)] {
+            l?.videoGravity = .resizeAspectFill
+            l?.borderWidth = 3
+            l?.borderColor = c.cgColor
+            view.layer.addSublayer(l!)
+        }
+
+        hud.frame = CGRect(x: 8, y: h / 2 - 100, width: w - 16, height: 200)
+        hud.numberOfLines = 0
+        hud.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+        hud.textColor = .white
+        hud.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+        hud.text = "等待会话启动…"
+        view.addSubview(hud)
+
+        add("上方绿框 = layerA · 下方橙框 = layerB")
+        observeNotifications()
+        requestPermissionThenConfigure()
+    }
+
+    /// 先把相机权限拿到手，再配会话 —— 否则三相位会在授权弹窗期间空转。
+    private func requestPermissionThenConfigure() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            configureSession()
+        case .notDetermined:
+            add("等待相机授权…（请在弹窗点「允许」）")
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    self.add(granted ? "✅ 相机已授权" : "❌ 相机未授权")
+                    if granted { self.configureSession() }
+                }
+            }
+        default:
+            add("❌ 相机权限被拒（设置 → 隐私与安全性 → 相机 打开后重启本 App）")
+        }
+    }
+
+    // MARK: - 会话
+
+    private func configureSession() {
+        sessionQueue.async {
+            self.session.beginConfiguration()
+            self.session.sessionPreset = .high
+
+            let dev = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+                ?? AVCaptureDevice.default(for: .video)
+            guard let dev, let input = try? AVCaptureDeviceInput(device: dev),
+                  self.session.canAddInput(input) else {
+                self.add("❌ 建立 video input 失败（权限？）")
+                self.session.commitConfiguration()
+                return
+            }
+            self.session.addInput(input)
+
+            self.videoOutput.videoSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            ]
+            self.videoOutput.alwaysDiscardsLateVideoFrames = true
+            self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
+            if self.session.canAddOutput(self.videoOutput) {
+                self.session.addOutput(self.videoOutput)
+            }
+            self.session.commitConfiguration()
+
+            self.add("设备：\(dev.localizedName) · preset=\(self.session.sessionPreset.rawValue)")
+            self.session.startRunning()
+            self.add("startRunning() 返回 · isRunning=\(self.session.isRunning)")
+        }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        framesInPhase += 1   // 只在 videoQueue 上递增/读取
+        if phase == 0 {      // 首帧到达 → 会话真的在出画面了，再开始三相位
+            DispatchQueue.main.async { self.beginPhase(1) }
+        }
+    }
+
+    // MARK: - 三相位
+
+    private func beginPhase(_ p: Int) {
+        guard p <= 3 else { finish(); return }
+        phase = p
+        videoQueue.sync { framesInPhase = 0 }
+        phaseStart = Date()
+
+        switch p {
+        case 1: layerA.isHidden = false; layerB.isHidden = true;  add("▶︎ 相位 1：只开 layerA（B 连接 isEnabled=false）")
+        case 2: layerA.isHidden = false; layerB.isHidden = false; add("▶︎ 相位 2：A + B 同时开")
+        default: layerA.isHidden = true;  layerB.isHidden = false; add("▶︎ 相位 3：只开 layerB（A 连接 isEnabled=false）")
+        }
+        layerA.connection?.isEnabled = (p != 3)
+        layerB.connection?.isEnabled = (p != 1)
+        updateHUD()
+
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            let secs = Date().timeIntervalSince(self.phaseStart)
+            let frames = self.videoQueue.sync { self.framesInPhase }
+            self.add(String(format: "⏹ 相位 %d：%d 帧 / %.1fs ⇒ %.1f fps", p, frames, secs, Double(frames) / secs))
+            let a = self.layerA.connection, b = self.layerB.connection
+            self.add("   连接：A active=\(a?.isActive ?? false) enabled=\(a?.isEnabled ?? false)"
+                     + " / B active=\(b?.isActive ?? false) enabled=\(b?.isEnabled ?? false)")
+            if p < 3 { self.beginPhase(p + 1) } else { self.finish() }
+        }
+    }
+
+    private func finish() {
+        phase = 4
+        layerA.isHidden = false
+        layerB.isHidden = false
+        layerA.connection?.isEnabled = true
+        layerB.connection?.isEnabled = true
+        add("✅ 三相位完成：看上方绿框与下方橙框是否**同时**有画面")
+        updateHUD()
+    }
+
+    // MARK: - 通知（错误 / 打断 / 起停）
+
+    private func observeNotifications() {
+        let nc = NotificationCenter.default
+        let names: [(Notification.Name, String)] = [
+            (AVCaptureSession.runtimeErrorNotification, "runtimeError"),
+            (AVCaptureSession.wasInterruptedNotification, "wasInterrupted"),
+            (AVCaptureSession.interruptionEndedNotification, "interruptionEnded"),
+            (AVCaptureSession.didStartRunningNotification, "didStartRunning"),
+            (AVCaptureSession.didStopRunningNotification, "didStopRunning"),
+        ]
+        for (name, tag) in names {
+            observers.append(nc.addObserver(forName: name, object: session, queue: .main) { [weak self] note in
+                var extra = ""
+                if let e = note.userInfo?[AVCaptureSessionErrorKey] as? Error {
+                    extra += " err=\(e.localizedDescription)"
+                }
+                if let r = note.userInfo?[AVCaptureSessionInterruptionReasonKey] {
+                    extra += " reason=\(r)"
+                }
+                self?.add("🔔 \(tag)\(extra)")
+            })
+        }
+    }
+
+    // MARK: - 屏显 + 落盘
+
+    private func updateHUD() {
+        let secs = max(0.001, Date().timeIntervalSince(phaseStart))
+        let fps = Double(videoQueue.sync { framesInPhase }) / secs
+        let a = layerA?.connection, b = layerB?.connection
+        let head = String(format: "相位 %d/4   live %.1f fps", phase, fps)
+        let conn = "A: active=\(a?.isActive ?? false) enabled=\(a?.isEnabled ?? false)\n"
+                 + "B: active=\(b?.isActive ?? false) enabled=\(b?.isEnabled ?? false)"
+        hud.text = [head, conn, "————", lines.suffix(6).joined(separator: "\n")].joined(separator: "\n")
+    }
+
+    private func add(_ s: String) {
+        lines.append("[\(Self.stamp())] \(s)")
+        writeLog()
+        DispatchQueue.main.async { self.updateHUD() }
+    }
+
+    private func writeLog() {
+        guard let url = logURL else { return }
+        try? lines.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func stamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: Date())
+    }
+}

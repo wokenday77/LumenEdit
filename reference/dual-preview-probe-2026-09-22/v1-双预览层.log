@@ -1,0 +1,17 @@
+[13:55:27.814] === DualPreviewProbe 启动 · 同一 session 双预览层 ===
+[13:55:27.823] 上方绿框 = layerA · 下方橙框 = layerB
+[13:55:27.829] 等待相机授权…（请在弹窗点「允许」）
+[13:55:30.474] ✅ 相机已授权
+[13:55:30.553] 设备：Back Camera · preset=AVCaptureSessionPresetHigh
+[13:55:30.774] 🔔 didStartRunning
+[13:55:30.776] startRunning() 返回 · isRunning=true
+[13:55:30.791] ▶︎ 相位 1：只开 layerA（B 连接 isEnabled=false）
+[13:55:38.934] ⏹ 相位 1：244 帧 / 8.1s ⇒ 30.0 fps
+[13:55:38.944]    连接：A active=false enabled=false / B active=true enabled=false
+[13:55:38.947] ▶︎ 相位 2：A + B 同时开
+[13:55:46.975] ⏹ 相位 2：241 帧 / 8.0s ⇒ 30.0 fps
+[13:55:46.985]    连接：A active=false enabled=false / B active=true enabled=true
+[13:55:46.987] ▶︎ 相位 3：只开 layerB（A 连接 isEnabled=false）
+[13:55:54.991] ⏹ 相位 3：240 帧 / 8.0s ⇒ 30.0 fps
+[13:55:55.002]    连接：A active=false enabled=false / B active=true enabled=true
+[13:55:55.005] ✅ 三相位完成：看上方绿框与下方橙框是否**同时**有画面

@@ -1,0 +1,187 @@
+import SwiftUI
+import AVFoundation
+import UIKit
+
+@main
+struct DualPreviewProbeApp: App {
+    var body: some Scene {
+        WindowGroup { Screen() }
+    }
+}
+
+struct Screen: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> ProbeViewController { ProbeViewController() }
+    func updateUIViewController(_ vc: ProbeViewController, context: Context) {}
+}
+
+/// 变体 2：**三层**预览（L1 上 / L2 中 / L3 下）+ **运行中把 L1 摘出再挂回**。
+/// 目的：判定"同一 session 多预览层"到底是
+///   (a) 只有**最后创建**的那层能活，还是 (b) **任何时刻只有一个**连接活跃，还是
+///   (c) 全部能活（v1 里 L1 死只是我的 enable 时序问题）。
+final class ProbeViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
+
+    private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "probe.session")
+    private let videoQueue = DispatchQueue(label: "probe.video")
+    private let videoOutput = AVCaptureVideoDataOutput()
+
+    private var layers: [AVCaptureVideoPreviewLayer] = []
+    private let hud = UILabel()
+    private var frames = 0
+    private var step = 0                 // 0=未开始 1=三层同开 2=重挂后 3=完成
+    private var lines: [String] = []
+    private var observers: [NSObjectProtocol] = []
+    private var logURL: URL?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        logURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("probe-result.log")
+
+        let w = view.bounds.width, h = view.bounds.height
+        let colors: [UIColor] = [.systemGreen, .systemOrange, .systemCyan]
+        for i in 0..<3 {
+            let l = AVCaptureVideoPreviewLayer(session: session)
+            l.frame = CGRect(x: 0, y: h / 3 * CGFloat(i), width: w, height: h / 3)
+            l.videoGravity = .resizeAspectFill
+            l.borderWidth = 3
+            l.borderColor = colors[i].cgColor
+            view.layer.addSublayer(l)
+            layers.append(l)
+        }
+
+        hud.frame = CGRect(x: 6, y: h - 190, width: w - 12, height: 180)
+        hud.numberOfLines = 0
+        hud.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
+        hud.textColor = .white
+        hud.backgroundColor = UIColor.black.withAlphaComponent(0.65)
+        hud.text = "等待…"
+        view.addSubview(hud)
+
+        add("=== 变体 2 启动 · 三层预览（L1 上=绿 / L2 中=橙 / L3 下=青）===")
+        observeNotifications()
+        requestPermissionThenConfigure()
+    }
+
+    private func requestPermissionThenConfigure() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            configureSession()
+        case .notDetermined:
+            add("等待相机授权…")
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted { self.configureSession() } else { self.add("❌ 未授权") }
+                }
+            }
+        default:
+            add("❌ 相机权限被拒")
+        }
+    }
+
+    private func configureSession() {
+        sessionQueue.async {
+            self.session.beginConfiguration()
+            self.session.sessionPreset = .high
+            let dev = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+                ?? AVCaptureDevice.default(for: .video)
+            guard let dev, let input = try? AVCaptureDeviceInput(device: dev),
+                  self.session.canAddInput(input) else {
+                self.add("❌ input 失败"); self.session.commitConfiguration(); return
+            }
+            self.session.addInput(input)
+            self.videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            self.videoOutput.alwaysDiscardsLateVideoFrames = true
+            self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
+            if self.session.canAddOutput(self.videoOutput) { self.session.addOutput(self.videoOutput) }
+            self.session.commitConfiguration()
+            self.session.startRunning()
+            self.add("startRunning() · isRunning=\(self.session.isRunning)")
+        }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        frames += 1
+        if step == 0 { DispatchQueue.main.async { self.begin() } }
+    }
+
+    private func begin() {
+        step = 1
+        add("▶︎ 三层全挂 + 全部 isEnabled=true")
+        for l in layers { l.connection?.isEnabled = true }
+        dump("t0 三层同开")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            self.add("⚠️ 断点：把 L1（上/绿）摘出图层树再挂回")
+            let l1 = self.layers[0]
+            let f = l1.frame
+            l1.removeFromSuperlayer()
+            self.view.layer.addSublayer(l1)
+            l1.frame = f
+            l1.connection?.isEnabled = true
+            self.dump("重挂后即刻")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                for l in self.layers { l.connection?.isEnabled = true }
+                self.dump("重挂后 5s（再次 enable）")
+                self.step = 3
+                self.add("✅ 完成 —— 看三段颜色框里哪几段有画面")
+                self.updateHUD()
+            }
+            self.updateHUD()
+        }
+        updateHUD()
+    }
+
+    private func dump(_ tag: String) {
+        var parts: [String] = []
+        for (i, l) in layers.enumerated() {
+            let c = l.connection
+            parts.append("L\(i+1): \(c == nil ? "conn=nil" : "conn=有")"
+                         + " active=\(c?.isActive ?? false) enabled=\(c?.isEnabled ?? false)")
+        }
+        add("🔎 [\(tag)] " + parts.joined(separator: " | "))
+    }
+
+    private func observeNotifications() {
+        let nc = NotificationCenter.default
+        let names: [(Notification.Name, String)] = [
+            (AVCaptureSession.runtimeErrorNotification, "runtimeError"),
+            (AVCaptureSession.wasInterruptedNotification, "wasInterrupted"),
+            (AVCaptureSession.interruptionEndedNotification, "interruptionEnded"),
+            (AVCaptureSession.didStartRunningNotification, "didStartRunning"),
+            (AVCaptureSession.didStopRunningNotification, "didStopRunning"),
+        ]
+        for (name, tag) in names {
+            observers.append(nc.addObserver(forName: name, object: session, queue: .main) { [weak self] note in
+                var extra = ""
+                if let e = note.userInfo?[AVCaptureSessionErrorKey] as? Error { extra += " err=\(e.localizedDescription)" }
+                if let r = note.userInfo?[AVCaptureSessionInterruptionReasonKey] { extra += " reason=\(r)" }
+                self?.add("🔔 \(tag)\(extra)")
+            })
+        }
+    }
+
+    private func updateHUD() {
+        hud.text = String(format: "step %d/3 · live %.1f fps\n", step, Double(frames) / 10.0)
+            + "\n————\n" + lines.suffix(7).joined(separator: "\n")
+    }
+
+    private func add(_ s: String) {
+        lines.append("[\(Self.stamp())] \(s)")
+        writeLog()
+        DispatchQueue.main.async { self.updateHUD() }
+    }
+
+    private func writeLog() {
+        guard let url = logURL else { return }
+        try? lines.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func stamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: Date())
+    }
+}
