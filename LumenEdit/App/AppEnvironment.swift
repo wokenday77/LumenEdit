@@ -23,6 +23,7 @@ final class AppEnvironment: ObservableObject {
     let log = DebugLog.shared
     let permissions = PermissionManager()
     let renderContext = RenderContext()
+    let viewfinderRenderer: ViewfinderWindowRenderer
     let thumbnails = ThumbnailCache()
     let session = CaptureSessionController()
 
@@ -76,6 +77,11 @@ final class AppEnvironment: ObservableObject {
         self.showDebugHUD = defaults.object(forKey: StorageKey.showDebugHUD) as? Bool ?? true
         self.showGrid = defaults.object(forKey: StorageKey.showGrid) as? Bool ?? true
         self.showTonePreview = defaults.object(forKey: StorageKey.showTonePreview) as? Bool ?? true
+
+        // ⑥ 窗内自绘（docs/26 刀 1）：渲染器由环境**强持有**（复用同一个 RenderContext），
+        // 会话层弱引用它收帧 —— UI 挂上窗后自动开始出画面，拆除时自动停画。
+        self.viewfinderRenderer = ViewfinderWindowRenderer(renderContext: renderContext)
+        session.viewfinderRenderer = viewfinderRenderer
 
         // 把 session 的变更转发到自己的 objectWillChange（原因见 `cancellables` 的注释）
         session.objectWillChange

@@ -997,10 +997,16 @@ if (!fnPanelFile || !camViewFile || !vmFile || !topBarFile9 || !themeFile2) {
   const maskCallOK = /FrameRatioMask\([\s\S]{0,140}?ratio: viewModel\.fnRatio[\s\S]{0,200}?pinsWindowToScreenCenter: !viewModel\.isZoomOn/
     .test(viewSrc9);
   const maskBody = /private struct FrameRatioMask[\s\S]*?\n}/.exec(viewSrc9);
+  const geoBody = /enum FrameRatioGeometry[\s\S]*?\n}/.exec(viewSrc9);
   const maskSrc = maskBody ? maskBody[0] : null;
-  const maskUsesScreenInsets = !!maskSrc && /ScreenSafeArea\.insets/.test(maskSrc);
-  const maskBiasFormula = !!maskSrc && /\(insets\.top - insets\.bottom\) \/ 2/.test(maskSrc);
-  const maskBiasClamped = !!maskSrc && /min\(max\(rawBias, -equalBar\), equalBar\)/.test(maskSrc);
+  // 2026-09-22 批九（docs/26 刀 1）：偏置/钳制公式搬进了 FrameRatioGeometry
+  // （窗几何单一真源，黑边遮幅与自绘窗共用同一个函数）→ 这几条守卫改为扫
+  // 「FrameRatioMask ∪ FrameRatioGeometry」合并体；参数名两代都认（insets/safeArea）。
+  const maskAndGeo = [maskBody && maskBody[0], geoBody && geoBody[0]].filter(Boolean).join('\n') || null;
+  const maskUsesScreenInsets = !!maskAndGeo && /ScreenSafeArea\.insets/.test(maskAndGeo);
+  const maskBiasFormula = !!maskAndGeo
+    && /\((?:safeArea|insets)\.top - (?:safeArea|insets)\.bottom\) \/ 2/.test(maskAndGeo);
+  const maskBiasClamped = !!maskAndGeo && /min\(max\(rawBias, -equalBar\), equalBar\)/.test(maskAndGeo);
   // ⚠️ 这条要守的是"**日志里能直接读到两个中心**"这个**能力**，不是"出现过某几个字"：
   //    注释里也会写"全屏中心"这几个字，只按词匹配会漏（本检查自己踩过一次，被变异测试抓出来）。
   //    所以要求日志同时打出「窗中心（全屏）」与**由 screenHeight / 2 算出的对照值**。
@@ -3103,6 +3109,99 @@ if (!b2CatFile || !b2CfgFile || !b2SessFile || !b2VmFile) {
         + '打断白名单（只排后台）· reason 具名映射 · 格式探测快速路径（420v 优先 + 面积降序 '
         + '→ 命中位次 12→1）** —— docs/18 预检 7+3 + 批三/四/五/六问题全落地）');
     }
+  }
+}
+
+/* ---------- [13] 取景器自绘（docs/26 刀 1 · ⑥ 视场一致 + 实拍裁切） ---------- */
+
+console.log('[13] 取景器自绘（docs/26 刀 1）');
+{
+  const rendererFile = files.find(f => f.endsWith(path.join('Core', 'ImagePipeline', 'ViewfinderWindowRenderer.swift')));
+  const windowFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'ViewfinderWindowView.swift')));
+  const cameraViewFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'CameraView.swift')));
+  const funcPanelFile = files.find(f => f.endsWith(path.join('Camera', 'UI', 'FunctionPanelView.swift')));
+  const controllerFile = files.find(f => f.endsWith(path.join('Camera', 'Session', 'CaptureSessionController.swift')));
+  const photoServiceFile = files.find(f => f.endsWith(path.join('Camera', 'Output', 'PhotoCaptureService.swift')));
+
+  if (rendererFile && windowFile && cameraViewFile && funcPanelFile && controllerFile && photoServiceFile) {
+    const rd = p => fs.readFileSync(p, 'utf8');
+    const stripComments = src => src.replace(/\/\/[^\n]*/g, '');
+    const rendererSrc = stripComments(rd(rendererFile));
+    const windowSrc = stripComments(rd(windowFile));
+    const cameraSrc = stripComments(rd(cameraViewFile));
+    const panelSrc = stripComments(rd(funcPanelFile));
+    const controllerSrc = stripComments(rd(controllerFile));
+    const photoSrc = stripComments(rd(photoServiceFile));
+
+    // o14 · 窗视图/渲染器不认识会话（负向断言 —— 先剥注释，坑 #4）
+    const windowAV = windowSrc.match(/AVCapture|AVFoundation/g);
+    if (windowAV) bad('o14 ViewfinderWindowView.swift 不得出现 AVFoundation/AVCapture 符号（窗不认识会话，帧由会话层推给渲染器）—— 发现 ' + windowAV.length + ' 处');
+    else ok('o14 窗视图零 AVFoundation 符号');
+    const rendererAV = rendererSrc.match(/AVCapture|AVFoundation/g);
+    if (rendererAV) bad('o14 ViewfinderWindowRenderer.swift 不得出现 AVCapture（渲染器是纯 Core 层，帧由会话层推给）—— 发现 ' + rendererAV.length + ' 处');
+    else ok('o14 渲染器零 AVCapture 符号');
+
+    // o15 · 流只在会话层建立；渲染只经 RenderContext 注入的唯一 CIContext
+    const streamCount = (controllerSrc.match(/AVCaptureVideoDataOutput\(/g) || []).length;
+    if (streamCount !== 1) bad('o15 AVCaptureVideoDataOutput( 全仓只允许在 CaptureSessionController 声明一处 —— 实际 ' + streamCount + ' 处');
+    else ok('o15 自绘流唯一声明点在会话控制器');
+    const sinkCount = (controllerSrc.match(/setSampleBufferDelegate\(/g) || []).length;
+    if (sinkCount !== 1) bad('o15 setSampleBufferDelegate( 只允许一处（流的唯一收帧入口）—— 实际 ' + sinkCount + ' 处');
+    else ok('o15 帧回调唯一入口');
+    if (/CIContext\(/.test(rendererSrc)) bad('o15 渲染器不得自己构造 CIContext（必须用 RenderContext 注入的同一个，双 context = 内存暴涨 + 渲染不一致）');
+    else ok('o15 渲染器无第二 CIContext');
+    if (!/RenderContext/.test(rendererSrc)) bad('o15 渲染器必须依赖 RenderContext（单例纪律）');
+    else ok('o15 渲染经 RenderContext 唯一上下文');
+
+    // o16 · 单一真源：窗矩形几何只有一份实现，黑边遮幅与自绘窗三处同源
+    const geoCalls = (cameraSrc.match(/FrameRatioGeometry\.windowRect\(/g) || []).length;
+    if (geoCalls < 2) bad('o16 FrameRatioGeometry.windowRect 调用点应 ≥ 2（FrameRatioMask 黑边 + ViewfinderWindowSurface 自绘窗）—— 实际 ' + geoCalls + ' 处');
+    else ok('o16 窗几何单一真源（黑边与自绘窗同调一处，' + geoCalls + ' 个调用点）');
+    const inlineGeo = (cameraSrc.match(/\.heightOverWidth/g) || []).length;
+    if (inlineGeo !== 1) bad('o16 窗高比例只允许在 FrameRatioGeometry 内引用一处（内联散写 = 第二真源）—— CameraView.swift 实际 ' + inlineGeo + ' 处');
+    else ok('o16 窗高比例无内联散写');
+
+    // o16 · 遮幅三档高宽比口径（与原型 FN_RATIOS = 4:3 / 16:9 / 1:1 对应的竖排 h/w）
+    const ratioOK = /case \.r4x3: return 4\.0 \/ 3\.0/.test(panelSrc)
+      && /case \.r16x9: return 16\.0 \/ 9\.0/.test(panelSrc)
+      && /case \.r1x1: return 1\b/.test(panelSrc);
+    if (!ratioOK) bad('o16 遮幅档位表（FunctionPanelView.heightOverWidth）与既定口径不符（应为 4/3 · 16/9 · 1）');
+    else ok('o16 遮幅三档高宽比口径 4/3 · 16/9 · 1');
+
+    // o16 · 窗内裁切几何账（帧 1440x1920 为例；公式 = ViewfinderWindowRenderer.windowCropRect 同式复算）
+    const frame = { w: 1440, h: 1920 };
+    const cropOf = r => {
+      const fr = frame.h / frame.w;
+      let cw, ch;
+      if (r > fr) { ch = frame.h; cw = frame.h / r; }
+      else if (r < fr) { cw = frame.w; ch = frame.w * r; }
+      else { cw = frame.w; ch = frame.h; }
+      return { cw: Math.round(cw), ch: Math.round(ch) };
+    };
+    const crop43 = cropOf(4 / 3), crop169 = cropOf(16 / 9), crop11 = cropOf(1);
+    console.log('  几何账（窗内裁切 · 帧 1440x1920 · 与渲染器 windowCropRect 同式）：');
+    console.log('    4:3 → ' + crop43.cw + 'x' + crop43.ch + '（整帧）· 16:9 → ' + crop169.cw + 'x' + crop169.ch + ' · 1:1 → ' + crop11.cw + 'x' + crop11.ch);
+    if (crop43.cw !== 1440 || crop43.ch !== 1920 || crop169.cw !== 1080 || crop169.ch !== 1920 || crop11.cw !== 1440 || crop11.ch !== 1440)
+      bad('o16 窗内裁切几何账与 docs/26 落盘数字不符（应为 整帧 1440x1920 / 16:9 = 1080x1920 / 1:1 = 1440x1440）');
+    else ok('o16 窗内裁切几何账：4:3 全帧 · 16:9 = 1080x1920 · 1:1 = 1440x1440');
+
+    // o16 · 实拍裁切与窗内同口径（像素空间中心裁切公式 + Live 闸门）
+    if (!/min\(w, h \* r\)/.test(photoSrc) || !/pw \/ r/.test(photoSrc))
+      bad('o16 PhotoCaptureService 实拍裁切公式缺失或被改（应为 pw = min(w, h·r) / ph = pw/r —— 与窗内同一比例口径）');
+    else ok('o16 实拍裁切与窗内同口径（像素空间 min(w, h·r) 中心裁切）');
+    if (!/mode == \.photo \? maskHeightOverWidth : nil/.test(controllerSrc))
+      bad('o16 Live 模式不得带裁切比（刀 1b 前只裁静态照片，防两资源不一致）');
+    else ok('o16 Live 裁切闸门（mode == .photo 才带比例）');
+
+    // o16 · 资源账预期数（流常驻 → outputs = 2）+ 模式切换清理跳过常驻流
+    if (!/\(audioInput != nil \? 2 : 1, 2\)/.test(controllerSrc))
+      bad('o16 资源账预期 outputs 应为 2（模式输出 + 常驻自绘流）—— 否则批六 ④ 会误报泄漏（docs/26 §八-7）');
+    else ok('o16 资源账预期 = 模式输出 + 常驻流（outputs 2）');
+    if (!/where output !== viewfinderOutput/.test(controllerSrc))
+      bad('o16 模式切换清理必须跳过常驻自绘流（where output !== viewfinderOutput）—— 拆装 = 切模式抖动加码');
+    else ok('o16 自绘流常驻（模式切换清理跳过）');
+  } else {
+    bad('第 13 组：取景器自绘相关文件缺失（ViewfinderWindowRenderer / ViewfinderWindowView / CameraView / FunctionPanelView / CaptureSessionController / PhotoCaptureService）');
   }
 }
 

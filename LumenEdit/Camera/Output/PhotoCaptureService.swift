@@ -1,6 +1,8 @@
 import AVFoundation
 import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// 照片拍摄服务：封装 `AVCapturePhotoOutput`。
 ///
@@ -33,6 +35,16 @@ final class PhotoCaptureService: NSObject {
     // （见 LivePhotoCaptureService / LivePhotoAssembler）。
     private var pendingImageData: Data?
     private var pendingPixelSize: CGSize = .zero
+
+    // MARK: 实拍裁切（docs/26 刀 1 · 批九「实拍裁切」）
+
+    /// 本次拍摄要求的遮幅"高÷宽"（`FrameRatio.heightOverWidth`）。
+    /// `nil` = 不裁（4:3 整帧直存原始字节，或 Live 路径——Live 裁切 = 刀 1b）。
+    private var pendingMaskHeightOverWidth: CGFloat?
+    /// 拍摄编码格式（重编码容器选择用：HEVC → HEIC，否则 JPEG）。prepareTemplate 时定。
+    private var preparedCodec: AVVideoCodecType = .jpeg
+    /// 本次拍摄快照的编码格式（与 pendingMask... 同批存取）
+    private var pendingCodec: AVVideoCodecType = .jpeg
 
     /// 当前进行中的 Live Photo 拍摄。
     /// 非 nil 时，photo delegate 的两个回调会转发给它，而不是走静态照片路径。
@@ -94,14 +106,21 @@ final class PhotoCaptureService: NSObject {
 
         stateLock.lock()
         template = settings
+        preparedCodec = codec
         stateLock.unlock()
     }
 
     // MARK: - 拍摄
 
     /// 触发一次拍摄。
+    /// - Parameter maskHeightOverWidth: 遮幅"高÷宽"（窗高宽比）。`nil` 或 4:3 = 不裁、
+    ///   整帧原始字节直存；16:9 / 1:1 → 中心裁切后重编码（见 `croppedRepresentation`）。
+    ///   控制器已保证 **Live 路径不带比例**（Live 裁切 = 刀 1b）。
     /// - Parameter completion: 在**主线程**回调，携带归一化后的结果
-    func capture(completion: @escaping (Result<CaptureResult, Error>) -> Void) {
+    func capture(
+        maskHeightOverWidth: CGFloat?,
+        completion: @escaping (Result<CaptureResult, Error>) -> Void
+    ) {
         stateLock.lock()
         if _isBusy {
             stateLock.unlock()
@@ -113,6 +132,8 @@ final class PhotoCaptureService: NSObject {
         pendingCompletion = completion
         pendingImageData = nil
         pendingPixelSize = .zero
+        pendingMaskHeightOverWidth = Self.normalizedCropRatio(maskHeightOverWidth)
+        pendingCodec = preparedCodec
         let templateSettings = template
         stateLock.unlock()
 
@@ -197,6 +218,74 @@ final class PhotoCaptureService: NSObject {
 
     // MARK: - 私有：收尾
 
+    /// 遮幅比归一：`nil` 直接透传；4:3（整帧）归一成 `nil`（不裁）。
+    private static func normalizedCropRatio(_ ratio: CGFloat?) -> CGFloat? {
+        guard let r = ratio, r > 0 else { return nil }
+        if abs(r - 4.0 / 3.0) < 0.001 { return nil }
+        return r
+    }
+
+    /// 按遮幅比对静态照片做**中心裁切**并重编码（docs/26 刀 1 · 批九「实拍裁切」）。
+    ///
+    /// - 只服务 `.photo` 非 Live 路径；**Live 裁切 = 刀 1b**（Live 有静态+视频两份资源，
+    ///   只裁静态会拆散配对，必须走 `PHLivePhotoEditingContext` 逐帧裁 —— 下一小步单独交付）。
+    /// - 像素空间公式与窗内渲染同口径（`ViewfinderWindowRenderer.windowCropRect` 的横片
+    ///   换算版）：照片是横片像素（4032×3024 + EXIF Orientation 90），竖排窗高宽比 `r`
+    ///   在像素空间为 `pw = min(w, h·r)`、`ph = pw / r`，中心取矩形。
+    /// - 元数据整体保留（EXIF/GPS/TIFF Orientation —— 裁切中心对称，竖排语义不变）；
+    ///   仅 Exif PixelX/YDimension 按裁后尺寸覆写。
+    /// - 画质：一次有损重编码（0.95）。P4c PhotoExporter 落地后此路径会被收编。
+    /// - 返回 `nil` = 裁切未生效（调用方按整帧入库，不拦拍摄）。
+    private func croppedRepresentation(
+        from photo: AVCapturePhoto,
+        maskHeightOverWidth r: CGFloat
+    ) -> (data: Data, pixelSize: CGSize)? {
+        guard let cg = photo.cgImageRepresentation() else {
+            DebugLog.shared.warn("photo", "实拍裁切：拿不到 CGImage 表示")
+            return nil
+        }
+        let w = CGFloat(cg.width)
+        let h = CGFloat(cg.height)
+        guard w > 0, h > 0 else { return nil }
+
+        let pw = min(w, h * r)
+        let ph = pw / r
+        let rect = CGRect(x: (w - pw) / 2, y: (h - ph) / 2, width: pw, height: ph)
+        guard let cropped = cg.cropping(to: rect) else {
+            DebugLog.shared.warn("photo", "实拍裁切：CGImage.cropping 失败")
+            return nil
+        }
+
+        let out = NSMutableData()
+        let type = (pendingCodec == .hevc ? UTType.heic : UTType.jpeg).identifier as CFString
+        guard let destination = CGImageDestinationCreateWithData(out, type, 1, nil) else {
+            DebugLog.shared.warn("photo", "实拍裁切：创建编码器失败")
+            return nil
+        }
+
+        var metadata = photo.metadata
+        if var exif = metadata[kCGImagePropertyExifDictionary] as? [String: Any] {
+            // 常量值即 kCGImagePropertyExifPixelXDimension / ...PixelYDimension
+            exif["PixelXDimension"] = Int(pw)
+            exif["PixelYDimension"] = Int(ph)
+            metadata[kCGImagePropertyExifDictionary] = exif
+        }
+        // 重编码质量（唯一一次有损环节，给足 0.95；P4c PhotoExporter 落地后收编此路径）
+        metadata[kCGImageDestinationLossyCompressionQuality] = 0.95
+        CGImageDestinationAddImage(destination, cropped, metadata as CFDictionary)
+        guard CGImageDestinationFinalize(destination), out.length > 0 else {
+            DebugLog.shared.warn("photo", "实拍裁切：编码失败")
+            return nil
+        }
+
+        DebugLog.shared.info(
+            "photo",
+            "实拍裁切已生效：像素 \(Int(pw))x\(Int(ph))"
+                + "（遮幅高宽比 \(String(format: "%.3f", r)) · 容器 \(pendingCodec == .hevc ? "HEIC" : "JPEG")）"
+        )
+        return (out as Data, CGSize(width: pw, height: ph))
+    }
+
     private func finish(error: Error?) {
         stateLock.lock()
         let completion = pendingCompletion
@@ -267,9 +356,27 @@ extension PhotoCaptureService: AVCapturePhotoCaptureDelegate {
             return
         }
 
+        // 实拍裁切（docs/26 刀 1）：遮幅 16:9 / 1:1 时中心裁切后重编码；
+        // 4:3（或未带比例）= 整帧原始字节直存，本段完全不生效。
         stateLock.lock()
-        pendingImageData = data
-        pendingPixelSize = pixelSize
+        let cropRatio = pendingMaskHeightOverWidth
+        stateLock.unlock()
+
+        var finalData = data
+        var finalSize = pixelSize
+        if let r = cropRatio {
+            if let cropped = croppedRepresentation(from: photo, maskHeightOverWidth: r) {
+                finalData = cropped.data
+                finalSize = cropped.pixelSize
+            } else {
+                // 裁切失败不拦拍摄：按整帧入库 + 留痕（Mac 复验时看这行就知道退回了）
+                DebugLog.shared.warn("photo", "实拍裁切未生效，按整帧入库")
+            }
+        }
+
+        stateLock.lock()
+        pendingImageData = finalData
+        pendingPixelSize = finalSize
         stateLock.unlock()
     }
 

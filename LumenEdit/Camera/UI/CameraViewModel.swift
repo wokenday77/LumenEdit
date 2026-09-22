@@ -529,7 +529,9 @@ final class CameraViewModel: ObservableObject {
         isSaving = true
         lastShownError = nil
 
-        environment.session.capture { [weak self] result in
+        // ⑥ 实拍裁切（docs/26 刀 1）：把遮幅"高÷宽"传给会话 —— 只有 .photo 模式会拿它
+        // 裁切；Live 路径会话层自行忽略（刀 1b 前不裁，防两资源不一致）。
+        environment.session.capture(maskHeightOverWidth: fnRatio.heightOverWidth) { [weak self] result in
             // 该闭包是非隔离上下文，因此在主线程任务里再处理 UI 状态
             Task { @MainActor in
                 guard let self else { return }
@@ -2016,11 +2018,12 @@ final class CameraViewModel: ObservableObject {
     }
 
     /// 面板第 2 格「画幅比」：循环 4:3 → 16:9 → 1:1，**取景器遮幅真生效**
-    /// （实拍裁切属 B 组，与原型口径一致："遮幅示意，实拍裁切在 P2"）
+    /// （docs/26 刀 1：窗内自绘 = 成片视场；静态照片实拍按此中心裁切。
+    ///   Live 裁切 = 刀 1b；视频模式成片不裁 —— 沿原型口径，另立项。）
     func fnRatioTapped() {
         fnRatio = fnRatio.next
         Haptics.tick()
-        showToast("画幅比 \(fnRatio.displayName)：遮幅已生效 · 实拍裁切在 P2 落地")
+        showToast("画幅比 \(fnRatio.displayName)：窗内即成片 · 照片实拍已按此裁切（Live 裁切待刀 1b）")
     }
 
     /// 面板第 3 格「闪光灯」：只记状态（`AVCaptureDevice.torchMode` 属 B 组）

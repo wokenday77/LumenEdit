@@ -240,6 +240,33 @@ final class CaptureSessionController: ObservableObject {
     private let movieService = MovieCaptureService()
     private let audioSession = AudioSessionManager()
 
+    // MARK: 取景器自绘流（docs/26 刀 1 · ⑥ 视场一致）
+
+    /// **常驻**视频数据流：窗内自绘（⑥）与未来的实时滤镜（P4+）共用的唯一画面来源。
+    ///
+    /// ## 为什么常驻（不随模式拆装）
+    /// 掉帧项（`docs/24` #5）的定性 = 每次切模式重配 outputs 的抖动（306 连切中位 0.30s）。
+    /// 这条流再跟着拆装等于给每次切换加一次重协商 —— 所以它只在会话构建时装配一次，
+    /// 之后 `reconfigureOutputsLocked` 的清理**跳过它**（where 过滤）。
+    ///
+    /// ## 口径
+    /// - 像素格式 **420v**（12bpp，带宽约 BGRA 的一半；与格式探测的优先序同族）
+    /// - `alwaysDiscardsLateVideoFrames = true` + 渲染器软件限帧 30fps 双保险
+    /// - 旋转角复用 `applyRotationLocked`（90° + 能力探测逐字对应，坑 #9 同口径）
+    /// - 资源账：这也是 output —— `expectedResourceCounts.outputs` 已按"每模式 +1"更新，
+    ///   否则批六 ④ 的「资源超出预期」会误报（docs/26 §八-7）
+    private let viewfinderOutput = AVCaptureVideoDataOutput()
+    private let viewfinderQueue = DispatchQueue(label: "com.lumenedit.capture.viewfinder", qos: .userInteractive)
+    private let viewfinderSink = ViewfinderFrameSink()
+    /// 流是否已装配（buildSession 的幂等清理会把它拆掉 → 重置为 false，随后重装）
+    private var isViewfinderStreamAttached = false
+
+    /// 窗渲染目标（AppEnvironment 注入并持有强引用）。
+    /// `nil` = 只装配收帧、不渲染 —— UI 挂上窗后自动开始出画面。
+    var viewfinderRenderer: ViewfinderWindowRenderer? {
+        didSet { viewfinderSink.renderer = viewfinderRenderer }
+    }
+
     private var device: AVCaptureDevice?
     private var videoInput: AVCaptureDeviceInput?
 
@@ -1454,7 +1481,14 @@ final class CaptureSessionController: ObservableObject {
     ///
     /// 按当前模式分派：照片模式走静态照片路径；Live Photo 模式走配对路径
     /// （静态照片 + 配对视频两半到齐才产出结果）。
-    func capture(completion: @escaping (Result<CaptureResult, Error>) -> Void) {
+    ///
+    /// - Parameter maskHeightOverWidth: 遮幅"高÷宽"（窗高宽比，`FrameRatio.heightOverWidth`）。
+    ///   **只有 `.photo` 模式会拿它做实拍裁切**（docs/26 刀 1：静态照片 16:9 / 1:1 中心裁切，
+    ///   4:3 = 整帧直存原始字节）；Live Photo 的裁切 = 刀 1b（本轮不裁，防两资源不一致）。
+    func capture(
+        maskHeightOverWidth: CGFloat,
+        completion: @escaping (Result<CaptureResult, Error>) -> Void
+    ) {
         guard state == .running else {
             let error = SessionConfigurationError.notRunning
             DebugLog.shared.warn("session", "会话未就绪就按了快门")
@@ -1476,7 +1510,7 @@ final class CaptureSessionController: ObservableObject {
         if mode == .livePhoto {
             photoService.captureLivePhoto(completion: handler)
         } else {
-            photoService.capture(completion: handler)
+            photoService.capture(maskHeightOverWidth: mode == .photo ? maskHeightOverWidth : nil, completion: handler)
         }
     }
 
@@ -1798,7 +1832,10 @@ final class CaptureSessionController: ObservableObject {
     /// 必然漂移（就是上面那 48 条误报的根因）；而且**照片模式也会带麦克风**（Live Photo 要录音），
     /// 所以"照片 = 1 个 input"本身就是错的。
     private var expectedResourceCounts: (inputs: Int, outputs: Int) {
-        (audioInput != nil ? 2 : 1, 1)
+        // outputs = 模式输出（photo / movie 二选一）+ 常驻取景器自绘流（docs/26 刀 1）= 2。
+        // ⚠️ 2026-09-22 批九：流常驻不随模式拆装 —— 这里不改成 2 的话，批六 ④ 的
+        // 「资源超出预期」会在每个模式都误报一次（docs/26 §八-7）。
+        (audioInput != nil ? 2 : 1, 2)
     }
 
     /// 汇总 + **超出预期就喊**（掉帧排查的主信号）
@@ -1976,6 +2013,7 @@ final class CaptureSessionController: ObservableObject {
             session.removeOutput(output)
             resourceOutputRemoved()     // ④ 埋点
         }
+        isViewfinderStreamAttached = false   // 自绘流也被清了 → 允许随本次构建重装
         videoInput = nil
         audioInput = nil
         device = nil
@@ -2282,8 +2320,10 @@ final class CaptureSessionController: ObservableObject {
     /// - Returns: 是否成功
     @discardableResult
     private func reconfigureOutputsLocked(for targetMode: CaptureSessionMode) -> Bool {
-        // 先清空所有输出，保证不会残留上一个模式的输出
-        for output in session.outputs {
+        // 先清空所有输出，保证不会残留上一个模式的输出。
+        // ⚠️ 常驻自绘流**跳过**（docs/26 刀 1）：它不随模式拆装 —— 拆了等于给每次切模式
+        // 加一次重协商（掉帧项加码）；它的清理只发生在 buildSession 的幂等清理里。
+        for output in session.outputs where output !== viewfinderOutput {
             session.removeOutput(output)
             resourceOutputRemoved()     // ④ 埋点
         }
@@ -2298,6 +2338,7 @@ final class CaptureSessionController: ObservableObject {
             resourceOutputAdded()       // ④ 埋点
             photoService.configure(for: targetMode)
             applyRotationLocked(to: photoService.output)
+            attachViewfinderStreamLocked()
             return true
 
         case .video, .logLive:
@@ -2315,8 +2356,28 @@ final class CaptureSessionController: ObservableObject {
             session.addOutput(movieService.output)
             resourceOutputAdded()       // ④ 埋点
             applyRotationLocked(to: movieService.output)
+            attachViewfinderStreamLocked()
             return true
         }
+    }
+
+    /// 装配取景器自绘流（**必须在 begin/commit 配置区间内调用**；幂等）。
+    private func attachViewfinderStreamLocked() {
+        guard !isViewfinderStreamAttached else { return }
+        viewfinderOutput.alwaysDiscardsLateVideoFrames = true
+        viewfinderOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        ]
+        viewfinderOutput.setSampleBufferDelegate(viewfinderSink, queue: viewfinderQueue)
+        guard session.canAddOutput(viewfinderOutput) else {
+            DebugLog.shared.error("session", "无法加入取景器自绘流")
+            return
+        }
+        session.addOutput(viewfinderOutput)
+        resourceOutputAdded()       // ④ 埋点（流也是 output —— 预期数已 +1，否则 ④ 误报）
+        applyRotationLocked(to: viewfinderOutput)
+        isViewfinderStreamAttached = true
+        DebugLog.shared.info("session", "取景器自绘流已装配（420v · 常驻 · 30fps 软限）")
     }
 
     /// 竖屏锁定，所以旋转角是固定值 90°，不需要监听设备方向。
@@ -2358,5 +2419,26 @@ final class CaptureSessionController: ObservableObject {
         } else {
             DispatchQueue.main.async(execute: block)
         }
+    }
+}
+
+// MARK: - 取景器帧接收（docs/26 刀 1）
+
+/// 只做一件事：把 `CVPixelBuffer` 递给渲染器。
+///
+/// 独立成类的原因：`CaptureSessionController` 不是 `NSObject`
+/// （`AVCaptureVideoDataOutputSampleBufferDelegate` 需要 `NSObjectProtocol`），
+/// 而且不值得为收帧改控制器基类。渲染器由 `AppEnvironment` 强持有，这里弱引用。
+private final class ViewfinderFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+
+    fileprivate weak var renderer: ViewfinderWindowRenderer?
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        renderer?.draw(pixelBuffer: pixelBuffer)
     }
 }

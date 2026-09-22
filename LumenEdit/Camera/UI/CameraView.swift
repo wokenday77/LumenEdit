@@ -81,6 +81,16 @@ struct CameraView: View {
             .accessibilityLabel("取景器")
             .accessibilityHint("点按画面任意位置对焦")
 
+            // ⑥ 窗内自绘（docs/26 刀 1）：遮幅开口处按整帧 fit 渲染 = 成片视场。
+            // 窗矩形与黑边遮幅**同一个函数**（FrameRatioGeometry.windowRect）——永远严丝合缝。
+            // 层级：预览层（满屏 fill）→ 自绘窗 → 网格/对焦框（仍在窗内容之上）→ 黑边遮幅。
+            // 不接收触摸：点按穿透给预览容器，批六 ③ 点按对焦链路零改动。
+            ViewfinderWindowSurface(
+                ratio: viewModel.fnRatio,
+                pinsWindowToScreenCenter: !viewModel.isZoomOn,
+                renderer: env.viewfinderRenderer
+            )
+
             // 三分构图线：顶栏「网格」图标控制。与预览同一坐标系、不接收触摸，
             // 所以"点按画面任意位置对焦"照样穿透过去。
             if env.showGrid {
@@ -828,6 +838,39 @@ private enum ScreenSafeArea {
 ///
 /// ⚠️ **只在常态生效**：⤢ 放大态下容器是**取景卡片**（不是安全区），
 /// 此时按卡片居中（`pinsWindowToScreenCenter == false`）—— 卡片才是用户构图的框。
+/// 窗矩形几何（⑥ 单一真源 · docs/26 刀 1）。
+///
+/// 遮幅开口矩形的**唯一实现**：`FrameRatioMask`（黑边）与 `ViewfinderWindowSurface`
+/// （自绘窗）都调它 —— 两处永远同源，不可能"窗和黑边对不上"。
+/// 改窗几何（如安全区偏置策略）只改这一个函数；几何账脚本按同式复算（check_swift 第 13 组）。
+@MainActor
+enum FrameRatioGeometry {
+
+    /// 遮幅开口矩形（**容器坐标**；容器 = 安全区，⤢ 放大态 = 取景卡片）。
+    static func windowRect(
+        container: CGSize,
+        ratio: FrameRatio,
+        pinsWindowToScreenCenter: Bool,
+        safeArea: EdgeInsets
+    ) -> CGRect {
+        let frameHeight = min(container.height, container.width * ratio.heightOverWidth)
+        let equalBar = max(0, (container.height - frameHeight) / 2)
+
+        // 偏置 =（上安全区 − 下安全区）/ 2；⤢ 放大态不偏（按卡片居中）
+        let rawBias = pinsWindowToScreenCenter ? (safeArea.top - safeArea.bottom) / 2 : 0
+        // 钳制：偏置不能把任何一块黑边推成负值（否则会压缩画面高）
+        let bias = min(max(rawBias, -equalBar), equalBar)
+
+        let centerY = container.height / 2 - bias
+        return CGRect(
+            x: 0,
+            y: max(0, centerY - frameHeight / 2),
+            width: container.width,
+            height: frameHeight
+        )
+    }
+}
+
 private struct FrameRatioMask: View {
 
     let ratio: FrameRatio
@@ -836,18 +879,15 @@ private struct FrameRatioMask: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let frameHeight = min(proxy.size.height, proxy.size.width * ratio.heightOverWidth)
-            let equalBar = max(0, (proxy.size.height - frameHeight) / 2)
-
             let insets = ScreenSafeArea.insets
-            // 偏置 =（上安全区 − 下安全区）/ 2；⤢ 放大态不偏（按卡片居中）
-            let rawBias = pinsWindowToScreenCenter ? (insets.top - insets.bottom) / 2 : 0
-            // 钳制：偏置不能把任何一块黑边推成负值（否则会压缩画面高）
-            let bias = min(max(rawBias, -equalBar), equalBar)
-
-            let centerY = proxy.size.height / 2 - bias
-            let topBar = max(0, centerY - frameHeight / 2)
-            let bottomBar = max(0, proxy.size.height - centerY - frameHeight / 2)
+            let windowRect = FrameRatioGeometry.windowRect(
+                container: proxy.size,
+                ratio: ratio,
+                pinsWindowToScreenCenter: pinsWindowToScreenCenter,
+                safeArea: insets
+            )
+            let topBar = windowRect.minY
+            let bottomBar = max(0, proxy.size.height - windowRect.maxY)
 
             VStack(spacing: 0) {
                 Rectangle()
@@ -869,15 +909,45 @@ private struct FrameRatioMask: View {
                     "ui",
                     "遮幅 \(newValue.displayName)：容器 \(Int(proxy.size.width))×\(Int(proxy.size.height))"
                         + "，安全区 上\(Int(insets.top))/下\(Int(insets.bottom))"
-                        + "，窗高 \(Int(frameHeight))"
+                        + "，窗高 \(Int(windowRect.height))"
                         + "，上下黑边 \(Int(topBar))/\(Int(bottomBar))"
-                        + "，窗中心（全屏）\(Int(insets.top + centerY))"
+                        + "，窗中心（全屏）\(Int(insets.top + windowRect.midY))"
                         + " vs 全屏中心 \(Int(screenHeight / 2))"
                 )
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// ⑥ 窗内自绘表面（docs/26 刀 1）：按 `FrameRatioGeometry` 的同一份窗矩形挂 Metal 窗。
+///
+/// - 与黑边遮幅**同源**（同一个 `windowRect` 函数）—— 窗和开口永远严丝合缝。
+/// - 不接收触摸（点按穿透给预览容器）；随遮幅档 260ms 过渡（与黑边同节奏）。
+/// - 层级在网格线/对焦框**之下**（挂点在 `previewLayer` ZStack 里 PreviewView 之后），
+///   所以三分线、对焦框照常叠在窗内容上面。
+private struct ViewfinderWindowSurface: View {
+
+    let ratio: FrameRatio
+    let pinsWindowToScreenCenter: Bool
+    let renderer: ViewfinderWindowRenderer
+
+    var body: some View {
+        GeometryReader { proxy in
+            let rect = FrameRatioGeometry.windowRect(
+                container: proxy.size,
+                ratio: ratio,
+                pinsWindowToScreenCenter: pinsWindowToScreenCenter,
+                safeArea: ScreenSafeArea.insets
+            )
+            ViewfinderWindowView(ratio: ratio, renderer: renderer)
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .animation(.easeInOut(duration: 0.26), value: ratio)
     }
 }
 
